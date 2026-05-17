@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "magi-spec-engine"
+version = "0.1.0"
+description = "MAGI Spec Engine generates reviewed AI-agent-ready implementation specifications."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "langgraph>=1.0.0",
+  "pyyaml>=6.0.0",
+]
+
+[project.scripts]
+magi-spec = "magi_spec.cli:main"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
