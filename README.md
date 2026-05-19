@@ -4,6 +4,8 @@ MAGI Spec Engine is a local Python package and thin CLI that converts a high-lev
 
 MAGI does not implement the requested target project. It does not run Codex, Copilot, Cursor, Claude Code, or any other implementation agent. Its boundary is specification generation.
 
+User guide (Korean): [docs/USER_GUIDE.ko.md](docs/USER_GUIDE.ko.md)
+
 ## Installation
 
 ```bash
@@ -73,7 +75,7 @@ model_routing:
     provider: mock
     model: deterministic
 capabilities:
-  web_search: off
+  web_search: "off"
   command_execution: false
 ```
 
@@ -186,6 +188,7 @@ MAGI uses LangGraph to orchestrate stateful review. MELCHIOR reviews architectur
 Provider and model assignments are private orchestration metadata. Agents can see role names, output content, section status, cited evidence, and conflict summaries. They cannot see provider names, model names, model versions, benchmark claims, release timing, pricing tiers, or context window sizes.
 
 Arguments based on model authority are invalid and must not be used to pass or fail a section.
+Agent-visible context is additionally sanitized so provider/model identity terms are redacted from forwarded peer output text.
 
 ## Future Provider Extension Point
 
@@ -202,6 +205,7 @@ Project scanning is read-only. MAGI skips `.git`, virtual environments, `node_mo
 ## Command Execution Guard
 
 MAGI does not execute commands by default. With `--allow-command-execution`, only narrow non-destructive command categories are allowed, and every command result is logged to `execution/command_log.json`.
+When command execution is enabled, guarded diagnostic commands may run during review rounds (for example, safe metadata or test-version checks), and each entry records command, working directory, exit code, stdout/stderr summaries, timestamp, and requesting agent.
 
 ## Critical Reports
 
@@ -213,3 +217,7 @@ critical/FAILED_AGENT_SPEC_DRAFT.en.md
 ```
 
 The report summarizes unresolved conflicts, failed sections, unsafe assumptions, blocking questions, attempted revisions, and evidence summaries without exposing hidden reasoning.
+
+## Test Status
+
+The repository test suite validates CLI flows, review policy, model-blind routing, provider adapter behavior, command execution guards, project scanning policy, web-search policy, artifact contracts, and acceptance smoke paths.

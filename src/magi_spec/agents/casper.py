@@ -10,10 +10,11 @@ from magi_spec.schemas.agent_result import AgentResult
 class CasperAgent(BaseAgent):
     agent_id = "casper"
     display_name = "CASPER"
+    prompt_id = "casper"
 
     def review(self, state: WorkflowState, *, round_number: int) -> AgentResult:
         self.skills.assert_allowed(self.agent_id, "failure_review")
-        content = "\n".join(
+        fallback_content = "\n".join(
             [
                 "# CASPER 실패 모드 검토",
                 "",
@@ -26,4 +27,9 @@ class CasperAgent(BaseAgent):
                 "결론: 주요 오해 가능성과 위험한 기본값이 명시되어 PASS입니다.",
             ]
         )
-        return self._result(content, evidence_summary="CASPER failure review passed.")
+        return self._review_with_provider(
+            state,
+            round_number=round_number,
+            fallback_content=fallback_content,
+            evidence_summary="CASPER failure review completed.",
+        )

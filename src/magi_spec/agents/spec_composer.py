@@ -2,23 +2,92 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
+from magi_spec.core.agent_context import build_agent_visible_context
+from magi_spec.core.config import MagiConfig
 from magi_spec.core.evidence import EvidenceRegistry
+from magi_spec.core.prompts import load_prompt
+from magi_spec.core.provider_output import extract_json_object
 from magi_spec.core.state import WorkflowState
+from magi_spec.providers.base import ProviderFactory
+from magi_spec.schemas.provider_packets import choose_spec_markdown
 from magi_spec.skills.registry import SkillRegistry
+
+
+REQUIRED_FINAL_SPEC_HEADINGS = [
+    "# Final Agent Specification",
+    "## 1. Mission",
+    "## 2. Background",
+    "## 3. User Intent",
+    "## 4. Scope",
+    "### 4.1 In Scope",
+    "### 4.2 Out of Scope",
+    "## 5. Definitions",
+    "## 6. Evidence Summary",
+    "## 7. Mandatory Requirements",
+    "## 8. Recommended Requirements",
+    "## 9. Optional Requirements",
+    "## 10. Forbidden Behaviors",
+    "## 11. Input Contract",
+    "## 12. Output Contract",
+    "## 13. Architecture",
+    "## 14. Module Responsibilities",
+    "## 15. Data Flow",
+    "## 16. Error Handling Policy",
+    "## 17. Configuration Policy",
+    "## 18. Persistence / Artifact Policy",
+    "## 19. Implementation Order",
+    "## 20. Acceptance Criteria",
+    "## 21. Test Plan",
+    "## 22. Manual Verification Checklist",
+    "## 23. Instructions for AI Coding Agent",
+]
 
 
 class SpecComposer:
     agent_id = "spec_composer"
 
-    def __init__(self, *, skills: SkillRegistry, evidence: EvidenceRegistry) -> None:
+    def __init__(
+        self,
+        *,
+        config: MagiConfig,
+        providers: ProviderFactory,
+        skills: SkillRegistry,
+        evidence: EvidenceRegistry,
+    ) -> None:
+        self.config = config
+        self.providers = providers
         self.skills = skills
         self.evidence = evidence
 
     def compose(self, state: WorkflowState, project_manifest: dict[str, Any] | None) -> str:
         self.skills.assert_allowed(self.agent_id, "compose_final_spec")
+        fallback = self._fallback_spec(state, project_manifest)
+        route = self.config.model_routing[self.agent_id]
+        provider = self.providers.get(route.provider)
+        raw_output = provider.complete(
+            [{"role": "user", "content": self._compose_prompt(state, project_manifest)}],
+            model=route.model,
+            temperature=0,
+        )
+        parsed = extract_json_object(raw_output)
+        candidate = choose_spec_markdown(
+            parsed,
+            raw_output=raw_output,
+            fallback=fallback,
+        )
+        if self.english_only(candidate) and self.has_required_headings(candidate):
+            return candidate
+        return fallback
+
+    def _fallback_spec(
+        self,
+        state: WorkflowState,
+        project_manifest: dict[str, Any] | None,
+    ) -> str:
         request = self._english_safe_user_intent(state.get("user_request", "").strip())
         project_summary = "No project folder was provided."
         if project_manifest:
@@ -135,9 +204,42 @@ class SpecComposer:
             ]
         )
 
+    def _compose_prompt(
+        self,
+        state: WorkflowState,
+        project_manifest: dict[str, Any] | None,
+    ) -> str:
+        manifest_summary = {
+            "root": (project_manifest or {}).get("root"),
+            "file_count": (project_manifest or {}).get("file_count", 0),
+            "files": [
+                item.get("path")
+                for item in (project_manifest or {}).get("files", [])[:50]
+            ],
+        }
+        return "\n\n".join(
+            [
+                load_prompt("spec_composer"),
+                build_agent_visible_context(
+                    state,
+                    agent_id=self.agent_id,
+                    round_number=int(state.get("current_round", 0)),
+                ),
+                "Project manifest summary:",
+                json.dumps(manifest_summary, ensure_ascii=False, indent=2),
+                "Return only JSON with key spec_markdown. The value must be English-only Markdown.",
+                "The spec_markdown must include every required heading in order: "
+                + "; ".join(REQUIRED_FINAL_SPEC_HEADINGS),
+            ]
+        )
+
     @staticmethod
     def english_only(text: str) -> bool:
         return not any("\uac00" <= char <= "\ud7a3" for char in text)
+
+    @staticmethod
+    def has_required_headings(text: str) -> bool:
+        return all(heading in text for heading in REQUIRED_FINAL_SPEC_HEADINGS)
 
     @classmethod
     def _english_safe_user_intent(cls, text: str) -> str:

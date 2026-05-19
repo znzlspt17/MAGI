@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime, timezone
 from typing import Any
 
 from magi_spec.agents import (
@@ -14,9 +15,12 @@ from magi_spec.agents import (
     SpecComposer,
 )
 from magi_spec.agents.base import DEFAULT_SECTION_STATUS
+from magi_spec.core.agent_context import build_agent_visible_context
 from magi_spec.core.artifacts import ArtifactWriter
 from magi_spec.core.config import MagiConfig
 from magi_spec.core.evidence import EvidenceRegistry
+from magi_spec.core.prompts import load_prompt
+from magi_spec.core.provider_output import extract_json_object
 from magi_spec.core.state import (
     STATUS_ANALYZING,
     STATUS_CRITICAL_BLOCKED,
@@ -26,6 +30,11 @@ from magi_spec.core.state import (
     WorkflowState,
 )
 from magi_spec.providers.base import ProviderFactory
+from magi_spec.schemas.provider_packets import AnalysisPacket, normalize_review_status
+from magi_spec.skills.command_execution import (
+    append_guarded_command_result,
+    execute_command_guarded,
+)
 from magi_spec.skills.project_scan import scan_project_folder, summarize_project_context
 from magi_spec.skills.registry import SkillRegistry
 from magi_spec.skills.web_search import should_research, summarize_web_research, web_search
@@ -53,9 +62,24 @@ class WorkflowNodes:
             config=config, providers=providers, skills=skills, evidence=evidence
         )
         self.casper = CasperAgent(config=config, providers=providers, skills=skills, evidence=evidence)
-        self.conflict_resolver = ConflictResolver(skills=skills, evidence=evidence)
-        self.spec_composer = SpecComposer(skills=skills, evidence=evidence)
-        self.critical_reporter = CriticalReporter(skills=skills, evidence=evidence)
+        self.conflict_resolver = ConflictResolver(
+            config=config,
+            providers=providers,
+            skills=skills,
+            evidence=evidence,
+        )
+        self.spec_composer = SpecComposer(
+            config=config,
+            providers=providers,
+            skills=skills,
+            evidence=evidence,
+        )
+        self.critical_reporter = CriticalReporter(
+            config=config,
+            providers=providers,
+            skills=skills,
+            evidence=evidence,
+        )
 
     def project_context(self, state: WorkflowState) -> dict[str, Any]:
         project_dir = state.get("project_dir")
@@ -116,14 +140,19 @@ class WorkflowNodes:
 
     def analysis(self, state: WorkflowState) -> dict[str, Any]:
         request = state.get("user_request", "").strip()
-        assumptions = [
+        self.skills.assert_allowed("balthasar", "parse_intent")
+        self.skills.assert_allowed("balthasar", "classify_scope")
+        self.skills.assert_allowed("balthasar", "generate_assumptions")
+        self.skills.assert_allowed("balthasar", "detect_blocking_questions")
+
+        fallback_assumptions = [
             "사용자가 명시하지 않은 세부 구현 방식은 기존 프로젝트 관례를 우선한다.",
             "최종 산출물은 구현 에이전트가 바로 사용할 수 있는 영어 Markdown 명세다.",
         ]
-        blocking_questions: list[str] = []
+        fallback_blocking_questions: list[str] = []
         if not request:
-            blocking_questions.append("사용자 요청이 비어 있어 구현 방향을 결정할 수 없습니다.")
-        intent = "\n".join(
+            fallback_blocking_questions.append("사용자 요청이 비어 있어 구현 방향을 결정할 수 없습니다.")
+        fallback_intent = "\n".join(
             [
                 "# 의도 분석",
                 "",
@@ -131,7 +160,7 @@ class WorkflowNodes:
                 "원문 요청은 `raw/user_request.md`에 보존됩니다.",
             ]
         )
-        requirement_lock = "\n".join(
+        fallback_requirement_lock = "\n".join(
             [
                 "# 요구사항 잠금",
                 "",
@@ -140,7 +169,7 @@ class WorkflowNodes:
                 "- 모델 제공자 정보는 agent-visible 문맥에 포함하지 않습니다.",
             ]
         )
-        scope = "\n".join(
+        fallback_scope = "\n".join(
             [
                 "# 범위 분류",
                 "",
@@ -150,6 +179,23 @@ class WorkflowNodes:
                 "- Out of Scope: 구현 에이전트 실행, 배포, GUI, 웹 서비스.",
             ]
         )
+        analysis_packet = self._provider_analysis_packet(state)
+        packet = AnalysisPacket.from_provider_dict(
+            analysis_packet,
+            fallback_intent=fallback_intent,
+            fallback_requirement_lock=fallback_requirement_lock,
+            fallback_scope=fallback_scope,
+            fallback_assumptions=fallback_assumptions,
+            fallback_blocking_questions=fallback_blocking_questions,
+        )
+        intent = packet.intent_parse
+        requirement_lock = packet.requirement_lock
+        scope = packet.scope_classification
+        assumptions = packet.assumptions
+        blocking_questions = packet.blocking_questions
+        if not request and "사용자 요청이 비어 있어 구현 방향을 결정할 수 없습니다." not in blocking_questions:
+            blocking_questions.append("사용자 요청이 비어 있어 구현 방향을 결정할 수 없습니다.")
+
         assumption_doc = "# 초기 가정\n\n" + "\n".join(f"- {item}" for item in assumptions) + "\n"
         question_doc = "# 차단 질문\n\n"
         question_doc += "\n".join(f"- {item}" for item in blocking_questions) if blocking_questions else "- 없음\n"
@@ -195,14 +241,39 @@ class WorkflowNodes:
             "melchior_outputs": [melchior],
             "balthasar_outputs": [balthasar],
             "casper_outputs": [casper],
-            "section_status": dict(DEFAULT_SECTION_STATUS),
+            "section_status": merge_section_statuses(melchior, balthasar, casper),
             "created_artifacts": created,
         }
+
+    def _provider_analysis_packet(self, state: WorkflowState) -> dict[str, Any] | None:
+        route = self.config.model_routing["balthasar"]
+        provider = self.providers.get(route.provider)
+        prompt = "\n\n".join(
+            [
+                load_prompt("intent_parser"),
+                load_prompt("requirement_lock"),
+                build_agent_visible_context(
+                    state,
+                    agent_id="balthasar",
+                    round_number=0,
+                ),
+                "Return only JSON with keys: intent_parse, requirement_lock, scope_classification, assumptions, blocking_questions.",
+                "intent_parse, requirement_lock, scope_classification must be Korean Markdown.",
+                "assumptions and blocking_questions must be arrays of Korean strings.",
+            ]
+        )
+        raw_output = provider.complete(
+            [{"role": "user", "content": prompt}],
+            model=route.model,
+            temperature=0,
+        )
+        return extract_json_object(raw_output)
 
     def review_round(self, state: WorkflowState) -> dict[str, Any]:
         round_number = int(state.get("current_round", 0)) + 1
         round_dir = f"review_rounds/round_{round_number:02d}"
         created = list(state.get("created_artifacts", []))
+        self._maybe_execute_guarded_review_command(state)
 
         melchior = self.melchior.review(state, round_number=round_number).to_dict()
         balthasar = self.balthasar.review(state, round_number=round_number).to_dict()
@@ -212,15 +283,19 @@ class WorkflowNodes:
         state_for_conflict["melchior_outputs"] = list(state.get("melchior_outputs", [])) + [melchior]
         state_for_conflict["balthasar_outputs"] = list(state.get("balthasar_outputs", [])) + [balthasar]
         state_for_conflict["casper_outputs"] = list(state.get("casper_outputs", [])) + [casper]
-        state_for_conflict["section_status"] = dict(DEFAULT_SECTION_STATUS)
+        state_for_conflict["section_status"] = merge_section_statuses(melchior, balthasar, casper)
         conflict = self.conflict_resolver.resolve(state_for_conflict, round_number=round_number).to_dict()
+        resolved_section_status = _resolved_section_status(
+            conflict.get("section_status"),
+            state_for_conflict["section_status"],
+        )
 
         artifacts = {
             f"{round_dir}/melchior_review.ko.md": melchior["content"],
             f"{round_dir}/balthasar_review.ko.md": balthasar["content"],
             f"{round_dir}/casper_review.ko.md": casper["content"],
             f"{round_dir}/conflict_resolution.ko.md": conflict["content"],
-            f"{round_dir}/section_status.json": DEFAULT_SECTION_STATUS,
+            f"{round_dir}/section_status.json": resolved_section_status,
         }
         for relative_path, content in artifacts.items():
             if relative_path.endswith(".json"):
@@ -236,9 +311,43 @@ class WorkflowNodes:
             "balthasar_outputs": state_for_conflict["balthasar_outputs"],
             "casper_outputs": state_for_conflict["casper_outputs"],
             "conflict_reports": list(state.get("conflict_reports", [])) + [conflict],
-            "section_status": dict(DEFAULT_SECTION_STATUS),
+            "section_status": resolved_section_status,
             "created_artifacts": created,
         }
+
+    def _maybe_execute_guarded_review_command(self, state: WorkflowState) -> None:
+        if not state.get("command_execution_allowed", False):
+            return
+        command_log_path = state.get("command_log_path")
+        if not command_log_path:
+            return
+        working_directory = state.get("project_dir") or state.get("output_dir")
+        if not working_directory:
+            return
+        command = ["pytest", "--version"]
+        try:
+            result = execute_command_guarded(
+                command,
+                working_directory=working_directory,
+                requesting_agent="casper",
+                allowed=True,
+                timeout_seconds=30,
+            )
+        except Exception as exc:
+            result = {
+                "command": command,
+                "working_directory": str(working_directory),
+                "exit_code": -1,
+                "stdout_summary": "",
+                "stderr_summary": str(exc),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "requesting_agent": "casper",
+            }
+        append_guarded_command_result(
+            result,
+            command_log_path=command_log_path,
+            evidence_registry=self.evidence,
+        )
 
     def compose_candidate(self, state: WorkflowState) -> dict[str, Any]:
         manifest = self.writer.read_json("context/project_manifest.json")
@@ -280,3 +389,32 @@ def all_agents_pass(state: WorkflowState) -> bool:
     latest_pass = all(output[-1].get("status") == "PASS" for output in outputs)
     sections_pass = all(status == "PASS" for status in state.get("section_status", {}).values())
     return latest_pass and sections_pass
+
+
+def merge_section_statuses(*agent_outputs: dict[str, Any]) -> dict[str, str]:
+    severity = {"PASS": 0, "REVISE": 1, "FAIL": 2}
+    merged = dict(DEFAULT_SECTION_STATUS)
+    for output in agent_outputs:
+        for section, status in output.get("section_status", {}).items():
+            normalized = normalize_review_status(status, default="REVISE")
+            current = merged.get(section, "PASS")
+            if severity[normalized] > severity.get(current, 0):
+                merged[section] = normalized
+    return merged
+
+
+def _resolved_section_status(
+    candidate: Any,
+    fallback: dict[str, str],
+) -> dict[str, str]:
+    if not isinstance(candidate, dict):
+        return dict(fallback)
+    resolved = dict(fallback)
+    severity = {"PASS": 0, "REVISE": 1, "FAIL": 2}
+    for section, status in candidate.items():
+        if section not in resolved:
+            continue
+        normalized = normalize_review_status(status, default="REVISE")
+        if severity[normalized] > severity.get(resolved[section], 0):
+            resolved[section] = normalized
+    return resolved

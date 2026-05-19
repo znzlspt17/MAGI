@@ -10,6 +10,8 @@ from typing import Any
 
 import yaml
 
+from magi_spec.core.errors import MagiError
+
 
 AGENT_KEYS = [
     "melchior",
@@ -19,6 +21,7 @@ AGENT_KEYS = [
     "spec_composer",
     "critical_reporter",
 ]
+VALID_WEB_SEARCH_MODES = {"auto", "on", "off"}
 
 
 @dataclass(slots=True)
@@ -88,10 +91,37 @@ class MagiConfig:
         base.max_review_rounds = int(review.get("max_review_rounds", base.max_review_rounds))
         base.analysis_language = str(language.get("analysis", base.analysis_language))
         base.final_spec_language = str(language.get("final_spec", base.final_spec_language))
-        base.web_search = str(capabilities.get("web_search", base.web_search))
+        base.web_search = _normalize_web_search_mode(
+            capabilities.get("web_search", base.web_search)
+        )
         base.command_execution = bool(capabilities.get("command_execution", base.command_execution))
         base.project_scan = bool(capabilities.get("project_scan", base.project_scan))
+        base.validate()
         return base
 
     def private_model_assignments(self) -> dict[str, dict[str, str]]:
         return {agent: route.to_dict() for agent, route in self.model_routing.items()}
+
+    def validate(self) -> None:
+        if self.min_review_rounds < 1:
+            raise MagiError(f"min_review_rounds must be >= 1, got {self.min_review_rounds}.")
+        if self.max_review_rounds < 1:
+            raise MagiError(f"max_review_rounds must be >= 1, got {self.max_review_rounds}.")
+        if self.min_review_rounds > self.max_review_rounds:
+            raise MagiError(
+                "min_review_rounds cannot be greater than max_review_rounds. "
+                f"Got min={self.min_review_rounds}, max={self.max_review_rounds}."
+            )
+        if self.web_search not in VALID_WEB_SEARCH_MODES:
+            raise MagiError(
+                f"Invalid web_search mode '{self.web_search}'. "
+                "Allowed values are: auto, on, off."
+            )
+
+
+def _normalize_web_search_mode(value: Any) -> str:
+    if isinstance(value, bool):
+        return "on" if value else "off"
+    if value is None:
+        return "auto"
+    return str(value)

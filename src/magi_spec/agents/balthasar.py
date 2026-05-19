@@ -10,10 +10,11 @@ from magi_spec.schemas.agent_result import AgentResult
 class BalthasarAgent(BaseAgent):
     agent_id = "balthasar"
     display_name = "BALTHASAR"
+    prompt_id = "balthasar"
 
     def review(self, state: WorkflowState, *, round_number: int) -> AgentResult:
         self.skills.assert_allowed(self.agent_id, "requirement_review")
-        content = "\n".join(
+        fallback_content = "\n".join(
             [
                 "# BALTHASAR 요구사항 검토",
                 "",
@@ -26,4 +27,9 @@ class BalthasarAgent(BaseAgent):
                 "결론: 사용자 의도와 승인 흐름을 훼손하지 않으므로 PASS입니다.",
             ]
         )
-        return self._result(content, evidence_summary="BALTHASAR requirement review passed.")
+        return self._review_with_provider(
+            state,
+            round_number=round_number,
+            fallback_content=fallback_content,
+            evidence_summary="BALTHASAR requirement review completed.",
+        )

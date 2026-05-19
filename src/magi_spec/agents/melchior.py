@@ -10,10 +10,11 @@ from magi_spec.schemas.agent_result import AgentResult
 class MelchiorAgent(BaseAgent):
     agent_id = "melchior"
     display_name = "MELCHIOR"
+    prompt_id = "melchior"
 
     def review(self, state: WorkflowState, *, round_number: int) -> AgentResult:
         self.skills.assert_allowed(self.agent_id, "architecture_review")
-        content = "\n".join(
+        fallback_content = "\n".join(
             [
                 "# MELCHIOR 아키텍처 검토",
                 "",
@@ -26,4 +27,9 @@ class MelchiorAgent(BaseAgent):
                 "결론: 현재 후보 명세는 아키텍처 책임 분리를 충분히 강제하므로 PASS입니다.",
             ]
         )
-        return self._result(content, evidence_summary="MELCHIOR architecture review passed.")
+        return self._review_with_provider(
+            state,
+            round_number=round_number,
+            fallback_content=fallback_content,
+            evidence_summary="MELCHIOR architecture review completed.",
+        )

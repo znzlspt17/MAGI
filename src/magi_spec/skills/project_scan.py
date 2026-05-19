@@ -68,6 +68,9 @@ def scan_project_folder(project_dir: str | Path) -> dict[str, Any]:
             stat = path.stat()
         except OSError:
             continue
+        text_candidate = is_probably_text(path)
+        if stat.st_size > MAX_FILE_SIZE and not text_candidate:
+            continue
         relative = path.relative_to(root).as_posix()
         entry: dict[str, Any] = {
             "path": relative,
@@ -75,7 +78,7 @@ def scan_project_folder(project_dir: str | Path) -> dict[str, Any]:
             "text": False,
             "preview": "",
         }
-        if stat.st_size <= MAX_FILE_SIZE and is_probably_text(path):
+        if stat.st_size <= MAX_FILE_SIZE and text_candidate:
             try:
                 entry["preview"] = path.read_text(encoding="utf-8", errors="replace")[:PREVIEW_SIZE]
                 entry["text"] = True

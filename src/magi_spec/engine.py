@@ -9,7 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from magi_spec.core.artifacts import ArtifactWriter
-from magi_spec.core.config import MagiConfig
+from magi_spec.core.config import MagiConfig, VALID_WEB_SEARCH_MODES
 from magi_spec.core.errors import InvalidStateError, MagiError, MissingCredentialError
 from magi_spec.core.evidence import EvidenceRegistry
 from magi_spec.core.state import (
@@ -90,6 +90,8 @@ class MagiSpecEngine:
         input_source: str = "direct_text",
         overwrite: bool = False,
     ) -> MagiResult:
+        self.config.validate()
+        self._validate_web_search_mode(web_search_mode)
         self._validate_provider_credentials()
         writer = ArtifactWriter(output_dir, allow_overwrite=overwrite)
         writer.prepare()
@@ -242,3 +244,11 @@ class MagiSpecEngine:
                     f"Provider '{provider}' is a future extension stub and is not supported "
                     "for MAGI v1 runtime. Use provider 'openai' for production or 'mock' for tests."
                 )
+
+    def _validate_web_search_mode(self, mode: str | None) -> None:
+        if mode is None:
+            return
+        if mode not in VALID_WEB_SEARCH_MODES:
+            raise MagiError(
+                f"Invalid web_search_mode '{mode}'. Allowed values are: auto, on, off."
+            )

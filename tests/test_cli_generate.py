@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from magi_spec.cli import main
@@ -69,3 +70,27 @@ def test_cli_status(mock_config_file: Path, tmp_path: Path) -> None:
     code = main(["status", str(output), "--config", str(mock_config_file)])
 
     assert code == 0
+
+
+def test_cli_generate_with_allow_command_execution_logs_commands(
+    mock_config_file: Path,
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "magi_output"
+
+    code = main(
+        [
+            "generate",
+            "--text",
+            "Run guarded diagnostics.",
+            "--output",
+            str(output),
+            "--allow-command-execution",
+            "--config",
+            str(mock_config_file),
+        ]
+    )
+
+    assert code == 0
+    command_log = json.loads((output / "execution" / "command_log.json").read_text(encoding="utf-8"))
+    assert len(command_log["commands"]) >= 1
