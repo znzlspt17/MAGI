@@ -26,28 +26,39 @@ If OpenAI is selected and credentials are missing, MAGI fails with an actionable
 
 ## OpenAI-Only v1 Runtime
 
-Different MAGI agents can still use different OpenAI models through private routing:
+Different MAGI agents can still use different OpenAI models through private routing.
+
+Default model configuration (applied when no config file is provided):
 
 ```yaml
 model_routing:
   melchior:
     provider: openai
-    model: configurable-openai-model
+    model: gpt-5.4-nano    # default
   balthasar:
     provider: openai
-    model: configurable-openai-model
+    model: gpt-5.4-nano    # default
   casper:
     provider: openai
-    model: configurable-openai-model
+    model: gpt-5.4-nano    # default
   conflict_resolver:
     provider: openai
-    model: configurable-openai-model
+    model: gpt-5.4-nano    # default
   spec_composer:
     provider: openai
-    model: configurable-openai-model
+    model: gpt-5.4-nano    # default
   critical_reporter:
     provider: openai
-    model: configurable-openai-model
+    model: gpt-5.4-nano    # default
+```
+
+Configuration file lookup priority (highest to lowest):
+
+```text
+1. CLI --config ./model_config.yaml
+2. Environment variable MAGI_CONFIG_PATH
+3. magi_config.yaml inside the output directory
+4. Built-in defaults (shown above)
 ```
 
 Anthropic, Google, local, and self-hosted providers are future extension stubs in v1. They do not require credentials, but they are not supported for production runtime.
@@ -87,6 +98,12 @@ Generate from a file:
 magi-spec generate --input request.md --output ./magi_output
 ```
 
+Generate from a file, overwriting an existing output directory:
+
+```bash
+magi-spec generate --input request.md --output ./magi_output --force
+```
+
 Generate from direct text:
 
 ```bash
@@ -123,10 +140,20 @@ Revise with feedback:
 magi-spec revise ./magi_output --feedback feedback.md
 ```
 
+Revision re-enters the workflow at the `Requirement Lock` stage, merges the feedback into existing requirements, and resets the round counter. Previous review artifacts are preserved under `review_rounds/revision_N/`.
+
 Show status:
 
 ```bash
 magi-spec status ./magi_output
+```
+
+## Exit Codes
+
+```text
+0  — Successful completion (Approval Candidate generated, or FINALIZED after approve)
+1  — Input error (missing file, missing OPENAI_API_KEY, invalid arguments, etc.)
+2  — CRITICAL_BLOCKED (review could not reach consensus within max rounds)
 ```
 
 ## Python API
@@ -154,27 +181,55 @@ result = engine.approve("./magi_output")
 print(result.final_spec_path)
 ```
 
+Revision:
+
+```python
+result = engine.revise(
+    output_dir="./magi_output",
+    feedback_path="feedback.md",
+)
+```
+
+Status:
+
+```python
+status = engine.status("./magi_output")
+print(status.state)              # REVIEWING | APPROVAL_CANDIDATE | FINALIZED | CRITICAL_BLOCKED
+print(status.current_round)      # number of completed review rounds
+print(status.section_statuses)   # dict[str, str] — per-section current status
+print(status.artifacts)          # list of generated artifact paths
+print(status.last_updated_at)    # ISO 8601 timestamp
+```
+
 ## Output Directory
 
-MAGI saves intermediate and final artifacts:
+MAGI saves intermediate and final artifacts.
+
+Always generated:
 
 ```text
 magi_output/
   raw/user_request.md
   context/project_manifest.json
   context/project_summary.ko.md
-  research/web_sources.json
-  research/web_research_summary.ko.md
   evidence/evidence_registry.json
-  execution/command_log.json
   analysis/*.ko.md
   agents/initial/*.ko.md
   review_rounds/round_*/
-  draft/approval_candidate_spec.en.md
-  final/FINAL_AGENT_SPEC.md
-  critical/
   state/magi_state.json
   state/private_model_assignments.json
+```
+
+Generated only under stated conditions:
+
+```text
+  research/web_sources.json           — --web-search on or auto (when triggered)
+  research/web_research_summary.ko.md — same
+  execution/command_log.json          — --allow-command-execution only
+  draft/approval_candidate_spec.en.md — after all sections reach PASS
+  final/FINAL_AGENT_SPEC.md           — after magi-spec approve
+  critical/CRITICAL_REPORT.ko.md      — CRITICAL_BLOCKED only
+  critical/FAILED_AGENT_SPEC_DRAFT.en.md — CRITICAL_BLOCKED only
 ```
 
 Intermediate analysis and review artifacts are Korean. The approval candidate and final agent specification are English.
@@ -198,9 +253,13 @@ The provider interface is intentionally isolated behind `LLMProvider.complete(..
 
 Project scanning is read-only. MAGI skips `.git`, virtual environments, `node_modules`, build outputs, caches, `.env` files, secret-like files, and large binaries by default.
 
+Large binary criteria: any file over 1 MB, or files with binary extensions (images, video, audio, archives, compiled binaries, `.pyc`, `.db`, etc.). Priority exceptions that are always read include `README.md`, `pyproject.toml`, `package.json`, `*.md`, `*.toml`, `*.yaml`, and `*.json` under 1 MB.
+
 ## Web Research
 
 `--web-search` supports `auto`, `on`, and `off`. Web evidence is logged separately and must not be treated as a user requirement unless explicitly classified.
+
+In `auto` mode, web search is triggered when: the user request names an external library, SDK, API, or framework; version compatibility verification is needed; or the Blocking Question Detector identifies a question that depends on an external technical fact.
 
 ## Command Execution Guard
 
