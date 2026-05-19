@@ -148,6 +148,14 @@ Show status:
 magi-spec status ./magi_output
 ```
 
+Monitor an active run:
+
+```text
+magi_output/state/heartbeat.json
+```
+
+While `generate` or `revise` is processing, MAGI writes this heartbeat immediately and then refreshes it every 10 seconds. Web services can treat the run as active when `running` is `true` and `last_heartbeat_at` is recent. On normal completion MAGI writes `running: false` with the final status; on an exception it writes `lifecycle: failed` with an error summary.
+
 ## Exit Codes
 
 ```text
@@ -217,6 +225,7 @@ magi_output/
   agents/initial/*.ko.md
   review_rounds/round_*/
   state/magi_state.json
+  state/heartbeat.json
   state/private_model_assignments.json
 ```
 

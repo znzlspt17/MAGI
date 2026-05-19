@@ -32,6 +32,27 @@ def test_section_status_persisted(mock_engine, tmp_path: Path) -> None:
     assert section_status["architecture"] == "PASS"
 
 
+def test_generate_writes_stopped_heartbeat(mock_engine, tmp_path: Path) -> None:
+    output = tmp_path / "out"
+    result = mock_engine.generate_from_text(
+        text="Build tests.",
+        output_dir=str(output),
+        web_search_mode="off",
+    )
+
+    heartbeat = read_json(output / "state" / "heartbeat.json")
+    state = read_json(output / "state" / "magi_state.json")
+
+    assert result.heartbeat_path == str(output / "state" / "heartbeat.json")
+    assert heartbeat["run_id"] == state["run_id"]
+    assert heartbeat["running"] is False
+    assert heartbeat["lifecycle"] == "stopped"
+    assert heartbeat["status"] == "PASS_PENDING_USER_APPROVAL"
+    assert heartbeat["interval_seconds"] == 10.0
+    assert "last_heartbeat_at" in heartbeat
+    assert "state/heartbeat.json" in state["created_artifacts"]
+
+
 def test_guarded_command_result_logged_when_allowed(mock_engine, tmp_path: Path) -> None:
     output = tmp_path / "out"
     mock_engine.generate_from_text(

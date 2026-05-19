@@ -110,6 +110,23 @@ magi-spec revise ./magi_output --feedback feedback.md
 magi-spec status ./magi_output
 ```
 
+### 4.7 처리 중 상태 모니터링
+
+`generate` 또는 `revise`가 실행되는 동안 MAGI는 다음 파일을 즉시 생성하고 10초마다 갱신합니다.
+
+```text
+magi_output/state/heartbeat.json
+```
+
+웹서비스는 이 파일을 읽어 MAGI가 처리 중인지 판단할 수 있습니다.
+
+- `running: true`이고 `last_heartbeat_at`이 최근이면 처리 중입니다.
+- `running: false`이면 MAGI 처리가 종료된 상태입니다.
+- 정상 종료 시 `lifecycle: stopped`와 최종 `status`가 기록됩니다.
+- 예외 종료 시 `lifecycle: failed`와 에러 요약이 기록됩니다.
+
+운영에서는 네트워크/파일시스템 지연을 고려해 `last_heartbeat_at`이 20~30초 이상 갱신되지 않으면 비정상 중단 또는 응답 없음으로 취급하는 방식을 권장합니다.
+
 ## 5) Python API 사용
 
 ```python
@@ -126,6 +143,7 @@ result = engine.generate_from_file(
 
 print(result.status)
 print(result.approval_candidate_path)
+print(result.heartbeat_path)
 ```
 
 ## 6) 주요 출력물
@@ -139,6 +157,8 @@ print(result.approval_candidate_path)
 - `execution/command_log.json`
 - `analysis/*.ko.md`
 - `review_rounds/round_*/`
+- `state/magi_state.json`
+- `state/heartbeat.json`
 - `draft/approval_candidate_spec.en.md`
 - `final/FINAL_AGENT_SPEC.md`
 - `critical/CRITICAL_REPORT.ko.md` (실패 시)
@@ -147,10 +167,13 @@ print(result.approval_candidate_path)
 
 주요 상태:
 
+- `DRAFT`, `ANALYZING`, `RESEARCHING`, `REVIEWING`: 실행 중 중간 상태
 - `PASS_PENDING_USER_APPROVAL`: 승인 후보 생성 완료
 - `FINALIZED`: 최종 명세 확정
 - `CRITICAL_BLOCKED`: 최대 라운드 내 합의 실패
 - `REJECTED_BY_USER`: 사용자 피드백 기반 수정 대기/재실행
+
+`magi-spec status`는 저장된 최종/최근 상태를 보여줍니다. 프로세스가 지금 살아 있는지 확인하려면 `state/heartbeat.json`의 `running`과 `last_heartbeat_at`을 함께 확인해야 합니다.
 
 ## 8) 정책 요약
 
@@ -176,8 +199,14 @@ print(result.approval_candidate_path)
 - 증상: `approve` 실행 시 상태 오류
 - 조치: 먼저 `status`에서 `PASS_PENDING_USER_APPROVAL`인지 확인
 
+### 웹서비스에서 실행 여부 확인 불가
+
+- 증상: 요청 후 MAGI가 아직 처리 중인지, 멈췄는지 구분하기 어려움
+- 조치: `state/heartbeat.json`을 폴링하고 `running`, `status`, `last_heartbeat_at`, `lifecycle` 값을 확인
+
 ## 10) 운영 권장
 
 - CI에서는 기본적으로 mock provider 테스트를 실행하세요.
 - 실제 OpenAI 라우팅 검증은 별도 환경변수/비밀관리 정책 아래 스모크 테스트로 분리하세요.
 - 산출물 디렉터리는 실행 단위로 분리(`./runs/<timestamp>`)해 이력 추적성을 유지하세요.
+- 웹서비스는 실행 중 요청마다 별도 output 디렉터리를 부여하고, `state/heartbeat.json`을 5~10초 간격으로 폴링하세요.

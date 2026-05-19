@@ -91,6 +91,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"critical_report: {result.critical_report_path}")
     if result.state_path:
         print(f"state: {result.state_path}")
+    if result.heartbeat_path:
+        print(f"heartbeat: {result.heartbeat_path}")
     return 0
 
 

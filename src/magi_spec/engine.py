@@ -12,6 +12,7 @@ from magi_spec.core.artifacts import ArtifactWriter
 from magi_spec.core.config import MagiConfig, VALID_WEB_SEARCH_MODES
 from magi_spec.core.errors import InvalidStateError, MagiError, MissingCredentialError
 from magi_spec.core.evidence import EvidenceRegistry
+from magi_spec.core.heartbeat import HEARTBEAT_PATH, RunHeartbeat
 from magi_spec.core.state import (
     STATUS_FINALIZED,
     STATUS_PASS_PENDING_USER_APPROVAL,
@@ -36,6 +37,7 @@ class MagiResult:
     final_spec_path: str | None = None
     critical_report_path: str | None = None
     state_path: str | None = None
+    heartbeat_path: str | None = None
 
 
 class MagiSpecEngine:
@@ -197,7 +199,16 @@ class MagiSpecEngine:
             evidence=evidence,
         )
         workflow = build_workflow(nodes)
-        final_state = MagiState.from_workflow_state(workflow.invoke(state.to_workflow_state()))
+        if HEARTBEAT_PATH not in state.created_artifacts:
+            state.created_artifacts.append(HEARTBEAT_PATH)
+        heartbeat = RunHeartbeat(writer=writer, state=state)
+        heartbeat.start()
+        try:
+            final_state = MagiState.from_workflow_state(workflow.invoke(state.to_workflow_state()))
+            heartbeat.stop(final_status=final_state.status)
+        except Exception as exc:
+            heartbeat.stop(exc=exc)
+            raise
         writer.write_json("evidence/evidence_registry.json", evidence.to_dict(), overwrite=True)
         if "evidence/evidence_registry.json" not in final_state.created_artifacts:
             final_state.created_artifacts.append("evidence/evidence_registry.json")
@@ -227,6 +238,7 @@ class MagiSpecEngine:
             final_spec_path=state.final_agent_spec,
             critical_report_path=state.critical_report,
             state_path=str(Path(state.output_dir) / "state" / "magi_state.json"),
+            heartbeat_path=str(Path(state.output_dir) / HEARTBEAT_PATH),
         )
 
     def _validate_provider_credentials(self) -> None:
