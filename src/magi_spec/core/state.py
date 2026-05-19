@@ -50,6 +50,7 @@ class WorkflowState(TypedDict, total=False):
     casper_outputs: list[dict[str, Any]]
     conflict_reports: list[dict[str, Any]]
     section_status: dict[str, str]
+    stagnant_rounds: int
     approval_candidate_spec: str | None
     final_agent_spec: str | None
     critical_report: str | None
@@ -84,6 +85,7 @@ class MagiState:
     casper_outputs: list[dict[str, Any]] = field(default_factory=list)
     conflict_reports: list[dict[str, Any]] = field(default_factory=list)
     section_status: dict[str, str] = field(default_factory=dict)
+    stagnant_rounds: int = 0
     approval_candidate_spec: str | None = None
     final_agent_spec: str | None = None
     critical_report: str | None = None

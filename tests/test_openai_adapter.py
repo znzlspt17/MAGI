@@ -29,7 +29,7 @@ def test_openai_adapter_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     provider = OpenAIProvider(api_key=None)
     with pytest.raises(MissingCredentialError):
-        provider.complete([{"role": "user", "content": "hi"}], model="gpt-4.1-mini")
+        provider.complete([{"role": "user", "content": "hi"}], model="gpt-5.4-nano")
 
 
 def test_openai_adapter_prefers_output_text(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -40,7 +40,7 @@ def test_openai_adapter_prefers_output_text(monkeypatch: pytest.MonkeyPatch) -> 
         return _FakeHTTPResponse({"output_text": "hello"})
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
-    text = provider.complete([{"role": "user", "content": "hi"}], model="gpt-4.1-mini")
+    text = provider.complete([{"role": "user", "content": "hi"}], model="gpt-5.4-nano")
     assert text == "hello"
 
 
@@ -58,7 +58,7 @@ def test_openai_adapter_parses_output_items(monkeypatch: pytest.MonkeyPatch) -> 
         "urlopen",
         lambda request, timeout=120: _FakeHTTPResponse(payload),  # noqa: ARG005
     )
-    text = provider.complete([{"role": "user", "content": "hi"}], model="gpt-4.1-mini")
+    text = provider.complete([{"role": "user", "content": "hi"}], model="gpt-5.4-nano")
     assert text == "line1\nline2"
 
 
@@ -77,4 +77,4 @@ def test_openai_adapter_http_error_raises_magi_error(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(urllib.request, "urlopen", raise_http_error)
     with pytest.raises(MagiError, match="HTTP 401"):
-        provider.complete([{"role": "user", "content": "hi"}], model="gpt-4.1-mini")
+        provider.complete([{"role": "user", "content": "hi"}], model="gpt-5.4-nano")

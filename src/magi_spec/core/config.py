@@ -46,7 +46,7 @@ class MagiConfig:
 
     @classmethod
     def default(cls) -> "MagiConfig":
-        default_model = os.environ.get("MAGI_SPEC_OPENAI_MODEL", "gpt-4.1-mini")
+        default_model = os.environ.get("MAGI_SPEC_OPENAI_MODEL", "gpt-5.4-nano")
         return cls(
             model_routing={
                 agent: ModelRoute(provider="openai", model=default_model)

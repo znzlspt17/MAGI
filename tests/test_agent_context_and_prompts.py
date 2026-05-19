@@ -24,8 +24,8 @@ def test_agent_visible_context_redacts_routing_metadata() -> None:
         "assumptions": ["a"],
         "blocking_questions": ["b"],
         "section_status": {"mission": "PASS"},
-        "model_routing": {"melchior": {"provider": "openai", "model": "gpt-4.1-mini"}},
-        "private_model_assignments": {"melchior": {"provider": "openai", "model": "gpt-4.1-mini"}},
+        "model_routing": {"melchior": {"provider": "openai", "model": "gpt-5.4-nano"}},
+        "private_model_assignments": {"melchior": {"provider": "openai", "model": "gpt-5.4-nano"}},
     }
 
     context = build_agent_visible_context(state, agent_id="melchior", round_number=1)
@@ -33,7 +33,7 @@ def test_agent_visible_context_redacts_routing_metadata() -> None:
     assert "private_model_assignments" not in context
     assert "model_routing" not in context
     assert "openai" not in context.lower()
-    assert "gpt-4.1-mini" not in context.lower()
+    assert "gpt-5.4-nano" not in context.lower()
     assert context_contains_routing_metadata(context) is False
 
 
@@ -52,7 +52,7 @@ def test_peer_output_content_is_redacted_for_routing_identity() -> None:
         "run_id": "magi_test",
         "status": "REVIEWING",
         "user_request": "Build package.",
-        "melchior_outputs": [{"status": "PASS", "content": "Use OpenAI gpt-4.1-mini result"}],
+        "melchior_outputs": [{"status": "PASS", "content": "Use OpenAI gpt-5.4-nano result"}],
         "balthasar_outputs": [{"status": "PASS", "content": "Provider: anthropic"}],
         "casper_outputs": [{"status": "PASS", "content": "No issue"}],
         "section_status": {"mission": "PASS"},
@@ -61,5 +61,5 @@ def test_peer_output_content_is_redacted_for_routing_identity() -> None:
     context = build_agent_visible_context(state, agent_id="casper", round_number=1)
 
     assert "openai" not in context.lower()
-    assert "gpt-4.1-mini" not in context.lower()
+    assert "gpt-5.4-nano" not in context.lower()
     assert "anthropic" not in context.lower()

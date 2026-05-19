@@ -304,6 +304,13 @@ class WorkflowNodes:
                 self.writer.write_text(relative_path, str(content))
             created.append(relative_path)
 
+        previous_section_status = state.get("section_status", {})
+        new_stagnant_rounds = (
+            state.get("stagnant_rounds", 0) + 1
+            if resolved_section_status == previous_section_status
+            else 0
+        )
+
         return {
             "status": STATUS_REVIEWING,
             "current_round": round_number,
@@ -312,6 +319,7 @@ class WorkflowNodes:
             "casper_outputs": state_for_conflict["casper_outputs"],
             "conflict_reports": list(state.get("conflict_reports", [])) + [conflict],
             "section_status": resolved_section_status,
+            "stagnant_rounds": new_stagnant_rounds,
             "created_artifacts": created,
         }
 
