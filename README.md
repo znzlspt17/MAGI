@@ -317,6 +317,14 @@ Classifies the request type (`product`, `feature`, `bugfix`, `refactor`, `infra`
 
 If direction-changing blocking questions are found in a non-interactive environment, the run exits with `NEEDS_USER_INPUT`. Use `magi-spec answer` to inject answers and resume.
 
+### Pausing and Resuming (state model)
+
+MAGI v2 does **not** use LangGraph's `interrupt()` / checkpointer human-in-the-loop mechanism. When the interview stage finds direction-changing blocking questions, the `await_user` node routes to `END` and the run terminates with `NEEDS_USER_INPUT`. The full run state is serialized to `state/magi_state.json`.
+
+Resuming is not an in-process LangGraph resume. `magi-spec answer` (or `engine.answer(...)`) loads `magi_state.json`, injects the answers into the requirement lock sheet, and **re-invokes the graph from `START`**. Earlier idempotent nodes (`project_context`, `web_research`) may run again.
+
+This is a deliberate trade-off: a portable JSON state file that survives across processes and machines, instead of keeping a live checkpointer in memory. The engine stays stateless between invocations and every run is fully auditable from disk.
+
 ### Requirement Lock Sheet
 
 All user answers, inferred assumptions, mandatory requirements, non-scope items, and constraints are fixed into a structured JSON sheet (`analysis/requirement_lock_sheet.json`). This sheet is the single source of truth for the compiler. User feedback during `revise` updates only the lock sheet — it does not restart the full pipeline.

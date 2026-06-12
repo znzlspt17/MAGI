@@ -149,6 +149,8 @@ MAGI가 `NEEDS_USER_INPUT` 상태로 종료되면 `analysis/05_blocking_question
 magi-spec answer ./magi_output --answers answers.json
 ```
 
+> **재개 방식 안내(중요).** MAGI v2는 LangGraph의 `interrupt()`/체크포인터 기반 HITL을 사용하지 않습니다. `interview` 단계에서 방향전환급 차단 질문이 발견되면 `await_user` 노드가 `END`로 가며 실행이 종료되고, 전체 상태는 `state/magi_state.json`에 직렬화됩니다. `magi-spec answer`는 이 JSON을 읽어 답변을 Lock Sheet에 주입한 뒤 그래프를 **`START`부터 다시 호출**하는 "종료 후 재시작" 방식입니다(프로세스 내 LangGraph 재개가 아님). `project_context`·`web_research` 같은 선행 노드가 다시 실행될 수 있습니다. 이는 체크포인터를 상시 메모리에 유지하는 비용 대신, 프로세스·머신을 넘어 이식 가능한 JSON 상태 파일을 주고받는 의도적 설계 선택입니다.
+
 `answers.json` 형식:
 
 ```json

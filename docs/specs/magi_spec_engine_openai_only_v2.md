@@ -18,7 +18,7 @@
 | Checklist Critic | `critic` | `casper` |
 | Spec Compiler | `compiler` | `spec_composer` |
 | Critical Reporter | `critical_reporter` | `critical_reporter` |
-| (v1 전용) Architecture Reviewer | — | `melchior` |
+| (v1 전용) Architecture Reviewer | — | `melc`h`ior` |
 | (v1 전용) Conflict Resolver | — | `conflict_resolver` |
 
 `MagiConfig.default()` → `AGENT_KEYS_V2 = [interviewer, critic, compiler, critical_reporter]`, `pipeline_version="v2"`
@@ -91,6 +91,8 @@ START → project_context → web_research → interview
   compose_candidate → END ; critical_report → END ; await_user → END
 ```
 - `route_after_interview`: blocking question이 **방향전환급(direction-changing)** 이고 비대화 모드면 `await_user`(status `NEEDS_USER_INPUT`), 아니면 진행.
+
+> **재개 모델(명시).** `await_user`는 LangGraph `interrupt()`가 아니라 `END`로 가는 일반 종료 노드다. 그래프는 checkpointer 없이 `graph.compile()`로 컴파일되며, 중단 시 전체 상태를 `state/magi_state.json`에 직렬화하고 프로세스를 종료한다. `engine.answer(...)`는 이 JSON을 로드해 답변을 Lock Sheet에 주입한 뒤 그래프를 `START`부터 재호출한다(프로세스 내 LangGraph resume이 아닌 "종료 후 재시작"). 따라서 이 흐름은 LangGraph HITL 규약 구현이 아니라, **외부 JSON 상태 기반 재개**로 명명·문서화한다. 체크포인터 상시 유지 비용을 피하고 이식성·감사가능성을 얻기 위한 의도적 선택이다.
 - `route_after_critic`: `unresolved_blocking == 0` → compose_candidate; `critic_pass_count < max_critic_passes and unresolved_blocking > 0` → spec_compile(재컴파일); `critic_pass_count >= max_critic_passes` → critical_report.
 - `project_context`/`web_research`/`compose_candidate`/`critical_report`는 v1 노드 재사용.
 
