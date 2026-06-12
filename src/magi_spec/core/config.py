@@ -20,6 +20,8 @@ AGENT_KEYS = [
     "critical_reporter",
 ]
 VALID_WEB_SEARCH_MODES = {"auto", "on", "off"}
+VALID_PIPELINE_VERSIONS = {"v2"}
+DEFAULT_PIPELINE_VERSION = "v2"
 
 
 @dataclass(slots=True)
@@ -40,6 +42,7 @@ class MagiConfig:
     command_execution: bool = False
     project_scan: bool = True
     max_critic_passes: int = 2
+    pipeline_version: str = DEFAULT_PIPELINE_VERSION
 
     @classmethod
     def default(cls) -> "MagiConfig":
@@ -92,9 +95,11 @@ class MagiConfig:
         review = data.get("review", {})
         language = data.get("language", {})
         capabilities = data.get("capabilities", {})
+        pipeline = data.get("pipeline", {})
         base.max_critic_passes = int(review.get("max_critic_passes", base.max_critic_passes))
         base.analysis_language = str(language.get("analysis", base.analysis_language))
         base.final_spec_language = str(language.get("final_spec", base.final_spec_language))
+        base.pipeline_version = str(pipeline.get("version", base.pipeline_version))
         base.web_search = _normalize_web_search_mode(
             capabilities.get("web_search", base.web_search)
         )
@@ -111,6 +116,11 @@ class MagiConfig:
             raise MagiError(
                 f"Invalid web_search mode '{self.web_search}'. "
                 "Allowed values are: auto, on, off."
+            )
+        if self.pipeline_version not in VALID_PIPELINE_VERSIONS:
+            raise MagiError(
+                f"Invalid pipeline_version '{self.pipeline_version}'. "
+                "Only 'v2' is supported by the current runtime."
             )
         if not (1 <= self.max_critic_passes <= 3):
             raise MagiError(

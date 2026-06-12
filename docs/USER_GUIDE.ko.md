@@ -23,15 +23,62 @@ pip install -e ".[dev]"
 
 ## 3) 기본 설정
 
+### 3.1 환경 변수
+
 OpenAI provider를 사용할 때:
 
 ```bash
 set OPENAI_API_KEY=...
 ```
 
+| 환경 변수 | 필수 | 기본값 | 설명 |
+|---|---|---|---|
+| `OPENAI_API_KEY` | OpenAI provider 사용 시 필수 | (없음) | 미설정 시 `MissingCredentialError` 발생 |
+| `MAGI_SPEC_OPENAI_MODEL` | 선택 | `gpt-5.4-nano` | OpenAI 라우팅의 기본 모델명 |
+
 테스트/로컬 검증에서는 mock provider 설정을 사용하면 API 키 없이 실행할 수 있습니다.
 
-### mock 설정 예시
+### 3.2 설정 파일 적용 방법
+
+설정 파일은 **명시적으로 전달**해야 적용됩니다. 기본 설정 파일 경로나 자동 탐색은 없으며, 아무것도 전달하지 않으면 OpenAI provider 기본값(`MagiConfig.default()`)이 사용됩니다.
+
+CLI에서는 모든 하위 명령에 `--config` 플래그로 YAML 또는 JSON 파일을 전달합니다.
+
+```bash
+magi-spec generate --input request.md --output ./magi_output --config mock.yaml
+magi-spec answer ./magi_output --answers answers.json --config mock.yaml
+```
+
+Python API에서는 `MagiConfig`를 직접 만들어 `MagiSpecEngine(config=...)`에 주입합니다.
+
+```python
+from magi_spec import MagiSpecEngine
+from magi_spec.core.config import MagiConfig
+
+config = MagiConfig.from_file("mock.yaml")   # 파일에서 로드
+engine = MagiSpecEngine(config=config)
+
+# 또는 mock provider 전용 엔진 헬퍼
+engine = MagiSpecEngine.with_mock_providers()
+```
+
+### 3.3 설정 스키마
+
+| 키 | 타입 | 기본값 | 설명 |
+|---|---|---|---|
+| `model_routing.<agent>.provider` | string | `openai` | agent별 provider (`openai` / `mock`) |
+| `model_routing.<agent>.model` | string | `MAGI_SPEC_OPENAI_MODEL` 값 | agent별 모델명 |
+| `capabilities.web_search` | string/bool | `auto` | `auto` / `on` / `off` (bool도 허용: true→on, false→off) |
+| `capabilities.command_execution` | bool | `false` | 명령 실행 허용 여부 |
+| `capabilities.project_scan` | bool | `true` | 프로젝트 스캔 허용 여부 |
+| `review.max_critic_passes` | int (1~3) | `2` | Checklist Critic 최대 패스 수 |
+| `language.analysis` | string | `ko` | 분석 산출물 언어 |
+| `language.final_spec` | string | `en` | 최종 명세 언어 |
+| `pipeline.version` | string | `v2` | 파이프라인 버전. 현재 런타임은 `v2`만 지원 |
+
+`<agent>`는 `interviewer`, `critic`, `compiler`, `critical_reporter` 중 하나입니다.
+
+### 3.4 mock 설정 예시
 
 ```yaml
 model_routing:
@@ -102,6 +149,28 @@ Spec Interviewer → Requirement Lock → Spec Compiler → Checklist Critic
 | 모든 필수 요구사항이 명세에 반영됨 | major |
 
 ## 5) 기본 사용 흐름
+
+### 5.0 CLI 명령 및 옵션 레퍼런스
+
+CLI 진입점은 `magi-spec`입니다. 모든 하위 명령은 `--config`로 설정 파일을 받을 수 있습니다.
+
+| 명령 | 위치 인자 | 옵션 |
+|---|---|---|
+| `generate` | (없음) | `--input` \| `--text` (택1, 필수), `--output` (필수), `--project`, `--web-search {auto,on,off}`, `--allow-command-execution`, `--overwrite`, `--pipeline {v1,v2}`, `--config` |
+| `approve` | `output_dir` (필수) | `--config` |
+| `revise` | `output_dir` (필수) | `--feedback` (필수), `--config` |
+| `answer` | `output_dir` (필수) | `--answers` (필수), `--config` |
+| `status` | `output_dir` (필수) | `--config` |
+
+옵션 설명:
+
+- `--input` / `--text`: 요청을 파일(`.md`/`.txt`) 또는 직접 텍스트로 전달. 상호 배타이며 둘 중 하나는 필수.
+- `--project`: 읽기 전용 프로젝트 컨텍스트 폴더.
+- `--web-search`: 웹 리서치 모드 (`auto`/`on`/`off`).
+- `--allow-command-execution`: 명세 생성 중 명령 실행 허용(기본 비활성).
+- `--overwrite`: 기존 출력 디렉터리 덮어쓰기 허용. 미지정 시 기존 디렉터리가 있으면 실패합니다.
+- `--pipeline`: 파이프라인 버전 오버라이드. 현재 런타임은 `v2`만 지원하며 그 외 값은 오류입니다.
+- `--config`: YAML 또는 JSON 설정 파일 경로(3장 참고).
 
 ### 5.1 파일 입력
 
@@ -188,6 +257,7 @@ result = engine.generate_from_file(
     project_dir="./target_project",
     web_search_mode="auto",
     allow_command_execution=False,
+    overwrite=False,
 )
 
 print(result.status)
@@ -195,9 +265,44 @@ print(result.approval_candidate_path)
 print(result.questions_path)   # NEEDS_USER_INPUT일 때 질문 파일 경로
 ```
 
-차단 질문 답변:
+### 6.1 엔진 생성
 
 ```python
+from magi_spec import MagiSpecEngine
+from magi_spec.core.config import MagiConfig
+
+# 기본(OpenAI) 설정
+engine = MagiSpecEngine()
+
+# 설정 파일 주입
+engine = MagiSpecEngine(config=MagiConfig.from_file("mock.yaml"))
+
+# mock provider 전용 엔진(테스트용, API 키 불필요)
+engine = MagiSpecEngine.with_mock_providers()
+```
+
+`MagiSpecEngine(config=..., providers=...)`에서 `providers`는 provider 팩토리 확장 포인트이며, 생략 시 기본 팩토리가 사용됩니다.
+
+### 6.2 텍스트 입력
+
+```python
+result = engine.generate_from_text(
+    text="Build a Python SDK for ...",
+    output_dir="./magi_output",
+    project_dir=None,
+    web_search_mode="auto",
+    allow_command_execution=False,
+    overwrite=False,
+)
+```
+
+### 6.3 승인 / 수정 / 상태 / 차단 질문 답변
+
+```python
+engine.approve("./magi_output")
+engine.revise(output_dir="./magi_output", feedback_path="feedback.md")
+engine.status("./magi_output")
+
 result = engine.answer(
     "./magi_output",
     answers=[
@@ -206,6 +311,9 @@ result = engine.answer(
 )
 ```
 
+> `generate_*`의 `overwrite=False`일 때 출력 디렉터리가 이미 존재하면 실패합니다. 재실행 시 `overwrite=True`를 사용하세요. `revise`/`answer`는 기존 run을 갱신하므로 내부적으로 덮어쓰기를 허용합니다.
+
+
 ## 7) 주요 출력물
 
 `magi_output/` 아래에 다음이 생성됩니다.
@@ -213,11 +321,14 @@ result = engine.answer(
 항상 생성:
 
 - `raw/user_request.md`
+- `execution/command_log.json`
+- `state/private_model_assignments.json` ← agent별 provider/model 라우팅 기록
 - `context/project_manifest.json`
 - `research/web_sources.json`
 - `evidence/evidence_registry.json`
 - `analysis/01_intent_parse.ko.md`
 - `analysis/02_requirement_lock.ko.md`
+- `analysis/03_scope_classification.ko.md`
 - `analysis/04_initial_assumptions.ko.md`
 - `analysis/05_blocking_questions.ko.md`
 - `analysis/requirement_lock_sheet.json` ← Lock Sheet (구조화)
@@ -228,6 +339,8 @@ result = engine.answer(
 
 조건부 생성:
 
+- `context/project_summary.ko.md` ← `--project` 제공 시
+- `research/web_research_summary.ko.md` ← 웹 리서치 실행 시
 - `draft/approval_candidate_spec.en.md` ← blocking issue 0개일 때
 - `final/FINAL_AGENT_SPEC.md` ← approve 후
 - `critical/CRITICAL_REPORT.ko.md` ← CRITICAL_BLOCKED일 때
@@ -256,10 +369,16 @@ result = engine.answer(
 - 증상: `OPENAI_API_KEY` 관련 에러
 - 조치: 환경 변수 설정 또는 mock provider 사용
 
-### pipeline.version 오류
+### pipeline 버전 오류
 
-- 증상: `Invalid pipeline_version` 에러
-- 조치: `v2`로 설정
+- 증상: `Invalid pipeline_version 'v1'. Only 'v2' is supported by the current runtime.`
+- 원인: `--pipeline`에 `v2` 외 값을 주거나 설정 파일 `pipeline.version`이 `v2`가 아님
+- 조치: `v2`로 설정(또는 `--pipeline` 생략)
+
+### 출력 디렉터리 존재 오류
+
+- 증상: 기존 출력 디렉터리가 있어 `generate`가 실패
+- 조치: 새 출력 경로를 사용하거나 `--overwrite`(API는 `overwrite=True`) 지정
 
 ### 차단 질문으로 인한 NEEDS_USER_INPUT
 

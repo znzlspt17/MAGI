@@ -31,6 +31,7 @@ class WorkflowState(TypedDict, total=False):
     output_dir: str
     web_search_mode: str
     command_execution_allowed: bool
+    pipeline_version: str
     # interview stage
     request_type: str
     assumptions: list[str]
@@ -65,6 +66,7 @@ class MagiState:
     output_dir: str
     web_search_mode: str = "auto"
     command_execution_allowed: bool = False
+    pipeline_version: str = "v2"
     # interview stage
     request_type: str = ""
     assumptions: list[str] = field(default_factory=list)

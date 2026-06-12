@@ -126,6 +126,7 @@ class MagiSpecEngine:
             output_dir=str(Path(output_dir).resolve()),
             web_search_mode=web_search_mode or self.config.web_search,
             command_execution_allowed=allow_command_execution or self.config.command_execution,
+            pipeline_version=self.config.pipeline_version,
             evidence_registry_path=str(writer.path("evidence/evidence_registry.json")),
             command_log_path=str(writer.path("execution/command_log.json")),
             created_artifacts=created,

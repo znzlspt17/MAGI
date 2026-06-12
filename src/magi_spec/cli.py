@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from magi_spec.core.config import MagiConfig
 from magi_spec.core.errors import MagiError
