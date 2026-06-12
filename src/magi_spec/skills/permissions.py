@@ -3,30 +3,16 @@
 from __future__ import annotations
 
 
-MELCHIOR = "melchior"
-BALTHASAR = "balthasar"
-CASPER = "casper"
-CONFLICT_RESOLVER = "conflict_resolver"
-SPEC_COMPOSER = "spec_composer"
+INTERVIEWER = "interviewer"
+CRITIC = "critic"
+COMPILER = "compiler"
 CRITICAL_REPORTER = "critical_reporter"
 
 
 AGENT_SKILL_PERMISSIONS: dict[str, set[str]] = {
-    MELCHIOR: {
+    INTERVIEWER: {
         "read_user_request",
         "scan_project_folder",
-        "read_project_file",
-        "summarize_project_context",
-        "web_search",
-        "record_evidence",
-        "architecture_review",
-        "cross_review",
-        "execute_command_guarded",
-    },
-    BALTHASAR: {
-        "read_user_request",
-        "scan_project_folder",
-        "read_project_file",
         "summarize_project_context",
         "web_search",
         "record_evidence",
@@ -34,26 +20,14 @@ AGENT_SKILL_PERMISSIONS: dict[str, set[str]] = {
         "classify_scope",
         "generate_assumptions",
         "detect_blocking_questions",
-        "requirement_review",
-        "cross_review",
     },
-    CASPER: {
+    CRITIC: {
         "read_user_request",
-        "scan_project_folder",
-        "read_project_file",
-        "summarize_project_context",
-        "web_search",
         "record_evidence",
-        "failure_review",
-        "cross_review",
-        "execute_command_guarded",
-    },
-    CONFLICT_RESOLVER: {
-        "record_evidence",
-        "resolve_conflicts",
+        "checklist_review",
         "write_artifact",
     },
-    SPEC_COMPOSER: {
+    COMPILER: {
         "compose_final_spec",
         "write_artifact",
     },
@@ -64,4 +38,4 @@ AGENT_SKILL_PERMISSIONS: dict[str, set[str]] = {
 }
 
 
-COMMAND_CAPABLE_AGENTS = {MELCHIOR, CASPER}
+COMMAND_CAPABLE_AGENTS = {COMPILER}

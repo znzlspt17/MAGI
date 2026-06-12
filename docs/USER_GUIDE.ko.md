@@ -1,4 +1,4 @@
-# MAGI Spec Engine 사용자 설명서
+# MAGI Spec Engine 사용자 설명서 (v2)
 
 ## 1) 개요
 
@@ -8,7 +8,8 @@ MAGI Spec Engine은 사용자 요청을 바로 구현하지 않고, 구현 에�
 
 - MAGI는 코드 구현기가 아니라 명세 생성기입니다.
 - 최종 산출물은 `final/FINAL_AGENT_SPEC.md`입니다.
-- v1 런타임은 OpenAI-only이며, 다중 provider는 확장 포인트로만 유지됩니다.
+- 런타임은 OpenAI-only이며, 다른 provider는 확장 포인트로만 유지됩니다.
+- v2(기본)는 SpecForge 4단계 파이프라인으로 동작합니다.
 
 ## 2) 설치
 
@@ -30,7 +31,32 @@ set OPENAI_API_KEY=...
 
 테스트/로컬 검증에서는 mock provider 설정을 사용하면 API 키 없이 실행할 수 있습니다.
 
-예시(`mock_config.yaml`):
+### v2 (기본) mock 설정 예시
+
+```yaml
+model_routing:
+  interviewer:
+    provider: mock
+    model: deterministic
+  critic:
+    provider: mock
+    model: deterministic
+  compiler:
+    provider: mock
+    model: deterministic
+  critical_reporter:
+    provider: mock
+    model: deterministic
+capabilities:
+  web_search: "off"
+  command_execution: false
+pipeline:
+  version: v2
+review:
+  max_critic_passes: 2
+```
+
+### v1 (레거시) mock 설정 예시
 
 ```yaml
 model_routing:
@@ -55,34 +81,75 @@ model_routing:
 capabilities:
   web_search: "off"
   command_execution: false
+pipeline:
+  version: v1
 ```
 
-## 4) 기본 사용 흐름
+## 4) v2 SpecForge 파이프라인
 
-1. 입력으로 초안 명세 생성
-2. 상태 확인
-3. 승인 또는 수정 피드백 반영
-4. 승인 시 최종 명세 확정
+v2는 4단계 결정론적 컴파일러입니다.
 
-### 4.1 파일 입력
+```
+Spec Interviewer → Requirement Lock → Spec Compiler → Checklist Critic
+```
+
+### 4.1 Spec Interviewer
+
+- 요청 유형을 분류합니다: `product` / `feature` / `bugfix` / `refactor` / `infra`
+- 차단 질문(방향전환급)과 가정 가능한 답변을 식별합니다.
+- 방향전환급 차단 질문이 있으면 `NEEDS_USER_INPUT` 상태로 종료합니다.
+
+### 4.2 Requirement Lock
+
+- 사용자 답변, 가정, 필수 요구사항, 비범위, 제약을 구조화된 Lock Sheet로 고정합니다.
+- 산출물: `analysis/requirement_lock_sheet.json`, `analysis/requirement_lock_sheet.ko.md`
+
+### 4.3 Spec Compiler
+
+- Lock Sheet를 입력으로 단일 영어 Markdown 명세를 생성합니다.
+- 반드시 26개 필수 섹션을 포함해야 합니다.
+- 산출물: `draft/approval_candidate_spec.en.md`
+
+### 4.4 Checklist Critic
+
+- 결정론적 체크(토큰 0) + LLM 보조 체크를 수행합니다.
+- 최대 2회(`max_critic_passes`) 실행합니다.
+- Blocking issue가 남으면 재컴파일, 한계를 초과하면 `CRITICAL_BLOCKED`입니다.
+
+체크 항목:
+
+| 항목 | 심각도 |
+|---|---|
+| 26개 필수 섹션 존재 | blocking |
+| Out of Scope 비어있지 않음 | blocking |
+| Forbidden Behaviors 비어있지 않음 | blocking |
+| Acceptance Criteria 검증 가능 | blocking |
+| Test Plan 존재 | blocking |
+| 미해결 차단 질문 0개 | blocking |
+| 모호한 표현(robust, good 등) 없음 | major |
+| 모든 필수 요구사항이 명세에 반영됨 | major |
+
+## 5) 기본 사용 흐름
+
+### 5.1 파일 입력
 
 ```bash
 magi-spec generate --input request.md --output ./magi_output
 ```
 
-### 4.2 텍스트 입력
+### 5.2 텍스트 입력
 
 ```bash
 magi-spec generate --text "Build a Python SDK for ..." --output ./magi_output
 ```
 
-### 4.3 프로젝트 컨텍스트 포함
+### 5.3 프로젝트 컨텍스트 포함
 
 ```bash
 magi-spec generate --input request.md --project ./target_project --output ./magi_output
 ```
 
-### 4.4 웹 리서치 모드
+### 5.4 웹 리서치 모드
 
 ```bash
 magi-spec generate --input request.md --output ./magi_output --web-search auto
@@ -94,15 +161,13 @@ magi-spec generate --input request.md --output ./magi_output --web-search auto
 - `on`: 항상 검색
 - `off`: 검색 비활성
 
-### 4.5 가드된 명령 실행 허용
+### 5.5 파이프라인 버전 선택
 
 ```bash
-magi-spec generate --input request.md --output ./magi_output --allow-command-execution
+magi-spec generate --input request.md --output ./magi_output --pipeline v2
 ```
 
-명령 실행 기본값은 비활성이며, 허용 시에도 정책상 안전한 명령만 실행됩니다.
-
-### 4.6 승인/수정/상태
+### 5.6 승인/수정/상태
 
 ```bash
 magi-spec approve ./magi_output
@@ -110,7 +175,27 @@ magi-spec revise ./magi_output --feedback feedback.md
 magi-spec status ./magi_output
 ```
 
-### 4.7 처리 중 상태 모니터링
+### 5.7 차단 질문 답변 주입 (v2 전용)
+
+MAGI가 `NEEDS_USER_INPUT` 상태로 종료되면 `analysis/05_blocking_questions.ko.md`에 질문 목록이 생성됩니다.
+
+```bash
+magi-spec answer ./magi_output --answers answers.json
+```
+
+`answers.json` 형식:
+
+```json
+[
+  {
+    "question_id": "DONE-001",
+    "question": "무엇이 충족되면 이 작업이 완료된 것으로 봅니까?",
+    "answer": "사용자가 CLI 명령 하나로 명세를 생성할 수 있어야 합니다."
+  }
+]
+```
+
+### 5.8 처리 중 상태 모니터링
 
 `generate` 또는 `revise`가 실행되는 동안 MAGI는 다음 파일을 즉시 생성하고 10초마다 갱신합니다.
 
@@ -118,16 +203,12 @@ magi-spec status ./magi_output
 magi_output/state/heartbeat.json
 ```
 
-웹서비스는 이 파일을 읽어 MAGI가 처리 중인지 판단할 수 있습니다.
-
 - `running: true`이고 `last_heartbeat_at`이 최근이면 처리 중입니다.
 - `running: false`이면 MAGI 처리가 종료된 상태입니다.
 - 정상 종료 시 `lifecycle: stopped`와 최종 `status`가 기록됩니다.
 - 예외 종료 시 `lifecycle: failed`와 에러 요약이 기록됩니다.
 
-운영에서는 네트워크/파일시스템 지연을 고려해 `last_heartbeat_at`이 20~30초 이상 갱신되지 않으면 비정상 중단 또는 응답 없음으로 취급하는 방식을 권장합니다.
-
-## 5) Python API 사용
+## 6) Python API 사용
 
 ```python
 from magi_spec import MagiSpecEngine
@@ -143,66 +224,89 @@ result = engine.generate_from_file(
 
 print(result.status)
 print(result.approval_candidate_path)
-print(result.heartbeat_path)
+print(result.questions_path)   # v2: NEEDS_USER_INPUT일 때 질문 파일 경로
 ```
 
-## 6) 주요 출력물
+차단 질문 답변 (v2 전용):
+
+```python
+result = engine.answer(
+    "./magi_output",
+    answers=[
+        {"question_id": "DONE-001", "question": "완료 기준은?", "answer": "CLI 명령 하나로 명세 생성 가능"}
+    ],
+)
+```
+
+## 7) 주요 출력물 (v2)
 
 `magi_output/` 아래에 다음이 생성됩니다.
+
+항상 생성:
 
 - `raw/user_request.md`
 - `context/project_manifest.json`
 - `research/web_sources.json`
 - `evidence/evidence_registry.json`
-- `execution/command_log.json`
-- `analysis/*.ko.md`
-- `review_rounds/round_*/`
+- `analysis/01_intent_parse.ko.md`
+- `analysis/02_requirement_lock.ko.md`
+- `analysis/04_initial_assumptions.ko.md`
+- `analysis/05_blocking_questions.ko.md`
+- `analysis/requirement_lock_sheet.json` ← Lock Sheet (구조화)
+- `analysis/requirement_lock_sheet.ko.md`
+- `review/checklist_issues.json` ← 체크리스트 critic 결과
 - `state/magi_state.json`
 - `state/heartbeat.json`
-- `draft/approval_candidate_spec.en.md`
-- `final/FINAL_AGENT_SPEC.md`
-- `critical/CRITICAL_REPORT.ko.md` (실패 시)
 
-## 7) 상태 해석
+조건부 생성:
+
+- `draft/approval_candidate_spec.en.md` ← blocking issue 0개일 때
+- `final/FINAL_AGENT_SPEC.md` ← approve 후
+- `critical/CRITICAL_REPORT.ko.md` ← CRITICAL_BLOCKED일 때
+- `critical/FAILED_AGENT_SPEC_DRAFT.en.md` ← CRITICAL_BLOCKED일 때
+
+## 8) 상태 해석
 
 주요 상태:
 
-- `DRAFT`, `ANALYZING`, `RESEARCHING`, `REVIEWING`: 실행 중 중간 상태
-- `PASS_PENDING_USER_APPROVAL`: 승인 후보 생성 완료
-- `FINALIZED`: 최종 명세 확정
-- `CRITICAL_BLOCKED`: 최대 라운드 내 합의 실패
-- `REJECTED_BY_USER`: 사용자 피드백 기반 수정 대기/재실행
-
-`magi-spec status`는 저장된 최종/최근 상태를 보여줍니다. 프로세스가 지금 살아 있는지 확인하려면 `state/heartbeat.json`의 `running`과 `last_heartbeat_at`을 함께 확인해야 합니다.
-
-## 8) 정책 요약
-
-- Model-blind 검토: agent-visible packet에서 provider/model 식별 메타데이터와 식별 문자열을 차단합니다.
-- 최소/최대 라운드: 기본 3~10 라운드 검토.
-- 만장일치 PASS 필요: MELCHIOR/BALTHASAR/CASPER 모두 PASS여야 승인 후보 생성.
-- 증거 중심: USER_REQUEST/PROJECT_FILE/WEB_SOURCE/COMMAND_RESULT/AGENT_ASSUMPTION/AGENT_REVIEW 유형으로 기록.
+| 상태 | 의미 |
+|---|---|
+| `DRAFT` | 초기화 완료 |
+| `ANALYZING` | Interviewer / Requirement Lock 실행 중 |
+| `COMPILING` | Spec Compiler 실행 중 |
+| `CRITIQUING` | Checklist Critic 실행 중 |
+| `NEEDS_USER_INPUT` | 방향전환급 차단 질문 대기 |
+| `PASS_PENDING_USER_APPROVAL` | 승인 후보 생성 완료 |
+| `FINALIZED` | 최종 명세 확정 |
+| `CRITICAL_BLOCKED` | 최대 critic 패스 초과 |
+| `REJECTED_BY_USER` | 사용자 피드백 기반 수정 대기 |
 
 ## 9) 트러블슈팅
 
 ### OpenAI 키 오류
 
-- 증상: OpenAI provider 선택 시 `OPENAI_API_KEY` 관련 에러
+- 증상: `OPENAI_API_KEY` 관련 에러
 - 조치: 환경 변수 설정 또는 mock provider 사용
 
-### config 오류
+### pipeline.version 오류
 
-- 증상: `Invalid web_search mode` 또는 `min_review_rounds` 관련 에러
-- 조치: `web_search`를 `auto|on|off`로 설정하고 `min <= max`, `min >= 1` 보장
+- 증상: `Invalid pipeline_version` 에러
+- 조치: `v1` 또는 `v2`로 설정
+
+### 차단 질문으로 인한 NEEDS_USER_INPUT
+
+- 증상: `NEEDS_USER_INPUT` 상태로 종료
+- 조치: `analysis/05_blocking_questions.ko.md` 확인 후 `magi-spec answer`로 답변 주입
+
+### critic 초과로 인한 CRITICAL_BLOCKED
+
+- 증상: `CRITICAL_BLOCKED` 상태
+- 조치: `critical/CRITICAL_REPORT.ko.md`의 미해결 이슈 확인, `revise`로 재시도
 
 ### 승인 실패
 
 - 증상: `approve` 실행 시 상태 오류
 - 조치: 먼저 `status`에서 `PASS_PENDING_USER_APPROVAL`인지 확인
-
-### 웹서비스에서 실행 여부 확인 불가
-
-- 증상: 요청 후 MAGI가 아직 처리 중인지, 멈췄는지 구분하기 어려움
-- 조치: `state/heartbeat.json`을 폴링하고 `running`, `status`, `last_heartbeat_at`, `lifecycle` 값을 확인
 
 ## 10) 운영 권장
 

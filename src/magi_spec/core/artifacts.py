@@ -18,6 +18,7 @@ REQUIRED_DIRECTORIES = [
     "analysis",
     "agents/initial",
     "review_rounds",
+    "review",
     "draft",
     "final",
     "critical",

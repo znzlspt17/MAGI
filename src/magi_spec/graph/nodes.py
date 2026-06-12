@@ -1,36 +1,33 @@
-"""LangGraph node implementations."""
+"""LangGraph node implementations — v2 SpecForge pipeline only."""
 
 from __future__ import annotations
 
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
-from magi_spec.agents import (
-    BalthasarAgent,
-    CasperAgent,
-    ConflictResolver,
-    CriticalReporter,
-    MelchiorAgent,
-    SpecComposer,
-)
-from magi_spec.agents.base import DEFAULT_SECTION_STATUS
-from magi_spec.core.agent_context import build_agent_visible_context
+from magi_spec.compiler.requirement_lock import RequirementLockBuilder
+from magi_spec.compiler.spec_compiler import SpecCompiler
 from magi_spec.core.artifacts import ArtifactWriter
 from magi_spec.core.config import MagiConfig
 from magi_spec.core.evidence import EvidenceRegistry
 from magi_spec.core.prompts import load_prompt
-from magi_spec.core.provider_output import extract_json_object
 from magi_spec.core.state import (
     STATUS_ANALYZING,
+    STATUS_COMPILING,
+    STATUS_CRITIQUING,
     STATUS_CRITICAL_BLOCKED,
+    STATUS_NEEDS_USER_INPUT,
     STATUS_PASS_PENDING_USER_APPROVAL,
     STATUS_RESEARCHING,
-    STATUS_REVIEWING,
     WorkflowState,
 )
+from magi_spec.critic.checklist_critic import ChecklistCritic
+from magi_spec.critic.critical_reporter import CriticalReporter
+from magi_spec.interview.interviewer import SpecInterviewer
 from magi_spec.providers.base import ProviderFactory
-from magi_spec.schemas.provider_packets import AnalysisPacket, normalize_review_status
+from magi_spec.schemas.issue_packet import count_unresolved_blocking, parse_issue_list
+from magi_spec.schemas.requirement_lock import RequirementLockSheet
 from magi_spec.skills.command_execution import (
     append_guarded_command_result,
     execute_command_guarded,
@@ -55,31 +52,17 @@ class WorkflowNodes:
         self.providers = providers
         self.skills = skills
         self.evidence = evidence
-        self.melchior = MelchiorAgent(
+        self._interviewer = SpecInterviewer()
+        self._lock_builder = RequirementLockBuilder()
+        self._compiler = SpecCompiler(
             config=config, providers=providers, skills=skills, evidence=evidence
         )
-        self.balthasar = BalthasarAgent(
+        self._critic = ChecklistCritic()
+        self._critical_reporter = CriticalReporter(
             config=config, providers=providers, skills=skills, evidence=evidence
         )
-        self.casper = CasperAgent(config=config, providers=providers, skills=skills, evidence=evidence)
-        self.conflict_resolver = ConflictResolver(
-            config=config,
-            providers=providers,
-            skills=skills,
-            evidence=evidence,
-        )
-        self.spec_composer = SpecComposer(
-            config=config,
-            providers=providers,
-            skills=skills,
-            evidence=evidence,
-        )
-        self.critical_reporter = CriticalReporter(
-            config=config,
-            providers=providers,
-            skills=skills,
-            evidence=evidence,
-        )
+
+    # ── shared infrastructure nodes ─────────────────────────────────────────
 
     def project_context(self, state: WorkflowState) -> dict[str, Any]:
         project_dir = state.get("project_dir")
@@ -130,7 +113,9 @@ class WorkflowNodes:
                 metadata={"query": source.get("query", "")},
             )
         self.writer.write_json("research/web_sources.json", {"sources": sources})
-        self.writer.write_text("research/web_research_summary.ko.md", summarize_web_research(sources, mode))
+        self.writer.write_text(
+            "research/web_research_summary.ko.md", summarize_web_research(sources, mode)
+        )
         created.extend(["research/web_sources.json", "research/web_research_summary.ko.md"])
         return {
             "status": STATUS_RESEARCHING,
@@ -138,192 +123,267 @@ class WorkflowNodes:
             "created_artifacts": created,
         }
 
-    def analysis(self, state: WorkflowState) -> dict[str, Any]:
-        request = state.get("user_request", "").strip()
-        self.skills.assert_allowed("balthasar", "parse_intent")
-        self.skills.assert_allowed("balthasar", "classify_scope")
-        self.skills.assert_allowed("balthasar", "generate_assumptions")
-        self.skills.assert_allowed("balthasar", "detect_blocking_questions")
+    # ── v2 SpecForge pipeline nodes ──────────────────────────────────────────
 
-        fallback_assumptions = [
-            "사용자가 명시하지 않은 세부 구현 방식은 기존 프로젝트 관례를 우선한다.",
-            "최종 산출물은 구현 에이전트가 바로 사용할 수 있는 영어 Markdown 명세다.",
-        ]
-        fallback_blocking_questions: list[str] = []
-        if not request:
-            fallback_blocking_questions.append("사용자 요청이 비어 있어 구현 방향을 결정할 수 없습니다.")
-        fallback_intent = "\n".join(
-            [
-                "# 의도 분석",
-                "",
-                "사용자의 고수준 요청을 구현 가능한 명세로 변환하는 것이 목표입니다.",
-                "원문 요청은 `raw/user_request.md`에 보존됩니다.",
-            ]
-        )
-        fallback_requirement_lock = "\n".join(
-            [
-                "# 요구사항 잠금",
-                "",
-                "- MAGI는 대상 프로젝트를 직접 구현하지 않습니다.",
-                "- 승인 후보가 PASS되어도 사용자 승인 전에는 최종 명세로 승격하지 않습니다.",
-                "- 모델 제공자 정보는 agent-visible 문맥에 포함하지 않습니다.",
-            ]
-        )
-        fallback_scope = "\n".join(
-            [
-                "# 범위 분류",
-                "",
-                "- Mandatory: 입력 요청 보존, 산출물 저장, 리뷰 루프, 승인 흐름.",
-                "- Recommended: 프로젝트 컨텍스트와 웹 증거를 보조 정보로 활용.",
-                "- Optional: 실제 외부 LLM 호출은 설정된 경우에만 수행.",
-                "- Out of Scope: 구현 에이전트 실행, 배포, GUI, 웹 서비스.",
-            ]
-        )
-        analysis_packet = self._provider_analysis_packet(state)
-        packet = AnalysisPacket.from_provider_dict(
-            analysis_packet,
-            fallback_intent=fallback_intent,
-            fallback_requirement_lock=fallback_requirement_lock,
-            fallback_scope=fallback_scope,
-            fallback_assumptions=fallback_assumptions,
-            fallback_blocking_questions=fallback_blocking_questions,
-        )
-        intent = packet.intent_parse
-        requirement_lock = packet.requirement_lock
-        scope = packet.scope_classification
-        assumptions = packet.assumptions
-        blocking_questions = packet.blocking_questions
-        if not request and "사용자 요청이 비어 있어 구현 방향을 결정할 수 없습니다." not in blocking_questions:
-            blocking_questions.append("사용자 요청이 비어 있어 구현 방향을 결정할 수 없습니다.")
-
-        assumption_doc = "# 초기 가정\n\n" + "\n".join(f"- {item}" for item in assumptions) + "\n"
-        question_doc = "# 차단 질문\n\n"
-        question_doc += "\n".join(f"- {item}" for item in blocking_questions) if blocking_questions else "- 없음\n"
-
+    def interview(self, state: WorkflowState) -> dict[str, Any]:
+        """Classify request type and identify blocking questions."""
         created = list(state.get("created_artifacts", []))
+        manifest: dict[str, Any] = {}
+        try:
+            manifest = self.writer.read_json("context/project_manifest.json")
+        except Exception:
+            pass
+
+        route = self.config.model_routing[self._interviewer.agent_id]
+        provider = self.providers.get(route.provider)
+
+        def _complete(prompt: str) -> str:
+            return provider.complete(
+                [{"role": "user", "content": prompt}],
+                model=route.model,
+                temperature=0,
+            )
+
+        result = self._interviewer.run(state, manifest, provider_complete_fn=_complete)
+
+        assumption_doc = (
+            "# 초기 가정\n\n"
+            + "\n".join(f"- {a}" for a in result.assumptions)
+            + "\n"
+        )
+        question_doc = "# 차단 질문\n\n" + (
+            "\n".join(f"- {q}" for q in result.blocking_questions)
+            if result.blocking_questions
+            else "- 없음\n"
+        )
+
         analysis_files = {
-            "analysis/01_intent_parse.ko.md": intent,
-            "analysis/02_requirement_lock.ko.md": requirement_lock,
-            "analysis/03_scope_classification.ko.md": scope,
+            "analysis/01_intent_parse.ko.md": f"# 의도 분석\n\n요청 유형: {result.request_type}\n",
+            "analysis/03_scope_classification.ko.md": (
+                "# 범위 분류\n\n- v2 파이프라인: Requirement Lock Sheet에서 관리됩니다.\n"
+            ),
             "analysis/04_initial_assumptions.ko.md": assumption_doc,
             "analysis/05_blocking_questions.ko.md": question_doc,
         }
-        for relative_path, content in analysis_files.items():
-            self.writer.write_text(relative_path, content)
-            created.append(relative_path)
-        for assumption in assumptions:
-            self.evidence.add("AGENT_ASSUMPTION", assumption, "analysis")
+        for path, content in analysis_files.items():
+            self.writer.write_text(path, content)
+            created.append(path)
+
+        for assumption in result.assumptions:
+            self.evidence.add("AGENT_ASSUMPTION", assumption, "interview")
+
         return {
             "status": STATUS_ANALYZING,
-            "intent_parse": intent,
-            "requirement_lock": requirement_lock,
-            "scope_classification": scope,
-            "assumptions": assumptions,
-            "blocking_questions": blocking_questions,
+            "request_type": result.request_type,
+            "assumptions": result.assumptions,
+            "blocking_questions": result.blocking_questions,
+            "_interview_direction_changing": result.direction_changing_pending,
             "created_artifacts": created,
         }
 
-    def initial_agents(self, state: WorkflowState) -> dict[str, Any]:
+    def await_user(self, state: WorkflowState) -> dict[str, Any]:
+        """Terminal node: pipeline paused, awaiting user answers."""
+        return {"status": STATUS_NEEDS_USER_INPUT}
+
+    def requirement_lock_stage(self, state: WorkflowState) -> dict[str, Any]:
+        """Build RequirementLockSheet from interview result."""
         created = list(state.get("created_artifacts", []))
-        melchior = self.melchior.review(state, round_number=0).to_dict()
-        balthasar = self.balthasar.review(state, round_number=0).to_dict()
-        casper = self.casper.review(state, round_number=0).to_dict()
-        outputs = [
-            ("agents/initial/melchior_architecture.ko.md", melchior["content"]),
-            ("agents/initial/balthasar_requirements.ko.md", balthasar["content"]),
-            ("agents/initial/casper_failure_review.ko.md", casper["content"]),
-        ]
-        for relative_path, content in outputs:
-            self.writer.write_text(relative_path, content)
-            created.append(relative_path)
-        return {
-            "status": STATUS_REVIEWING,
-            "melchior_outputs": [melchior],
-            "balthasar_outputs": [balthasar],
-            "casper_outputs": [casper],
-            "section_status": merge_section_statuses(melchior, balthasar, casper),
-            "created_artifacts": created,
-        }
+        manifest: dict[str, Any] = {}
+        try:
+            manifest = self.writer.read_json("context/project_manifest.json")
+        except Exception:
+            pass
 
-    def _provider_analysis_packet(self, state: WorkflowState) -> dict[str, Any] | None:
-        route = self.config.model_routing["balthasar"]
+        route = self.config.model_routing[self._lock_builder.agent_id]
         provider = self.providers.get(route.provider)
-        prompt = "\n\n".join(
-            [
-                load_prompt("intent_parser"),
-                load_prompt("requirement_lock"),
-                build_agent_visible_context(
-                    state,
-                    agent_id="balthasar",
-                    round_number=0,
-                ),
-                "Return only JSON with keys: intent_parse, requirement_lock, scope_classification, assumptions, blocking_questions.",
-                "intent_parse, requirement_lock, scope_classification must be Korean Markdown.",
-                "assumptions and blocking_questions must be arrays of Korean strings.",
-            ]
-        )
-        raw_output = provider.complete(
-            [{"role": "user", "content": prompt}],
-            model=route.model,
-            temperature=0,
-        )
-        return extract_json_object(raw_output)
 
-    def review_round(self, state: WorkflowState) -> dict[str, Any]:
-        round_number = int(state.get("current_round", 0)) + 1
-        round_dir = f"review_rounds/round_{round_number:02d}"
-        created = list(state.get("created_artifacts", []))
-        self._maybe_execute_guarded_review_command(state)
+        def _complete(prompt: str) -> str:
+            return provider.complete(
+                [{"role": "user", "content": prompt}],
+                model=route.model,
+                temperature=0,
+            )
 
-        melchior = self.melchior.review(state, round_number=round_number).to_dict()
-        balthasar = self.balthasar.review(state, round_number=round_number).to_dict()
-        casper = self.casper.review(state, round_number=round_number).to_dict()
-
-        state_for_conflict = dict(state)
-        state_for_conflict["melchior_outputs"] = list(state.get("melchior_outputs", [])) + [melchior]
-        state_for_conflict["balthasar_outputs"] = list(state.get("balthasar_outputs", [])) + [balthasar]
-        state_for_conflict["casper_outputs"] = list(state.get("casper_outputs", [])) + [casper]
-        state_for_conflict["section_status"] = merge_section_statuses(melchior, balthasar, casper)
-        conflict = self.conflict_resolver.resolve(state_for_conflict, round_number=round_number).to_dict()
-        resolved_section_status = _resolved_section_status(
-            conflict.get("section_status"),
-            state_for_conflict["section_status"],
+        from magi_spec.interview.interviewer import InterviewResult
+        interview = InterviewResult(
+            request_type=state.get("request_type", "feature"),
+            blocking_questions=list(state.get("blocking_questions", [])),
+            assumptions=list(state.get("assumptions", [])),
         )
 
-        artifacts = {
-            f"{round_dir}/melchior_review.ko.md": melchior["content"],
-            f"{round_dir}/balthasar_review.ko.md": balthasar["content"],
-            f"{round_dir}/casper_review.ko.md": casper["content"],
-            f"{round_dir}/conflict_resolution.ko.md": conflict["content"],
-            f"{round_dir}/section_status.json": resolved_section_status,
-        }
-        for relative_path, content in artifacts.items():
-            if relative_path.endswith(".json"):
-                self.writer.write_json(relative_path, content)
-            else:
-                self.writer.write_text(relative_path, str(content))
-            created.append(relative_path)
-
-        previous_section_status = state.get("section_status", {})
-        new_stagnant_rounds = (
-            state.get("stagnant_rounds", 0) + 1
-            if resolved_section_status == previous_section_status
-            else 0
+        sheet = self._lock_builder.build(
+            state, manifest, interview, provider_complete_fn=_complete
         )
+
+        self.writer.write_json("analysis/requirement_lock_sheet.json", sheet.to_dict())
+        self.writer.write_text("analysis/requirement_lock_sheet.ko.md", sheet.to_markdown())
+        # Compatibility alias
+        self.writer.write_text("analysis/02_requirement_lock.ko.md", sheet.to_markdown())
+        created.extend([
+            "analysis/requirement_lock_sheet.json",
+            "analysis/requirement_lock_sheet.ko.md",
+            "analysis/02_requirement_lock.ko.md",
+        ])
 
         return {
-            "status": STATUS_REVIEWING,
-            "current_round": round_number,
-            "melchior_outputs": state_for_conflict["melchior_outputs"],
-            "balthasar_outputs": state_for_conflict["balthasar_outputs"],
-            "casper_outputs": state_for_conflict["casper_outputs"],
-            "conflict_reports": list(state.get("conflict_reports", [])) + [conflict],
-            "section_status": resolved_section_status,
-            "stagnant_rounds": new_stagnant_rounds,
+            "status": STATUS_ANALYZING,
+            "requirement_lock": sheet.to_markdown(),
+            "requirement_lock_sheet": sheet.to_dict(),
             "created_artifacts": created,
         }
 
-    def _maybe_execute_guarded_review_command(self, state: WorkflowState) -> None:
+    def spec_compile(self, state: WorkflowState) -> dict[str, Any]:
+        """Compile a single English specification from the lock sheet."""
+        created = list(state.get("created_artifacts", []))
+        manifest: dict[str, Any] = {}
+        try:
+            manifest = self.writer.read_json("context/project_manifest.json")
+        except Exception:
+            pass
+
+        sheet_dict = state.get("requirement_lock_sheet")
+        sheet = (
+            RequirementLockSheet.from_dict(sheet_dict)
+            if sheet_dict
+            else RequirementLockSheet.build_fallback(
+                request_type=state.get("request_type", "feature"),
+                request_summary=state.get("user_request", "")[:200],
+            )
+        )
+
+        issues_raw = state.get("structured_issues", [])
+        issues = parse_issue_list({"issues": issues_raw}) if issues_raw else None
+
+        spec = self._compiler.compile(sheet, manifest, issues)
+        path = "draft/approval_candidate_spec.en.md"
+        self.writer.write_text(path, spec, overwrite=True)
+        if path not in created:
+            created.append(path)
+
+        return {
+            "status": STATUS_COMPILING,
+            "approval_candidate_spec": str(self.writer.path(path)),
+            "created_artifacts": created,
+        }
+
+    def checklist_critic_node(self, state: WorkflowState) -> dict[str, Any]:
+        """Run checklist critic on the compiled draft spec."""
+        created = list(state.get("created_artifacts", []))
+
+        spec_path = state.get("approval_candidate_spec", "")
+        try:
+            spec_md = Path(spec_path).read_text(encoding="utf-8") if spec_path else ""
+        except Exception:
+            spec_md = ""
+        if not spec_md:
+            try:
+                spec_md = self.writer.read_text("draft/approval_candidate_spec.en.md")
+            except Exception:
+                spec_md = ""
+
+        sheet_dict = state.get("requirement_lock_sheet")
+        sheet = (
+            RequirementLockSheet.from_dict(sheet_dict)
+            if sheet_dict
+            else RequirementLockSheet.build_fallback()
+        )
+
+        route = self.config.model_routing[self._critic.agent_id]
+        provider = self.providers.get(route.provider)
+
+        def _complete(prompt: str) -> str:
+            return provider.complete(
+                [{"role": "user", "content": prompt}],
+                model=route.model,
+                temperature=0,
+            )
+
+        issues = self._critic.critique(spec_md, sheet, provider_complete_fn=_complete)
+        issues_dicts = [i.to_dict() for i in issues]
+        critic_pass_count = int(state.get("critic_pass_count", 0)) + 1
+        unresolved = count_unresolved_blocking(issues)
+
+        self.writer.write_json(
+            "review/checklist_issues.json",
+            {"pass": critic_pass_count, "unresolved_blocking": unresolved, "issues": issues_dicts},
+            overwrite=True,
+        )
+        if "review/checklist_issues.json" not in created:
+            created.append("review/checklist_issues.json")
+
+        return {
+            "status": STATUS_CRITIQUING,
+            "structured_issues": issues_dicts,
+            "critic_pass_count": critic_pass_count,
+            "created_artifacts": created,
+        }
+
+    def compose_candidate(self, state: WorkflowState) -> dict[str, Any]:
+        """Promote the compiled draft to PASS_PENDING_USER_APPROVAL.
+
+        spec_compile already wrote the draft; this node just promotes it.
+        Falls back to recompile via SpecCompiler if the draft is missing/invalid.
+        """
+        created = list(state.get("created_artifacts", []))
+        path = "draft/approval_candidate_spec.en.md"
+
+        try:
+            spec = self.writer.read_text(path)
+        except Exception:
+            spec = ""
+
+        if not spec or not self._compiler.english_only(spec):
+            manifest: dict[str, Any] = {}
+            try:
+                manifest = self.writer.read_json("context/project_manifest.json")
+            except Exception:
+                pass
+            sheet_dict = state.get("requirement_lock_sheet")
+            sheet = (
+                RequirementLockSheet.from_dict(sheet_dict)
+                if sheet_dict
+                else RequirementLockSheet.build_fallback()
+            )
+            spec = self._compiler.compile(sheet, manifest)
+            self.writer.write_text(path, spec, overwrite=True)
+
+        if path not in created:
+            created.append(path)
+        return {
+            "status": STATUS_PASS_PENDING_USER_APPROVAL,
+            "approval_candidate_spec": str(self.writer.path(path)),
+            "created_artifacts": created,
+        }
+
+    def critical_report(self, state: WorkflowState) -> dict[str, Any]:
+        """Generate a failed draft and critical report when the pipeline is blocked."""
+        manifest: dict[str, Any] = {}
+        try:
+            manifest = self.writer.read_json("context/project_manifest.json")
+        except Exception:
+            pass
+
+        sheet_dict = state.get("requirement_lock_sheet")
+        sheet = (
+            RequirementLockSheet.from_dict(sheet_dict)
+            if sheet_dict
+            else RequirementLockSheet.build_fallback()
+        )
+        failed_draft = self._compiler.compile(sheet, manifest)
+        report = self._critical_reporter.generate(state)
+
+        created = list(state.get("created_artifacts", []))
+        self.writer.write_text("critical/FAILED_AGENT_SPEC_DRAFT.en.md", failed_draft)
+        self.writer.write_text("critical/CRITICAL_REPORT.ko.md", report)
+        created.extend(["critical/FAILED_AGENT_SPEC_DRAFT.en.md", "critical/CRITICAL_REPORT.ko.md"])
+        return {
+            "status": STATUS_CRITICAL_BLOCKED,
+            "critical_report": str(self.writer.path("critical/CRITICAL_REPORT.ko.md")),
+            "created_artifacts": created,
+        }
+
+    def _maybe_execute_guarded_command(self, state: WorkflowState) -> None:
+        """Run a guarded diagnostic command if command execution is allowed."""
         if not state.get("command_execution_allowed", False):
             return
         command_log_path = state.get("command_log_path")
@@ -337,7 +397,7 @@ class WorkflowNodes:
             result = execute_command_guarded(
                 command,
                 working_directory=working_directory,
-                requesting_agent="casper",
+                requesting_agent="compiler",
                 allowed=True,
                 timeout_seconds=30,
             )
@@ -349,80 +409,10 @@ class WorkflowNodes:
                 "stdout_summary": "",
                 "stderr_summary": str(exc),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                "requesting_agent": "casper",
+                "requesting_agent": "compiler",
             }
         append_guarded_command_result(
             result,
             command_log_path=command_log_path,
             evidence_registry=self.evidence,
         )
-
-    def compose_candidate(self, state: WorkflowState) -> dict[str, Any]:
-        manifest = self.writer.read_json("context/project_manifest.json")
-        spec = self.spec_composer.compose(state, manifest)
-        if not self.spec_composer.english_only(spec):
-            raise ValueError("Approval candidate must be English-only.")
-        created = list(state.get("created_artifacts", []))
-        self.writer.write_text("draft/approval_candidate_spec.en.md", spec)
-        created.append("draft/approval_candidate_spec.en.md")
-        return {
-            "status": STATUS_PASS_PENDING_USER_APPROVAL,
-            "approval_candidate_spec": str(self.writer.path("draft/approval_candidate_spec.en.md")),
-            "created_artifacts": created,
-        }
-
-    def critical_report(self, state: WorkflowState) -> dict[str, Any]:
-        manifest = self.writer.read_json("context/project_manifest.json")
-        failed_draft = self.spec_composer.compose(state, manifest)
-        report = self.critical_reporter.generate(state)
-        created = list(state.get("created_artifacts", []))
-        self.writer.write_text("critical/FAILED_AGENT_SPEC_DRAFT.en.md", failed_draft)
-        self.writer.write_text("critical/CRITICAL_REPORT.ko.md", report)
-        created.extend(["critical/FAILED_AGENT_SPEC_DRAFT.en.md", "critical/CRITICAL_REPORT.ko.md"])
-        return {
-            "status": STATUS_CRITICAL_BLOCKED,
-            "critical_report": str(self.writer.path("critical/CRITICAL_REPORT.ko.md")),
-            "created_artifacts": created,
-        }
-
-
-def all_agents_pass(state: WorkflowState) -> bool:
-    outputs = [
-        state.get("melchior_outputs", []),
-        state.get("balthasar_outputs", []),
-        state.get("casper_outputs", []),
-    ]
-    if not all(outputs):
-        return False
-    latest_pass = all(output[-1].get("status") == "PASS" for output in outputs)
-    sections_pass = all(status == "PASS" for status in state.get("section_status", {}).values())
-    return latest_pass and sections_pass
-
-
-def merge_section_statuses(*agent_outputs: dict[str, Any]) -> dict[str, str]:
-    severity = {"PASS": 0, "REVISE": 1, "FAIL": 2}
-    merged = dict(DEFAULT_SECTION_STATUS)
-    for output in agent_outputs:
-        for section, status in output.get("section_status", {}).items():
-            normalized = normalize_review_status(status, default="REVISE")
-            current = merged.get(section, "PASS")
-            if severity[normalized] > severity.get(current, 0):
-                merged[section] = normalized
-    return merged
-
-
-def _resolved_section_status(
-    candidate: Any,
-    fallback: dict[str, str],
-) -> dict[str, str]:
-    if not isinstance(candidate, dict):
-        return dict(fallback)
-    resolved = dict(fallback)
-    severity = {"PASS": 0, "REVISE": 1, "FAIL": 2}
-    for section, status in candidate.items():
-        if section not in resolved:
-            continue
-        normalized = normalize_review_status(status, default="REVISE")
-        if severity[normalized] > severity.get(resolved[section], 0):
-            resolved[section] = normalized
-    return resolved

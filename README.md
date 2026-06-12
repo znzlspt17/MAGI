@@ -5,6 +5,7 @@ MAGI Spec Engine is a local Python package and thin CLI that converts a high-lev
 MAGI does not implement the requested target project. It does not run Codex, Copilot, Cursor, Claude Code, or any other implementation agent. Its boundary is specification generation.
 
 User guide (Korean): [docs/USER_GUIDE.ko.md](docs/USER_GUIDE.ko.md)
+v2 implementation spec: [docs/magi_spec_engine_openai_only_v2.md](docs/magi_spec_engine_openai_only_v2.md)
 
 ## Installation
 
@@ -16,7 +17,7 @@ Python 3.11 or newer is required.
 
 ## Environment Setup
 
-MAGI v1 is an OpenAI-only runtime. When OpenAI is selected, MAGI reads credentials from:
+MAGI is an OpenAI-only runtime. When OpenAI is selected, MAGI reads credentials from:
 
 ```bash
 OPENAI_API_KEY
@@ -24,32 +25,77 @@ OPENAI_API_KEY
 
 If OpenAI is selected and credentials are missing, MAGI fails with an actionable error. Tests can route agents to the built-in `mock` provider so the test suite never requires real API calls.
 
-## OpenAI-Only v1 Runtime
+## Pipelines
 
-Different MAGI agents can still use different OpenAI models through private routing.
+MAGI ships two pipeline implementations selected via `pipeline.version` in the config (or `--pipeline` CLI flag).
 
-Default model configuration (applied when no config file is provided):
+### v2 — SpecForge (default)
+
+4-stage deterministic compiler:
+
+```
+Spec Interviewer → Requirement Lock → Spec Compiler → Checklist Critic
+```
+
+| Stage | Agent route key | Role |
+|---|---|---|
+| Spec Interviewer | `interviewer` | Classifies request type; identifies blocking questions |
+| Requirement Lock | `interviewer` | Fixes requirements/non-scope/assumptions as structured sheet |
+| Spec Compiler | `compiler` | Compiles single English Markdown specification |
+| Checklist Critic | `critic` | Runs structured checklist; max 2 passes |
+| Critical Report | `critical_reporter` | Writes failure report if critic exceeds max passes |
+
+Default v2 configuration (applied when no config file is provided):
 
 ```yaml
 model_routing:
-  melchior:
+  interviewer:
     provider: openai
     model: gpt-5.4-nano    # default
-  balthasar:
+  critic:
     provider: openai
     model: gpt-5.4-nano    # default
-  casper:
-    provider: openai
-    model: gpt-5.4-nano    # default
-  conflict_resolver:
-    provider: openai
-    model: gpt-5.4-nano    # default
-  spec_composer:
+  compiler:
     provider: openai
     model: gpt-5.4-nano    # default
   critical_reporter:
     provider: openai
     model: gpt-5.4-nano    # default
+pipeline:
+  version: v2
+review:
+  max_critic_passes: 2     # critic runs at most 2 times
+```
+
+### v1 — 3-Agent Review Loop (legacy)
+
+The original pipeline. Kept for backward compatibility. Not the default.
+
+```yaml
+model_routing:
+  melchior:         # architecture reviewer
+    provider: openai
+    model: gpt-5.4-nano
+  balthasar:        # requirements reviewer
+    provider: openai
+    model: gpt-5.4-nano
+  casper:           # failure mode reviewer
+    provider: openai
+    model: gpt-5.4-nano
+  conflict_resolver:
+    provider: openai
+    model: gpt-5.4-nano
+  spec_composer:
+    provider: openai
+    model: gpt-5.4-nano
+  critical_reporter:
+    provider: openai
+    model: gpt-5.4-nano
+pipeline:
+  version: v1
+review:
+  min_review_rounds: 3
+  max_review_rounds: 10
 ```
 
 Configuration file lookup priority (highest to lowest):
@@ -58,28 +104,22 @@ Configuration file lookup priority (highest to lowest):
 1. CLI --config ./model_config.yaml
 2. Environment variable MAGI_CONFIG_PATH
 3. magi_config.yaml inside the output directory
-4. Built-in defaults (shown above)
+4. Built-in defaults (v2 shown above)
 ```
 
-Anthropic, Google, local, and self-hosted providers are future extension stubs in v1. They do not require credentials, but they are not supported for production runtime.
+Anthropic, Google, local, and self-hosted providers are future extension stubs. They do not require credentials, but they are not supported for production runtime.
 
-## Mock Provider Config
+## Mock Provider Config (v2, for tests)
 
 ```yaml
 model_routing:
-  melchior:
+  interviewer:
     provider: mock
     model: deterministic
-  balthasar:
+  critic:
     provider: mock
     model: deterministic
-  casper:
-    provider: mock
-    model: deterministic
-  conflict_resolver:
-    provider: mock
-    model: deterministic
-  spec_composer:
+  compiler:
     provider: mock
     model: deterministic
   critical_reporter:
@@ -88,6 +128,8 @@ model_routing:
 capabilities:
   web_search: "off"
   command_execution: false
+pipeline:
+  version: v2
 ```
 
 ## CLI Usage
@@ -101,13 +143,19 @@ magi-spec generate --input request.md --output ./magi_output
 Generate from a file, overwriting an existing output directory:
 
 ```bash
-magi-spec generate --input request.md --output ./magi_output --force
+magi-spec generate --input request.md --output ./magi_output --overwrite
 ```
 
 Generate from direct text:
 
 ```bash
 magi-spec generate --text "Build a Python SDK for ..." --output ./magi_output
+```
+
+Select pipeline version explicitly:
+
+```bash
+magi-spec generate --input request.md --output ./magi_output --pipeline v2
 ```
 
 Include read-only project context:
@@ -134,13 +182,19 @@ Approve the reviewed candidate:
 magi-spec approve ./magi_output
 ```
 
-Revise with feedback:
+Revise with feedback (v2: merges into Requirement Lock; v1: resets review loop):
 
 ```bash
 magi-spec revise ./magi_output --feedback feedback.md
 ```
 
-Revision re-enters the workflow at the `Requirement Lock` stage, merges the feedback into existing requirements, and resets the round counter. Previous review artifacts are preserved under `review_rounds/revision_N/`.
+Inject answers to blocking questions (v2 only):
+
+```bash
+magi-spec answer ./magi_output --answers answers.json
+```
+
+`answers.json` format: `[{"question_id": "DONE-001", "question": "...", "answer": "..."}]`
 
 Show status:
 
@@ -161,7 +215,8 @@ While `generate` or `revise` is processing, MAGI writes this heartbeat immediate
 ```text
 0  — Successful completion (Approval Candidate generated, or FINALIZED after approve)
 1  — Input error (missing file, missing OPENAI_API_KEY, invalid arguments, etc.)
-2  — CRITICAL_BLOCKED (review could not reach consensus within max rounds)
+2  — CRITICAL_BLOCKED (review/critic could not reach consensus within max passes/rounds)
+3  — NEEDS_USER_INPUT (v2: blocking questions require user answers before proceeding)
 ```
 
 ## Python API
@@ -180,6 +235,7 @@ result = engine.generate_from_file(
 
 print(result.status)
 print(result.approval_candidate_path)
+print(result.questions_path)   # v2: path to blocking questions file if NEEDS_USER_INPUT
 ```
 
 Approval:
@@ -198,22 +254,28 @@ result = engine.revise(
 )
 ```
 
+Answer blocking questions (v2 only):
+
+```python
+result = engine.answer(
+    "./magi_output",
+    answers=[{"question_id": "DONE-001", "question": "...", "answer": "..."}],
+)
+```
+
 Status:
 
 ```python
 status = engine.status("./magi_output")
-print(status.state)              # REVIEWING | APPROVAL_CANDIDATE | FINALIZED | CRITICAL_BLOCKED
-print(status.current_round)      # number of completed review rounds
-print(status.section_statuses)   # dict[str, str] — per-section current status
-print(status.artifacts)          # list of generated artifact paths
-print(status.last_updated_at)    # ISO 8601 timestamp
+print(status.status)   # COMPILING | CRITIQUING | NEEDS_USER_INPUT |
+                       # PASS_PENDING_USER_APPROVAL | FINALIZED | CRITICAL_BLOCKED
 ```
 
 ## Output Directory
 
 MAGI saves intermediate and final artifacts.
 
-Always generated:
+Always generated (v2):
 
 ```text
 magi_output/
@@ -221,9 +283,13 @@ magi_output/
   context/project_manifest.json
   context/project_summary.ko.md
   evidence/evidence_registry.json
-  analysis/*.ko.md
-  agents/initial/*.ko.md
-  review_rounds/round_*/
+  analysis/01_intent_parse.ko.md
+  analysis/02_requirement_lock.ko.md      ← compatibility alias for lock sheet
+  analysis/04_initial_assumptions.ko.md
+  analysis/05_blocking_questions.ko.md
+  analysis/requirement_lock_sheet.json    ← structured lock sheet (v2)
+  analysis/requirement_lock_sheet.ko.md
+  review/checklist_issues.json            ← structured critic output (v2)
   state/magi_state.json
   state/heartbeat.json
   state/private_model_assignments.json
@@ -232,31 +298,40 @@ magi_output/
 Generated only under stated conditions:
 
 ```text
-  research/web_sources.json           — --web-search on or auto (when triggered)
-  research/web_research_summary.ko.md — same
-  execution/command_log.json          — --allow-command-execution only
-  draft/approval_candidate_spec.en.md — after all sections reach PASS
-  final/FINAL_AGENT_SPEC.md           — after magi-spec approve
-  critical/CRITICAL_REPORT.ko.md      — CRITICAL_BLOCKED only
+  research/web_sources.json               — --web-search on or auto (when triggered)
+  research/web_research_summary.ko.md     — same
+  execution/command_log.json              — --allow-command-execution only
+  draft/approval_candidate_spec.en.md     — after checklist critic passes
+  final/FINAL_AGENT_SPEC.md              — after magi-spec approve
+  critical/CRITICAL_REPORT.ko.md         — CRITICAL_BLOCKED only
   critical/FAILED_AGENT_SPEC_DRAFT.en.md — CRITICAL_BLOCKED only
 ```
 
-Intermediate analysis and review artifacts are Korean. The approval candidate and final agent specification are English.
+Intermediate analysis artifacts are Korean. The approval candidate and final agent specification are English.
 
-## Review Loop
+## v2 SpecForge Pipeline Details
 
-MAGI uses LangGraph to orchestrate stateful review. MELCHIOR reviews architecture, BALTHASAR guards requirements, and CASPER analyzes failure modes. The workflow requires unanimous PASS and at least three review rounds. It stops at the configured maximum and writes a Korean critical report if PASS cannot be reached.
+### Spec Interviewer
 
-## Model-Blind Review
+Classifies the request type (`product`, `feature`, `bugfix`, `refactor`, `infra`) and identifies blocking questions — questions that, if unanswered, would change the spec direction entirely. Non-direction-changing informational questions are converted to assumptions.
 
-Provider and model assignments are private orchestration metadata. Agents can see role names, output content, section status, cited evidence, and conflict summaries. They cannot see provider names, model names, model versions, benchmark claims, release timing, pricing tiers, or context window sizes.
+If direction-changing blocking questions are found in a non-interactive environment, the run exits with `NEEDS_USER_INPUT`. Use `magi-spec answer` to inject answers and resume.
 
-Arguments based on model authority are invalid and must not be used to pass or fail a section.
-Agent-visible context is additionally sanitized so provider/model identity terms are redacted from forwarded peer output text.
+### Requirement Lock Sheet
 
-## Future Provider Extension Point
+All user answers, inferred assumptions, mandatory requirements, non-scope items, and constraints are fixed into a structured JSON sheet (`analysis/requirement_lock_sheet.json`). This sheet is the single source of truth for the compiler. User feedback during `revise` updates only the lock sheet — it does not restart the full pipeline.
 
-The provider interface is intentionally isolated behind `LLMProvider.complete(...)`. v1 ships a real OpenAI provider, a mock provider for tests, and non-OpenAI stubs for future integrations. Adding a future live provider should not require rewriting the workflow.
+### Checklist Critic
+
+Runs deterministic checks first (no LLM, zero token cost), then one LLM-assisted pass. Maximum 2 critic passes total (`max_critic_passes`). Each unresolved blocking issue causes a re-compile. If max passes are exhausted with blocking issues remaining, the run exits with `CRITICAL_BLOCKED`.
+
+Deterministic checks cover: all 26 required headings present, Out of Scope non-empty, Forbidden Behaviors non-empty, Acceptance Criteria verifiable, Test Plan present, zero unresolved blocking questions, mandatory requirements reflected in spec.
+
+## Model-Blind Review (v1)
+
+In v1, provider and model assignments are private orchestration metadata. Agents cannot see provider names, model names, or benchmark claims. Arguments based on model authority are invalid.
+
+In v2, only the single active agent per stage sees the routing key assigned to it. No cross-agent output relaying occurs.
 
 ## Project Folder Context
 
@@ -268,24 +343,23 @@ Large binary criteria: any file over 1 MB, or files with binary extensions (imag
 
 `--web-search` supports `auto`, `on`, and `off`. Web evidence is logged separately and must not be treated as a user requirement unless explicitly classified.
 
-In `auto` mode, web search is triggered when: the user request names an external library, SDK, API, or framework; version compatibility verification is needed; or the Blocking Question Detector identifies a question that depends on an external technical fact.
+In `auto` mode, web search is triggered when: the user request names an external library, SDK, API, or framework; version compatibility verification is needed; or a blocking question depends on an external technical fact.
 
 ## Command Execution Guard
 
 MAGI does not execute commands by default. With `--allow-command-execution`, only narrow non-destructive command categories are allowed, and every command result is logged to `execution/command_log.json`.
-When command execution is enabled, guarded diagnostic commands may run during review rounds (for example, safe metadata or test-version checks), and each entry records command, working directory, exit code, stdout/stderr summaries, timestamp, and requesting agent.
 
 ## Critical Reports
 
-If MAGI cannot reach unanimous PASS before the maximum review round, it writes:
+If MAGI cannot produce a passing spec before the maximum critic passes (v2) or maximum review rounds (v1), it writes:
 
 ```text
 critical/CRITICAL_REPORT.ko.md
 critical/FAILED_AGENT_SPEC_DRAFT.en.md
 ```
 
-The report summarizes unresolved conflicts, failed sections, unsafe assumptions, blocking questions, attempted revisions, and evidence summaries without exposing hidden reasoning.
+The report summarizes unresolved issues, unsafe assumptions, blocking questions, and evidence summaries.
 
 ## Test Status
 
-The repository test suite validates CLI flows, review policy, model-blind routing, provider adapter behavior, command execution guards, project scanning policy, web-search policy, artifact contracts, and acceptance smoke paths.
+The repository test suite validates CLI flows, v1 and v2 pipeline behavior, review policy, model-blind routing, provider adapter behavior, command execution guards, project scanning policy, web-search policy, artifact contracts, checklist critic bounds, and acceptance smoke paths.

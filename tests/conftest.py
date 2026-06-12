@@ -15,32 +15,30 @@ def mock_engine() -> MagiSpecEngine:
 
 
 @pytest.fixture
+def mock_engine_v2() -> MagiSpecEngine:
+    return MagiSpecEngine(config=MagiConfig.mock())
+
+
+@pytest.fixture
 def mock_config_file(tmp_path: Path) -> Path:
     path = tmp_path / "mock_config.yaml"
     path.write_text(
         """
 model_routing:
-  melchior:
+  interviewer:
     provider: mock
     model: deterministic
-  balthasar:
+  critic:
     provider: mock
     model: deterministic
-  casper:
-    provider: mock
-    model: deterministic
-  conflict_resolver:
-    provider: mock
-    model: deterministic
-  spec_composer:
+  compiler:
     provider: mock
     model: deterministic
   critical_reporter:
     provider: mock
     model: deterministic
 review:
-  min_review_rounds: 3
-  max_review_rounds: 10
+  max_critic_passes: 2
 capabilities:
   web_search: off
   command_execution: false
@@ -48,6 +46,11 @@ capabilities:
         encoding="utf-8",
     )
     return path
+
+
+@pytest.fixture
+def mock_config_v2_file(tmp_path: Path) -> Path:
+    return mock_config_file(tmp_path)
 
 
 def read_json(path: Path):

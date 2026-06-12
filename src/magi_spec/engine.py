@@ -15,12 +15,13 @@ from magi_spec.core.evidence import EvidenceRegistry
 from magi_spec.core.heartbeat import HEARTBEAT_PATH, RunHeartbeat
 from magi_spec.core.state import (
     STATUS_FINALIZED,
+    STATUS_NEEDS_USER_INPUT,
     STATUS_PASS_PENDING_USER_APPROVAL,
     STATUS_REJECTED_BY_USER,
     MagiState,
 )
-from magi_spec.graph.builder import build_workflow
 from magi_spec.graph.nodes import WorkflowNodes
+from magi_spec.pipeline.builder import build_v2_workflow
 from magi_spec.providers import default_provider_factory
 from magi_spec.providers.base import ProviderFactory
 from magi_spec.skills.registry import build_default_skill_registry
@@ -38,6 +39,7 @@ class MagiResult:
     critical_report_path: str | None = None
     state_path: str | None = None
     heartbeat_path: str | None = None
+    questions_path: str | None = None
 
 
 class MagiSpecEngine:
@@ -122,13 +124,12 @@ class MagiSpecEngine:
             input_source=input_source,
             project_dir=str(Path(project_dir).resolve()) if project_dir else None,
             output_dir=str(Path(output_dir).resolve()),
-            min_rounds=self.config.min_review_rounds,
-            max_rounds=self.config.max_review_rounds,
             web_search_mode=web_search_mode or self.config.web_search,
             command_execution_allowed=allow_command_execution or self.config.command_execution,
             evidence_registry_path=str(writer.path("evidence/evidence_registry.json")),
             command_log_path=str(writer.path("execution/command_log.json")),
             created_artifacts=created,
+            max_critic_passes=self.config.max_critic_passes,
         )
         return self._run_workflow(state, writer, evidence)
 
@@ -170,13 +171,52 @@ class MagiSpecEngine:
         writer.write_text("raw/revision_feedback.md", feedback, overwrite=True)
         evidence = EvidenceRegistry.from_dict(writer.read_json("evidence/evidence_registry.json"))
         evidence.add("USER_REQUEST", "User revision feedback was captured.", feedback_path)
-        state.current_round = 0
-        state.melchior_outputs = []
-        state.balthasar_outputs = []
-        state.casper_outputs = []
-        state.conflict_reports = []
+
+        # Reset critic/compile state; re-enter at spec_compile
+        state.structured_issues = []
+        state.critic_pass_count = 0
         state.approval_candidate_spec = None
         state.final_agent_spec = None
+
+        return self._run_workflow(state, writer, evidence)
+
+    def answer(self, output_dir: str, *, answers: list[dict]) -> MagiResult:
+        """Inject user answers to blocking questions and resume the pipeline."""
+        writer = ArtifactWriter(output_dir, allow_overwrite=True)
+        state = self._load_state(writer)
+
+        from magi_spec.schemas.requirement_lock import QAItem, RequirementLockSheet
+
+        sheet = (
+            RequirementLockSheet.from_dict(state.requirement_lock_sheet)
+            if state.requirement_lock_sheet
+            else RequirementLockSheet.build_fallback()
+        )
+
+        answered_ids = {a["question_id"] for a in answers if isinstance(a, dict)}
+        sheet.user_answers.extend(
+            QAItem(
+                question_id=str(a.get("question_id", "")),
+                question=str(a.get("question", "")),
+                answer=str(a.get("answer", "")),
+            )
+            for a in answers
+            if isinstance(a, dict)
+        )
+        sheet.unresolved_questions = [
+            q for q in sheet.unresolved_questions if q not in answered_ids
+        ]
+        state.requirement_lock_sheet = sheet.to_dict()
+        state.blocking_questions = list(sheet.unresolved_questions)
+
+        # Reset compile/critic state
+        state.structured_issues = []
+        state.critic_pass_count = 0
+        state.approval_candidate_spec = None
+        state.final_agent_spec = None
+
+        evidence = EvidenceRegistry.from_dict(writer.read_json("evidence/evidence_registry.json"))
+        evidence.add("USER_REQUEST", "User answers to blocking questions were incorporated.", output_dir)
         return self._run_workflow(state, writer, evidence)
 
     def status(self, output_dir: str) -> MagiResult:
@@ -198,7 +238,8 @@ class MagiSpecEngine:
             skills=skills,
             evidence=evidence,
         )
-        workflow = build_workflow(nodes)
+        workflow = build_v2_workflow(nodes)
+
         if HEARTBEAT_PATH not in state.created_artifacts:
             state.created_artifacts.append(HEARTBEAT_PATH)
         heartbeat = RunHeartbeat(writer=writer, state=state)
@@ -231,6 +272,11 @@ class MagiSpecEngine:
             raise InvalidStateError(f"Malformed MAGI state file: {path}") from exc
 
     def _result_from_state(self, state: MagiState) -> MagiResult:
+        questions_path = None
+        if state.status == STATUS_NEEDS_USER_INPUT:
+            p = Path(state.output_dir) / "analysis" / "05_blocking_questions.ko.md"
+            if p.exists():
+                questions_path = str(p)
         return MagiResult(
             status=state.status,
             output_dir=state.output_dir,
@@ -239,6 +285,7 @@ class MagiSpecEngine:
             critical_report_path=state.critical_report,
             state_path=str(Path(state.output_dir) / "state" / "magi_state.json"),
             heartbeat_path=str(Path(state.output_dir) / HEARTBEAT_PATH),
+            questions_path=questions_path,
         )
 
     def _validate_provider_credentials(self) -> None:
@@ -247,14 +294,14 @@ class MagiSpecEngine:
             if provider == "openai" and not os.environ.get("OPENAI_API_KEY"):
                 raise MissingCredentialError(
                     "OpenAI provider selected but OPENAI_API_KEY is not set. "
-                    "Set OPENAI_API_KEY for v1 runtime or use the mock provider in tests."
+                    "Set OPENAI_API_KEY or use the mock provider in tests."
                 )
             if provider == "mock":
                 continue
             if provider != "openai":
                 raise MagiError(
                     f"Provider '{provider}' is a future extension stub and is not supported "
-                    "for MAGI v1 runtime. Use provider 'openai' for production or 'mock' for tests."
+                    "for production runtime. Use provider 'openai' or 'mock' for tests."
                 )
 
     def _validate_web_search_mode(self, mode: str | None) -> None:

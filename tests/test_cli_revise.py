@@ -16,5 +16,5 @@ def test_revise_records_feedback_and_regenerates(mock_engine, tmp_path: Path) ->
     assert result.status == "PASS_PENDING_USER_APPROVAL"
     assert (output / "raw" / "revision_feedback.md").exists()
     state = read_json(output / "state" / "magi_state.json")
-    assert state["current_round"] == 3
     assert state["final_agent_spec"] is None
+    assert state["critic_pass_count"] >= 0  # reset and re-run

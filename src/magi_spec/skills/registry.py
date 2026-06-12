@@ -177,6 +177,12 @@ SKILL_CATALOG: dict[str, dict[str, Any]] = {
         "output_contract": "Conflict report and merged status.",
         "safety_restrictions": "Must reject provider/model authority claims.",
     },
+    "checklist_review": {
+        "purpose": "Run structured checklist review against the draft specification.",
+        "input_contract": "Draft spec Markdown and RequirementLockSheet.",
+        "output_contract": "List of IssuePacket JSON objects.",
+        "safety_restrictions": "Must output structured JSON only; no free-form commentary.",
+    },
     "compose_final_spec": {
         "purpose": "Compose final English coding-agent specification.",
         "input_contract": "Workflow state, manifest, and evidence summary.",

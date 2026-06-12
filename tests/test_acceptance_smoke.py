@@ -26,12 +26,12 @@ def test_acceptance_smoke_run(mock_engine, tmp_path: Path) -> None:
     assert (output / "context" / "project_manifest.json").exists()
     assert (output / "research" / "web_sources.json").exists()
     assert (output / "analysis" / "01_intent_parse.ko.md").exists()
+    assert (output / "analysis" / "requirement_lock_sheet.json").exists()
+    assert (output / "review" / "checklist_issues.json").exists()
     assert (output / "draft" / "approval_candidate_spec.en.md").exists()
     assert not (output / "final" / "FINAL_AGENT_SPEC.md").exists()
 
     state = read_json(output / "state" / "magi_state.json")
-    assert state["current_round"] >= 3
-    assert state["current_round"] <= state["max_rounds"]
     assert state["status"] == "PASS_PENDING_USER_APPROVAL"
     assert state["command_execution_allowed"] is False
 

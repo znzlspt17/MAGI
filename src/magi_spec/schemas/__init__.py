@@ -1,23 +1,37 @@
 """Serializable schemas for MAGI Spec Engine."""
 
-from magi_spec.schemas.agent_result import AgentResult
+from magi_spec.schemas.issue_packet import (
+    IssueEvidence,
+    IssuePacket,
+    count_unresolved_blocking,
+    merge_issue_lists,
+    normalize_severity,
+    parse_issue_list,
+)
 from magi_spec.schemas.provider_packets import (
-    AnalysisPacket,
-    ReviewPacket,
     choose_critical_report_markdown,
     choose_spec_markdown,
-    normalize_review_status,
-    normalize_section_status,
     stringify_markdown,
+)
+from magi_spec.schemas.requirement_lock import (
+    AssumptionItem,
+    QAItem,
+    RequirementItem,
+    RequirementLockSheet,
 )
 
 __all__ = [
-    "AgentResult",
-    "AnalysisPacket",
-    "ReviewPacket",
+    "AssumptionItem",
+    "IssueEvidence",
+    "IssuePacket",
+    "QAItem",
+    "RequirementItem",
+    "RequirementLockSheet",
     "choose_critical_report_markdown",
     "choose_spec_markdown",
-    "normalize_review_status",
-    "normalize_section_status",
+    "count_unresolved_blocking",
+    "merge_issue_lists",
+    "normalize_severity",
+    "parse_issue_list",
     "stringify_markdown",
 ]

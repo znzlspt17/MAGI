@@ -24,6 +24,8 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--allow-command-execution", action="store_true")
     generate.add_argument("--config", help="YAML or JSON config file.")
     generate.add_argument("--overwrite", action="store_true", help="Allow overwriting an existing run.")
+    generate.add_argument("--pipeline", choices=["v1", "v2"], default=None,
+                          help="Pipeline version override (default: from config, usually v2).")
 
     approve = subparsers.add_parser("approve", help="Promote approval candidate to final spec.")
     approve.add_argument("output_dir")
@@ -34,6 +36,12 @@ def build_parser() -> argparse.ArgumentParser:
     revise.add_argument("--feedback", required=True)
     revise.add_argument("--config", help="YAML or JSON config file.")
 
+    answer_cmd = subparsers.add_parser("answer", help="(v2) Inject answers to blocking questions.")
+    answer_cmd.add_argument("output_dir")
+    answer_cmd.add_argument("--answers", required=True,
+                            help="JSON file with list of {question_id, question, answer} objects.")
+    answer_cmd.add_argument("--config", help="YAML or JSON config file.")
+
     status = subparsers.add_parser("status", help="Show run status.")
     status.add_argument("output_dir")
     status.add_argument("--config", help="YAML or JSON config file.")
@@ -42,6 +50,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def engine_from_args(args: argparse.Namespace) -> MagiSpecEngine:
     config = MagiConfig.from_file(args.config) if getattr(args, "config", None) else MagiConfig.default()
+    # CLI --pipeline overrides config
+    if getattr(args, "pipeline", None):
+        config.pipeline_version = args.pipeline
     return MagiSpecEngine(config=config)
 
 
@@ -73,6 +84,14 @@ def main(argv: list[str] | None = None) -> int:
             result = engine.approve(args.output_dir)
         elif args.command == "revise":
             result = engine.revise(output_dir=args.output_dir, feedback_path=args.feedback)
+        elif args.command == "answer":
+            import json as _json
+            answers_path = Path(args.answers)
+            if not answers_path.exists():
+                print(f"magi-spec: error: answers file not found: {args.answers}", file=sys.stderr)
+                return 1
+            answers = _json.loads(answers_path.read_text(encoding="utf-8"))
+            result = engine.answer(args.output_dir, answers=answers)
         elif args.command == "status":
             result = engine.status(args.output_dir)
         else:
@@ -89,6 +108,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"final_spec: {result.final_spec_path}")
     if result.critical_report_path:
         print(f"critical_report: {result.critical_report_path}")
+    if result.questions_path:
+        print(f"questions: {result.questions_path}")
     if result.state_path:
         print(f"state: {result.state_path}")
     if result.heartbeat_path:
