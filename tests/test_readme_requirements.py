@@ -41,7 +41,6 @@ def test_readme_documents_v2_as_default() -> None:
     assert "pipeline" in readme
 
 
-def test_readme_documents_v1_as_legacy() -> None:
+def test_readme_documents_single_supported_pipeline() -> None:
     readme = Path("README.md").read_text(encoding="utf-8").lower()
-    assert "v1" in readme
-    assert "legacy" in readme
+    assert "single pipeline implementation" in readme

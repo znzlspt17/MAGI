@@ -25,11 +25,11 @@ OPENAI_API_KEY
 
 If OpenAI is selected and credentials are missing, MAGI fails with an actionable error. Tests can route agents to the built-in `mock` provider so the test suite never requires real API calls.
 
-## Pipelines
+## Pipeline
 
-MAGI ships two pipeline implementations selected via `pipeline.version` in the config (or `--pipeline` CLI flag).
+MAGI runs a single pipeline implementation: v2 SpecForge. It is the only supported `pipeline.version`.
 
-### v2 — SpecForge (default)
+### v2 — SpecForge
 
 4-stage deterministic compiler:
 
@@ -65,37 +65,6 @@ pipeline:
   version: v2
 review:
   max_critic_passes: 2     # critic runs at most 2 times
-```
-
-### v1 — 3-Agent Review Loop (legacy)
-
-The original pipeline. Kept for backward compatibility. Not the default.
-
-```yaml
-model_routing:
-  melchior:         # architecture reviewer
-    provider: openai
-    model: gpt-5.4-nano
-  balthasar:        # requirements reviewer
-    provider: openai
-    model: gpt-5.4-nano
-  casper:           # failure mode reviewer
-    provider: openai
-    model: gpt-5.4-nano
-  conflict_resolver:
-    provider: openai
-    model: gpt-5.4-nano
-  spec_composer:
-    provider: openai
-    model: gpt-5.4-nano
-  critical_reporter:
-    provider: openai
-    model: gpt-5.4-nano
-pipeline:
-  version: v1
-review:
-  min_review_rounds: 3
-  max_review_rounds: 10
 ```
 
 Configuration file lookup priority (highest to lowest):
@@ -152,12 +121,6 @@ Generate from direct text:
 magi-spec generate --text "Build a Python SDK for ..." --output ./magi_output
 ```
 
-Select pipeline version explicitly:
-
-```bash
-magi-spec generate --input request.md --output ./magi_output --pipeline v2
-```
-
 Include read-only project context:
 
 ```bash
@@ -182,13 +145,13 @@ Approve the reviewed candidate:
 magi-spec approve ./magi_output
 ```
 
-Revise with feedback (v2: merges into Requirement Lock; v1: resets review loop):
+Revise with feedback (merges into the Requirement Lock sheet):
 
 ```bash
 magi-spec revise ./magi_output --feedback feedback.md
 ```
 
-Inject answers to blocking questions (v2 only):
+Inject answers to blocking questions:
 
 ```bash
 magi-spec answer ./magi_output --answers answers.json
@@ -215,8 +178,8 @@ While `generate` or `revise` is processing, MAGI writes this heartbeat immediate
 ```text
 0  — Successful completion (Approval Candidate generated, or FINALIZED after approve)
 1  — Input error (missing file, missing OPENAI_API_KEY, invalid arguments, etc.)
-2  — CRITICAL_BLOCKED (review/critic could not reach consensus within max passes/rounds)
-3  — NEEDS_USER_INPUT (v2: blocking questions require user answers before proceeding)
+2  — CRITICAL_BLOCKED (critic could not reach a passing spec within max passes)
+3  — NEEDS_USER_INPUT (blocking questions require user answers before proceeding)
 ```
 
 ## Python API
@@ -254,7 +217,7 @@ result = engine.revise(
 )
 ```
 
-Answer blocking questions (v2 only):
+Answer blocking questions:
 
 ```python
 result = engine.answer(
@@ -335,11 +298,9 @@ Runs deterministic checks first (no LLM, zero token cost), then one LLM-assisted
 
 Deterministic checks cover: all 26 required headings present, Out of Scope non-empty, Forbidden Behaviors non-empty, Acceptance Criteria verifiable, Test Plan present, zero unresolved blocking questions, mandatory requirements reflected in spec.
 
-## Model-Blind Review (v1)
+## Model-Blind Review
 
-In v1, provider and model assignments are private orchestration metadata. Agents cannot see provider names, model names, or benchmark claims. Arguments based on model authority are invalid.
-
-In v2, only the single active agent per stage sees the routing key assigned to it. No cross-agent output relaying occurs.
+Provider and model assignments are private orchestration metadata. Only the single active agent per stage sees the routing key assigned to it. Agents cannot see provider names, model names, or benchmark claims, and no cross-agent output relaying occurs. Arguments based on model authority are invalid.
 
 ## Project Folder Context
 
@@ -359,7 +320,7 @@ MAGI does not execute commands by default. With `--allow-command-execution`, onl
 
 ## Critical Reports
 
-If MAGI cannot produce a passing spec before the maximum critic passes (v2) or maximum review rounds (v1), it writes:
+If MAGI cannot produce a passing spec before the maximum critic passes, it writes:
 
 ```text
 critical/CRITICAL_REPORT.ko.md
@@ -370,4 +331,4 @@ The report summarizes unresolved issues, unsafe assumptions, blocking questions,
 
 ## Test Status
 
-The repository test suite validates CLI flows, v1 and v2 pipeline behavior, review policy, model-blind routing, provider adapter behavior, command execution guards, project scanning policy, web-search policy, artifact contracts, checklist critic bounds, and acceptance smoke paths.
+The repository test suite validates CLI flows, v2 SpecForge pipeline behavior, review policy, model-blind routing, provider adapter behavior, command execution guards, project scanning policy, web-search policy, artifact contracts, checklist critic bounds, and acceptance smoke paths.

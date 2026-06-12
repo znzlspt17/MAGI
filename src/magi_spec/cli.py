@@ -25,8 +25,8 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--allow-command-execution", action="store_true")
     generate.add_argument("--config", help="YAML or JSON config file.")
     generate.add_argument("--overwrite", action="store_true", help="Allow overwriting an existing run.")
-    generate.add_argument("--pipeline", choices=["v1", "v2"], default=None,
-                          help="Pipeline version override (default: from config, usually v2).")
+    generate.add_argument("--pipeline", choices=["v2"], default=None,
+                          help="Pipeline version override (only v2 is supported).")
 
     approve = subparsers.add_parser("approve", help="Promote approval candidate to final spec.")
     approve.add_argument("output_dir")
@@ -37,7 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     revise.add_argument("--feedback", required=True)
     revise.add_argument("--config", help="YAML or JSON config file.")
 
-    answer_cmd = subparsers.add_parser("answer", help="(v2) Inject answers to blocking questions.")
+    answer_cmd = subparsers.add_parser("answer", help="Inject answers to blocking questions.")
     answer_cmd.add_argument("output_dir")
     answer_cmd.add_argument("--answers", required=True,
                             help="JSON file with list of {question_id, question, answer} objects.")
