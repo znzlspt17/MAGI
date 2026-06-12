@@ -12,3 +12,6 @@ magi_output/
 .env
 .env.*
 !.env.example
+request.md
+answer.json
+answers.json

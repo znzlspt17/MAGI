@@ -9,7 +9,7 @@ MAGI Spec Engine은 사용자 요청을 바로 구현하지 않고, 구현 에�
 - MAGI는 코드 구현기가 아니라 명세 생성기입니다.
 - 최종 산출물은 `final/FINAL_AGENT_SPEC.md`입니다.
 - 런타임은 OpenAI-only이며, 다른 provider는 확장 포인트로만 유지됩니다.
-- v2(기본)는 SpecForge 4단계 파이프라인으로 동작합니다.
+- SpecForge 4단계 파이프라인으로 동작합니다.
 
 ## 2) 설치
 
@@ -31,7 +31,7 @@ set OPENAI_API_KEY=...
 
 테스트/로컬 검증에서는 mock provider 설정을 사용하면 API 키 없이 실행할 수 있습니다.
 
-### v2 (기본) mock 설정 예시
+### mock 설정 예시
 
 ```yaml
 model_routing:
@@ -56,38 +56,10 @@ review:
   max_critic_passes: 2
 ```
 
-### v1 (레거시) mock 설정 예시
 
-```yaml
-model_routing:
-  melchior:
-    provider: mock
-    model: deterministic
-  balthasar:
-    provider: mock
-    model: deterministic
-  casper:
-    provider: mock
-    model: deterministic
-  conflict_resolver:
-    provider: mock
-    model: deterministic
-  spec_composer:
-    provider: mock
-    model: deterministic
-  critical_reporter:
-    provider: mock
-    model: deterministic
-capabilities:
-  web_search: "off"
-  command_execution: false
-pipeline:
-  version: v1
-```
+## 4) SpecForge 파이프라인
 
-## 4) v2 SpecForge 파이프라인
-
-v2는 4단계 결정론적 컴파일러입니다.
+SpecForge는 4단계 결정론적 컴파일러입니다.
 
 ```
 Spec Interviewer → Requirement Lock → Spec Compiler → Checklist Critic
@@ -161,13 +133,7 @@ magi-spec generate --input request.md --output ./magi_output --web-search auto
 - `on`: 항상 검색
 - `off`: 검색 비활성
 
-### 5.5 파이프라인 버전 선택
-
-```bash
-magi-spec generate --input request.md --output ./magi_output --pipeline v2
-```
-
-### 5.6 승인/수정/상태
+### 5.5 승인/수정/상태
 
 ```bash
 magi-spec approve ./magi_output
@@ -175,7 +141,7 @@ magi-spec revise ./magi_output --feedback feedback.md
 magi-spec status ./magi_output
 ```
 
-### 5.7 차단 질문 답변 주입 (v2 전용)
+### 5.6 차단 질문 답변 주입
 
 MAGI가 `NEEDS_USER_INPUT` 상태로 종료되면 `analysis/05_blocking_questions.ko.md`에 질문 목록이 생성됩니다.
 
@@ -195,7 +161,7 @@ magi-spec answer ./magi_output --answers answers.json
 ]
 ```
 
-### 5.8 처리 중 상태 모니터링
+### 5.7 처리 중 상태 모니터링
 
 `generate` 또는 `revise`가 실행되는 동안 MAGI는 다음 파일을 즉시 생성하고 10초마다 갱신합니다.
 
@@ -224,10 +190,10 @@ result = engine.generate_from_file(
 
 print(result.status)
 print(result.approval_candidate_path)
-print(result.questions_path)   # v2: NEEDS_USER_INPUT일 때 질문 파일 경로
+print(result.questions_path)   # NEEDS_USER_INPUT일 때 질문 파일 경로
 ```
 
-차단 질문 답변 (v2 전용):
+차단 질문 답변:
 
 ```python
 result = engine.answer(
@@ -238,7 +204,7 @@ result = engine.answer(
 )
 ```
 
-## 7) 주요 출력물 (v2)
+## 7) 주요 출력물
 
 `magi_output/` 아래에 다음이 생성됩니다.
 
@@ -291,7 +257,7 @@ result = engine.answer(
 ### pipeline.version 오류
 
 - 증상: `Invalid pipeline_version` 에러
-- 조치: `v1` 또는 `v2`로 설정
+- 조치: `v2`로 설정
 
 ### 차단 질문으로 인한 NEEDS_USER_INPUT
 
