@@ -1,403 +1,340 @@
-# MAGI Spec Engine 사용자 설명서 (v2)
+# MAGI Spec Engine 사용자 설명서
 
-## 1) 개요
+공개 서비스 전환 설정과 Google 로그인 공개 조건은 [공개 서비스 운영](PUBLIC_SERVICE.ko.md)을 참고하세요.
+공개 모드는 Google 로그인 후 서버 세션을 사용하며, 사용자별 기록 격리와 전역 독점·3분 대기 만료·일별 실행 및 비용 제한을 적용합니다.
+Google OAuth 설정이 준비되면 로그인할 수 있습니다. 계정 연결에는 검증된 식별자만 사용하며 이름·이메일·사진을 사용자 데이터로 저장하거나 활용하지 않습니다.
 
-MAGI Spec Engine은 사용자 요청을 바로 구현하지 않고, 구현 에이전트가 사용할 수 있는 검토 완료 명세 문서를 생성하는 도구입니다.
+MAGI는 개발 요청을 검토된 영어 Markdown 명세로 변환하는 Python 패키지입니다. 대상 프로젝트 구현과 코딩 에이전트 실행은 별도 단계입니다.
 
-핵심 원칙:
+모델에는 사용자 원문을 `S1`, 검색 근거를 `K1` 같은 짧은 참조와 내용으로 전달합니다. 내부 DB ID·해시는 서버가 보관하며 출처 검증과 이력 연결에 사용합니다. 같은 원문의 중복 전송을 줄이면서 실제 사용자 답변과 모델의 가정을 구분합니다. 검토는 현재 명세와 확정 근거를 기준으로 진행하고, 한국어 번역에는 선택한 영어 문서와 번역 보정 지침만 전달합니다.
 
-- MAGI는 코드 구현기가 아니라 명세 생성기입니다.
-- 최종 산출물은 `final/FINAL_AGENT_SPEC.md`입니다.
-- 런타임은 OpenAI-only이며, 다른 provider는 확장 포인트로만 유지됩니다.
-- SpecForge 4단계 파이프라인으로 동작합니다.
+소스는 화면 리소스 `frontend/`, Flask 중계 서버 `gateway/`, 명세 생성과
+작업 서버 `backend/`, 공통 통신 규약 `protocol/`로 분리되어 있습니다.
+브라우저 → gateway → backend 순서로 통신하며 모델 API 호출과 작업 저장은
+backend가 담당합니다. 화면은 gateway가 제공하므로 별도 프런트엔드 빌드는
+필요하지 않습니다. Python API import는 `from backend import MagiSpecEngine`입니다.
 
-## 2) 설치
+## 설치와 설정
 
-```bash
-pip install -e ".[dev]"
+Python 3.11 이상이 필요합니다.
+
+```powershell
+uv sync
 ```
 
-요구 버전:
+실행에는 `OPENAI_API_KEY`가 필요합니다. 생성·검토·컴파일·번역은 `gpt-6-luna`로 고정됩니다.
+`MAGI_SPEC_OPENAI_MODEL`과 `MAGI_MODEL_PRICES`는 폐기되어 남아 있어도 무시합니다. 모델 단가와 토큰 상한은 코드에서 관리합니다. 모든 모델 호출은 공식 OpenAI SDK의 Responses API
+(`client.responses.parse`)를 사용합니다. 설정 파일은 `MagiConfig.from_file()`에
+명시적으로 전달합니다. OpenAI 단일 제공자와 v2 파이프라인을 지원하며 검토 횟수는 1~3회입니다.
 
-- Python 3.11+
+## 소스 구조
 
-## 3) 기본 설정
+- `engine.py`: 외부에서 사용하는 Python API 진입점
+- `models/`: 실행 상태, 결과, 요구사항·이슈 등 구조화된 데이터
+- `services/`: 인터뷰, requirement lock, 명세 생성, 검토 로직
+- `pipeline/stages/`: 순서대로 실행되는 파이프라인 단계
+- `infrastructure/`: 산출물 저장, 증거, 프롬프트, 스캔, 웹 검색, 권한
+- `providers/`: OpenAI Responses API 단일 클래스
+- `server/`: loopback WebSocket 작업 서버, 큐, 산출물 관리, 이벤트 전송
+- `transport/`: 로컬 소켓의 JSON 요청·응답 검증 공통 모듈
+- `web/`: Flask HTTP 호환 계층, 브라우저 이벤트 중계, 작업 공간 UI
 
-### 3.1 환경 변수
+`MagiSpecEngine` Python API를 사용합니다.
 
-OpenAI provider를 사용할 때:
+## 로컬 웹 UI
 
-```bash
-set OPENAI_API_KEY=...
+로컬에서 두 프로세스를 각각 실행합니다. 먼저 작업 서버를 시작합니다. 이 서버만
+산출물 폴더와 엔진 작업자를 관리합니다.
+
+```powershell
+$env:MAGI_DATA_DIR = "$PWD\magi_web_data"
+uv run python -m backend.server
 ```
 
-| 환경 변수 | 필수 | 기본값 | 설명 |
-|---|---|---|---|
-| `OPENAI_API_KEY` | OpenAI provider 사용 시 필수 | (없음) | 미설정 시 `MissingCredentialError` 발생 |
-| `MAGI_SPEC_OPENAI_MODEL` | 선택 | `gpt-5.4-nano` | OpenAI 라우팅의 기본 모델명 |
+작업 서버를 실행한 터미널에는 서버 주소와 작업 ID, 실행 단계, 완료 상태가 표시됩니다.
+실패할 때는 입력·답변·수정 의견·API 응답·자격 증명 원문을 출력하지 않고, 안전한 한국어
+원인과 예외 유형·코드 위치만 표시합니다. 이 터미널 출력을 확인하면 화면의 일반 오류
+문구만으로는 알기 어려운 실패 위치를 확인할 수 있습니다.
+각 파이프라인 단계는 최초 실행 후 오류가 나면 최대 3회 더 시도합니다(총 4회).
+화면과 실행 이력에는 `재시도 중… (1/3)`부터 `(3/3)`까지 표시합니다.
+언어·출처·누락 등 검증 오류도 이 예산을 공유하며, 모두 실패하면 단계를 중단합니다.
+통신 결과가 불명확해 대화가 pending 상태인 경우에는 단계 재시도에서도 API를 재전송하지 않습니다.
 
-테스트/로컬 검증에서는 mock provider 설정을 사용하면 API 키 없이 실행할 수 있습니다.
+다른 PowerShell 창에서 Flask UI 중계를 reloader 없이 실행합니다.
 
-### 3.2 설정 파일 적용 방법
-
-설정 파일은 **명시적으로 전달**해야 적용됩니다. 기본 설정 파일 경로나 자동 탐색은 없으며, 아무것도 전달하지 않으면 OpenAI provider 기본값(`MagiConfig.default()`)이 사용됩니다.
-
-CLI에서는 모든 하위 명령에 `--config` 플래그로 YAML 또는 JSON 파일을 전달합니다.
-
-```bash
-magi-spec generate --input request.md --output ./magi_output --config mock.yaml
-magi-spec answer ./magi_output --answers answers.json --config mock.yaml
+```powershell
+$env:FLASK_SKIP_DOTENV = '1'
+uv run python -m flask --app gateway.app:create_app run --host 127.0.0.1 --port 5000 --no-reload
 ```
 
-Python API에서는 `MagiConfig`를 직접 만들어 `MagiSpecEngine(config=...)`에 주입합니다.
-
-```python
-from magi_spec import MagiSpecEngine
-from magi_spec.core.config import MagiConfig
-
-config = MagiConfig.from_file("mock.yaml")   # 파일에서 로드
-engine = MagiSpecEngine(config=config)
-
-# 또는 mock provider 전용 엔진 헬퍼
-engine = MagiSpecEngine.with_mock_providers()
-```
-
-### 3.3 설정 스키마
-
-| 키 | 타입 | 기본값 | 설명 |
-|---|---|---|---|
-| `model_routing.<agent>.provider` | string | `openai` | agent별 provider (`openai` / `mock`) |
-| `model_routing.<agent>.model` | string | `MAGI_SPEC_OPENAI_MODEL` 값 | agent별 모델명 |
-| `capabilities.web_search` | string/bool | `auto` | `auto` / `on` / `off` (bool도 허용: true→on, false→off) |
-| `capabilities.command_execution` | bool | `false` | 명령 실행 허용 여부 |
-| `capabilities.project_scan` | bool | `true` | 프로젝트 스캔 허용 여부 |
-| `review.max_critic_passes` | int (1~3) | `2` | Checklist Critic 최대 패스 수 |
-| `language.analysis` | string | `ko` | 분석 산출물 언어 |
-| `language.final_spec` | string | `en` | 최종 명세 언어 |
-| `pipeline.version` | string | `v2` | 파이프라인 버전. 현재 런타임은 `v2`만 지원 |
-
-`<agent>`는 `interviewer`, `critic`, `compiler`, `critical_reporter` 중 하나입니다.
-
-### 3.4 mock 설정 예시
-
-```yaml
-model_routing:
-  interviewer:
-    provider: mock
-    model: deterministic
-  critic:
-    provider: mock
-    model: deterministic
-  compiler:
-    provider: mock
-    model: deterministic
-  critical_reporter:
-    provider: mock
-    model: deterministic
-capabilities:
-  web_search: "off"
-  command_execution: false
-pipeline:
-  version: v2
-review:
-  max_critic_passes: 2
-```
-
-
-## 4) SpecForge 파이프라인
-
-SpecForge는 4단계 결정론적 컴파일러입니다.
-
-```
-Spec Interviewer → Requirement Lock → Spec Compiler → Checklist Critic
-```
-
-### 4.1 Spec Interviewer
-
-- 요청 유형을 분류합니다: `product` / `feature` / `bugfix` / `refactor` / `infra`
-- 차단 질문(방향전환급)과 가정 가능한 답변을 식별합니다.
-- 방향전환급 차단 질문이 있으면 `NEEDS_USER_INPUT` 상태로 종료합니다.
-
-### 4.2 Requirement Lock
-
-- 사용자 답변, 가정, 필수 요구사항, 비범위, 제약을 구조화된 Lock Sheet로 고정합니다.
-- 산출물: `analysis/requirement_lock_sheet.json`, `analysis/requirement_lock_sheet.ko.md`
-
-### 4.3 Spec Compiler
-
-- Lock Sheet를 입력으로 단일 영어 Markdown 명세를 생성합니다.
-- 반드시 26개 필수 섹션을 포함해야 합니다.
-- 산출물: `draft/approval_candidate_spec.en.md`
-
-### 4.4 Checklist Critic
-
-- 결정론적 체크(토큰 0) + LLM 보조 체크를 수행합니다.
-- 최대 2회(`max_critic_passes`) 실행합니다.
-- Blocking issue가 남으면 재컴파일, 한계를 초과하면 `CRITICAL_BLOCKED`입니다.
-
-체크 항목:
-
-| 항목 | 심각도 |
-|---|---|
-| 26개 필수 섹션 존재 | blocking |
-| Out of Scope 비어있지 않음 | blocking |
-| Forbidden Behaviors 비어있지 않음 | blocking |
-| Acceptance Criteria 검증 가능 | blocking |
-| Test Plan 존재 | blocking |
-| 미해결 차단 질문 0개 | blocking |
-| 모호한 표현(robust, good 등) 없음 | major |
-| 모든 필수 요구사항이 명세에 반영됨 | major |
-
-## 5) 기본 사용 흐름
-
-### 5.0 CLI 명령 및 옵션 레퍼런스
-
-CLI 진입점은 `magi-spec`입니다. 모든 하위 명령은 `--config`로 설정 파일을 받을 수 있습니다.
-
-| 명령 | 위치 인자 | 옵션 |
-|---|---|---|
-| `generate` | (없음) | `--input` \| `--text` (택1, 필수), `--output` (필수), `--project`, `--web-search {auto,on,off}`, `--allow-command-execution`, `--overwrite`, `--pipeline {v1,v2}`, `--config` |
-| `approve` | `output_dir` (필수) | `--config` |
-| `revise` | `output_dir` (필수) | `--feedback` (필수), `--config` |
-| `answer` | `output_dir` (필수) | `--answers` (필수), `--config` |
-| `status` | `output_dir` (필수) | `--config` |
-
-옵션 설명:
-
-- `--input` / `--text`: 요청을 파일(`.md`/`.txt`) 또는 직접 텍스트로 전달. 상호 배타이며 둘 중 하나는 필수.
-- `--project`: 읽기 전용 프로젝트 컨텍스트 폴더.
-- `--web-search`: 웹 리서치 모드 (`auto`/`on`/`off`).
-- `--allow-command-execution`: 명세 생성 중 명령 실행 허용(기본 비활성).
-- `--overwrite`: 기존 출력 디렉터리 덮어쓰기 허용. 미지정 시 기존 디렉터리가 있으면 실패합니다.
-- `--pipeline`: 파이프라인 버전 오버라이드. 현재 런타임은 `v2`만 지원하며 그 외 값은 오류입니다.
-- `--config`: YAML 또는 JSON 설정 파일 경로(3장 참고).
-
-### 5.1 파일 입력
-
-```bash
-magi-spec generate --input request.md --output ./magi_output
-```
-
-### 5.2 텍스트 입력
-
-```bash
-magi-spec generate --text "Build a Python SDK for ..." --output ./magi_output
-```
-
-### 5.3 프로젝트 컨텍스트 포함
-
-```bash
-magi-spec generate --input request.md --project ./target_project --output ./magi_output
-```
-
-### 5.4 웹 리서치 모드
-
-```bash
-magi-spec generate --input request.md --output ./magi_output --web-search auto
-```
-
-모드:
-
-- `auto`: 요청에 따라 조건부 검색
-- `on`: 항상 검색
-- `off`: 검색 비활성
-
-### 5.5 승인/수정/상태
-
-```bash
-magi-spec approve ./magi_output
-magi-spec revise ./magi_output --feedback feedback.md
-magi-spec status ./magi_output
-```
-
-### 5.6 차단 질문 답변 주입
-
-MAGI가 `NEEDS_USER_INPUT` 상태로 종료되면 `analysis/05_blocking_questions.ko.md`에 질문 목록이 생성됩니다.
-
-```bash
-magi-spec answer ./magi_output --answers answers.json
-```
-
-> **재개 방식 안내(중요).** MAGI v2는 LangGraph의 `interrupt()`/체크포인터 기반 HITL을 사용하지 않습니다. `interview` 단계에서 방향전환급 차단 질문이 발견되면 `await_user` 노드가 `END`로 가며 실행이 종료되고, 전체 상태는 `state/magi_state.json`에 직렬화됩니다. `magi-spec answer`는 이 JSON을 읽어 답변을 Lock Sheet에 주입한 뒤 그래프를 **`START`부터 다시 호출**하는 "종료 후 재시작" 방식입니다(프로세스 내 LangGraph 재개가 아님). `project_context`·`web_research` 같은 선행 노드가 다시 실행될 수 있습니다. 이는 체크포인터를 상시 메모리에 유지하는 비용 대신, 프로세스·머신을 넘어 이식 가능한 JSON 상태 파일을 주고받는 의도적 설계 선택입니다.
-
-`answers.json` 형식:
-
-```json
-[
-  {
-    "question_id": "DONE-001",
-    "question": "무엇이 충족되면 이 작업이 완료된 것으로 봅니까?",
-    "answer": "사용자가 CLI 명령 하나로 명세를 생성할 수 있어야 합니다."
-  }
-]
-```
-
-### 5.7 처리 중 상태 모니터링
-
-`generate` 또는 `revise`가 실행되는 동안 MAGI는 다음 파일을 즉시 생성하고 10초마다 갱신합니다.
-
-```text
-magi_output/state/heartbeat.json
-```
-
-- `running: true`이고 `last_heartbeat_at`이 최근이면 처리 중입니다.
-- `running: false`이면 MAGI 처리가 종료된 상태입니다.
-- 정상 종료 시 `lifecycle: stopped`와 최종 `status`가 기록됩니다.
-- 예외 종료 시 `lifecycle: failed`와 에러 요약이 기록됩니다.
-
-## 6) Python API 사용
-
-```python
-from magi_spec import MagiSpecEngine
-
-engine = MagiSpecEngine()
-result = engine.generate_from_file(
-    input_path="request.md",
-    output_dir="./magi_output",
-    project_dir="./target_project",
-    web_search_mode="auto",
-    allow_command_execution=False,
-    overwrite=False,
-)
-
-print(result.status)
-print(result.approval_candidate_path)
-print(result.questions_path)   # NEEDS_USER_INPUT일 때 질문 파일 경로
-```
-
-### 6.1 엔진 생성
-
-```python
-from magi_spec import MagiSpecEngine
-from magi_spec.core.config import MagiConfig
-
-# 기본(OpenAI) 설정
-engine = MagiSpecEngine()
-
-# 설정 파일 주입
-engine = MagiSpecEngine(config=MagiConfig.from_file("mock.yaml"))
-
-# mock provider 전용 엔진(테스트용, API 키 불필요)
-engine = MagiSpecEngine.with_mock_providers()
-```
-
-`MagiSpecEngine(config=..., providers=...)`에서 `providers`는 provider 팩토리 확장 포인트이며, 생략 시 기본 팩토리가 사용됩니다.
-
-### 6.2 텍스트 입력
-
-```python
-result = engine.generate_from_text(
-    text="Build a Python SDK for ...",
-    output_dir="./magi_output",
-    project_dir=None,
-    web_search_mode="auto",
-    allow_command_execution=False,
-    overwrite=False,
-)
-```
-
-### 6.3 승인 / 수정 / 상태 / 차단 질문 답변
-
-```python
-engine.approve("./magi_output")
-engine.revise(output_dir="./magi_output", feedback_path="feedback.md")
-engine.status("./magi_output")
-
-result = engine.answer(
-    "./magi_output",
-    answers=[
-        {"question_id": "DONE-001", "question": "완료 기준은?", "answer": "CLI 명령 하나로 명세 생성 가능"}
-    ],
-)
-```
-
-> `generate_*`의 `overwrite=False`일 때 출력 디렉터리가 이미 존재하면 실패합니다. 재실행 시 `overwrite=True`를 사용하세요. `revise`/`answer`는 기존 run을 갱신하므로 내부적으로 덮어쓰기를 허용합니다.
-
-
-## 7) 주요 출력물
-
-`magi_output/` 아래에 다음이 생성됩니다.
-
-항상 생성:
-
-- `raw/user_request.md`
-- `execution/command_log.json`
-- `state/private_model_assignments.json` ← agent별 provider/model 라우팅 기록
-- `context/project_manifest.json`
-- `research/web_sources.json`
-- `evidence/evidence_registry.json`
-- `analysis/01_intent_parse.ko.md`
-- `analysis/02_requirement_lock.ko.md`
-- `analysis/03_scope_classification.ko.md`
-- `analysis/04_initial_assumptions.ko.md`
-- `analysis/05_blocking_questions.ko.md`
-- `analysis/requirement_lock_sheet.json` ← Lock Sheet (구조화)
-- `analysis/requirement_lock_sheet.ko.md`
-- `review/checklist_issues.json` ← 체크리스트 critic 결과
-- `state/magi_state.json`
-- `state/heartbeat.json`
-
-조건부 생성:
-
-- `context/project_summary.ko.md` ← `--project` 제공 시
-- `research/web_research_summary.ko.md` ← 웹 리서치 실행 시
-- `draft/approval_candidate_spec.en.md` ← blocking issue 0개일 때
-- `final/FINAL_AGENT_SPEC.md` ← approve 후
-- `critical/CRITICAL_REPORT.ko.md` ← CRITICAL_BLOCKED일 때
-- `critical/FAILED_AGENT_SPEC_DRAFT.en.md` ← CRITICAL_BLOCKED일 때
-
-## 8) 상태 해석
-
-주요 상태:
+브라우저에서 `http://127.0.0.1:5000`을 엽니다. 기본 산출물 위치는 현재
+폴더의 `magi_web_data`이며 Git에서 제외됩니다. 다른 로컬 경로가 필요할 때만
+작업 서버에 `MAGI_DATA_DIR`를 지정하세요. Flask UI는 기본적으로
+`ws://127.0.0.1:8765`의 서버에 연결하며, 다른 loopback 주소가 필요할 때만
+`MAGI_SERVER_URL`을 지정하세요. 이 UI는 인증 기능이 없으므로 공개 배포용이 아닙니다.
+
+모든 작업은 OpenAI로 실행합니다. 작업 서버 워커는 한 번에
+한 작업만 실행하고, 대기·실행 중인 작업은 최대 20개까지 유지합니다. 프로세스를
+다시 시작하면 이미 저장된 단계는 다시 표시할 수 있지만, 실행 중이던 백그라운드
+작업은 자동으로 이어서 실행하지 않습니다.
+
+작업 상세 화면에는 제공자가 반환한 입력·출력·캐시 토큰 사용량을 표시합니다. 제공자가
+사용량을 반환하지 않으면 `알 수 없음`으로 표시됩니다. 작업별 누적 통계는
+`state/provider_usage.json`에 단계·제공자·모델·경과 시간과 안전한 숫자만 기록하며, 입력
+본문·답변·수정 의견·API 응답은 저장하지 않습니다. 기록을 읽거나 쓰지 못한 경우에도 작업은
+계속되고 UI에는 일부 사용량 기록이 누락되었다고 표시합니다. GPT-6 요청은 프롬프트 캐시의
+최소 보존 시간을 요청하지만, 실제 캐시 적중과 절감 효과를 보장하지는 않습니다.
+
+GPT-6 요청은 `implicit` 모드를 유지하면서 최초 공통 developer 규칙과 원본 요청·
+기준 문맥 끝에 명시적 캐시 경계를 최대 세 개 추가합니다. 단계별 지침은 최상위
+`instructions`로 전달하며 대화의 developer 메시지로 변환하지 않습니다. 변경되는
+피드백과 초안에는 경계를 추가하지 않습니다. 모델·출력 스키마·단계 지침의 변경은
+캐시 재사용에 영향을 줄 수 있으므로 실제 적중은 별도로 확인해야 합니다.
+서버를 다시 시작한 뒤 새 작업에서 동일 단계의 반복 호출을 비교하고,
+`state/provider_usage.json`의 `cached_tokens`와 `cache_diagnostics`를 확인하세요.
+이 구조는 SDK 요청 직렬화까지 검증했으며 실제 API에서의 적중은 별도 검증이 필요합니다.
+근거: [OpenAI Prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching).
+
+사용량 처리는 외부 통신 없는 SDK 테스트로 검증했습니다. 실제 OpenAI API 호출과
+캐시 절감 효과는 별도 확인이 필요합니다.
+
+브라우저는 2초 폴링 대신 Flask WebSocket 중계로 작업 변경을 받습니다. 연결이
+끊기면 1초, 2초, 4초, 8초, 이후 10초 간격으로 다시 연결하며, 작성 중인 요청·답변·수정
+의견을 유지합니다. 생성·답변·수정·승인 요청은 자동으로 다시 보내지 않습니다. 응답을
+받지 못했다면 다시 실행하기 전에 작업 기록에서 반영 여부를 확인하세요.
+
+### 실행 이력 그래프
+
+작업 상세는 위에서 아래로 이어지는 실행 이력 그래프로 요청 접수, 분석, 답변 대기,
+요구사항 확정, 명세 생성, 검토와 이후 보완·승인 흐름을 표시합니다. 노드를 선택하면
+**결과**, **검토 항목**, **명세**에서 당시의 질문·요구사항, 구조화된 이슈, 문서 스냅샷을
+확인할 수 있습니다. 검토 이슈는 신규·계속·해소 상태를 구분하며, 차단 노드에는 실패
+초안과 차단 보고가 함께 표시됩니다. Markdown 다운로드는 선택한 문서 버전을 내려받습니다.
+
+### 명세 언어와 다운로드
+
+명세 탭에서 **한국어 / English**로 언어를 전환합니다. 기본 표시는 한국어이며,
+문서 보기와 Markdown 보기 모두 선택한 언어를 사용합니다. **Markdown 다운로드는 현재 화면에 보이는 언어본**을
+UTF-8 파일로 내려받습니다. 한국어본 파일명에는 `.ko.md`가 붙습니다.
+
+한국어본은 선택한 영어 명세 스냅샷을 기준으로 처음 열 때 생성합니다. 이때 번역 모델 호출이 추가로 발생하며,
+동일한 원문은 저장된 번역본을 재사용합니다. 기존 작업과 과거 단계도 지원하며, 원문이 바뀌면 새 번역본을 생성합니다.
+원래 영어 명세와 검토·승인 상태는 유지합니다. 번역 호출 기록은 작업의 `translations/` 아래에 별도로 저장되며,
+기존 파이프라인 호출 사용량 합계에는 포함되지 않습니다.
+
+한국어본 생성 중이거나 실패한 상태에서는 다운로드를 막아 영어본이 한국어본으로 내려받아지지 않게 합니다.
+실패하면 한국어본 생성을 다시 시도하거나 English에서 원문을 확인할 수 있습니다.
+번역의 섹션 구조·요구사항 ID·수치·코드·원문 인용 보존과 한국어 사용을 검사하지만 의미적 동등성을 완전히 증명하지는 않습니다.
+번역 보존 검증 실패는 `SPEC_TRANSLATION_INVALID`로 분류하고 화면에 영어 보기 안내를 표시합니다. 로그의 `failed_checks`와 `translations/<source_hash>/validation.json`에서 실패한 검사항목과 시도 횟수를 확인할 수 있습니다. 실패한 번역 원문은 진단에 저장하지 않습니다. 입력 캐시의 `cache_hit`는 번역 검증 통과를 의미하지 않습니다. 인증·통신 오류나 결과가 불확실한 호출은 자동 반복하지 않고, 번역 검증 실패만 공통 보정 예산 안에서 재시도합니다.
+기능 적용 후에는 작업 서버와 Flask를 재시작하고 브라우저를 새로고침해야 합니다.
+
+### 이전 기록과 단계 조회
+
+기존 작업은 과거 실행 시점 정보를 추측하지 않고 `이전 기록` 한 개만 표시합니다. 새로
+실행한 단계부터 상세 이력이 저장됩니다. 이력 기록이나 스냅샷 저장에 실패해도 명세 생성은
+계속되며 화면에는 기록 누락으로 표시됩니다. 이 경우 이전 문서를 과거 이력으로 복원하지
+않습니다. 실행 그래프를 적용한 뒤에는 작업 서버와 Flask를 모두 재시작하고 브라우저를
+새로고침하세요.
+
+단계 상세는 Flask의 `GET /api/jobs/<id>/steps/<step_id>`로도 조회할 수 있습니다. 이 요청은
+기존 MAGI `get` 명령에 선택적 `step_id`를 전달하는 중계이며, 저장 경로는 응답에 노출하지
+않습니다.
+
+Windows 시스템 환경 변수를 새로 추가했다면, 변경된 환경을 상속한 새 터미널 창에서
+MAGI를 시작하세요. 이미 열려 있던 터미널과 Codex 프로세스는 이전 환경을 유지할 수
+있으므로, 새 창에서 작업 서버와 Flask 중계를 다시 시작해야 합니다.
+
+## 처리 흐름과 상태
+
+인터뷰 → 요구사항 고정 → 명세 생성 → 체크리스트 검토 → 해결 방법 판단 순서입니다.
 
 | 상태 | 의미 |
 |---|---|
-| `DRAFT` | 초기화 완료 |
-| `ANALYZING` | Interviewer / Requirement Lock 실행 중 |
-| `COMPILING` | Spec Compiler 실행 중 |
-| `CRITIQUING` | Checklist Critic 실행 중 |
-| `NEEDS_USER_INPUT` | 방향전환급 차단 질문 대기 |
-| `PASS_PENDING_USER_APPROVAL` | 승인 후보 생성 완료 |
-| `FINALIZED` | 최종 명세 확정 |
-| `CRITICAL_BLOCKED` | 최대 critic 패스 초과 |
-| `REJECTED_BY_USER` | 사용자 피드백 기반 수정 대기 |
+| `NEEDS_USER_INPUT` | 방향을 결정할 답변 필요 |
+| `PASS_PENDING_USER_APPROVAL` | 검토 후 사용자 승인 대기 |
+| `CRITICAL_BLOCKED` | 명세 보완 실패: 자동 보완으로 필수 결함을 해결하지 못함 |
+| `FINALIZED` | 사용자 승인 후 최종 문서 저장 |
 
-## 9) 트러블슈팅
+최초 인터뷰의 `answer`와 `revise`는 저장된 JSON 상태에서 인터뷰 단계로 다시 들어갑니다.
+명세 검토에서 나온 질문에 모두 답한 경우에는 인터뷰를 반복하지 않고 requirement lock → 명세 생성 → 검토부터 재개합니다.
+프로세스 내 체크포인터 재개 방식이 아닙니다.
 
-### OpenAI 키 오류
+### 선택형 질문에 답하기
 
-- 증상: `OPENAI_API_KEY` 관련 에러
-- 조치: 환경 변수 설정 또는 mock provider 사용
+최초 인터뷰와 검토 중 추가 질문은 질문 내용에 따라 단일 선택, 복수 선택 또는 직접 입력으로 표시됩니다. 선택형 질문은 처음에는 아무 항목도 선택되어 있지 않습니다. 모든 선택형 질문에 **직접 입력**이 있으며, 복수 선택에서는 선택한 항목과 직접 입력 내용을 함께 제출할 수 있습니다.
 
-### pipeline 버전 오류
+답한 질문만 한 번에 제출할 수 있습니다. 직접 입력을 선택했다면 내용을 작성해야 합니다. 같은 질문의 작성 중인 선택과 입력은 화면 갱신·작업 전환 중 유지되며, 제출한 답변은 서버에 저장됩니다. 질문이나 선택지가 변경된 오래된 폼의 답변은 거부됩니다. 이전 버전에 저장된 문자열 질문은 기존 텍스트 입력 방식으로 표시됩니다.
 
-- 증상: `Invalid pipeline_version 'v1'. Only 'v2' is supported by the current runtime.`
-- 원인: `--pipeline`에 `v2` 외 값을 주거나 설정 파일 `pipeline.version`이 `v2`가 아님
-- 조치: `v2`로 설정(또는 `--pipeline` 생략)
+### 명세 검토 중 추가 질문
 
-### 출력 디렉터리 존재 오류
+검토 다음 `review_resolution` 단계가 확정 요구사항·실제 사용자 답변·수정 의견과 대조해 해결 방법을 판단합니다. 지적에는 `defect_kind`(요구사항 미확정·명세 반영 누락·검증 누락·확정 내용 간 충돌), `resolution_reason`, `missing_information`, `decision_key`와 확정 근거 `basis_refs`를 저장합니다. 심각도와 해결 방법은 별개입니다.
 
-- 증상: 기존 출력 디렉터리가 있어 `generate`가 실패
-- 조치: 새 출력 경로를 사용하거나 `--overwrite`(API는 `overwrite=True`) 지정
+범위·사용자 동작·데이터·비용에 영향을 주는 미확정 선택만 질문합니다. 사소한 구현 세부는 명시한 가정으로 보완합니다. 모델이 제안한 수치나 현재 초안의 가정을 사용자 확정 요구사항으로 채택하지 않습니다. 이미 확정된 동작의 테스트 누락은 자동 보완하며, 내부 실행 오류를 사용자 요구사항 질문으로 전환하지 않습니다.
 
-### 차단 질문으로 인한 NEEDS_USER_INPUT
+질문은 요구사항과 `decision_key`로 묶습니다. 표현이 바뀌어도 같은 키면 같은 결정으로 처리합니다. 같은 결정에 대한 키 유지도 모델 계약과 검증 대상이며, 임의의 두 문장의 의미적 동일성을 완전히 증명하는 기능은 아닙니다. 화면에는 관련 요구사항·미확정 내용·결정이 필요한 이유를 표시합니다. 이미 받은 답변은 재질문하지 않고 명세에 반영합니다. 실제 새 수정 의견이 기존 답변과 충돌할 때만 별도 질문 ID로 재확인합니다.
 
-- 증상: `NEEDS_USER_INPUT` 상태로 종료
-- 조치: `analysis/05_blocking_questions.ko.md` 확인 후 `magi-spec answer`로 답변 주입
+일부만 답하면 남은 질문만 대기하며 서버 재시작 후에도 질문 ID와 답변을 유지합니다. 모든 답변을 받으면 요구사항 확정 → 명세 작성 → 검토부터 재개합니다. 답변 수신만으로 지적을 해결 처리하지 않습니다. 사용자 답변이나 수정 의견을 받으면 새 보완 구간을 시작하되 이전 검토·해결 판단 이력을 보존합니다.
 
-### critic 초과로 인한 CRITICAL_BLOCKED
+기본 검토 한도는 3회(최초 검토와 자동 보완 후 검토 2회)이며 `review.max_critic_passes`로 1~3회 범위에서 설정합니다. 보완 후 같은 결함이 남으면 해당 결함을 한 번 진단하고, 실제 중요 결정이 빠졌으면 **요구사항 확인 필요**로 전환합니다. 자동 수정 사항이면 남은 예산으로 구체적으로 보완합니다. 진단은 예산을 초기화하지 않으며 진단 후에도 같은 결함이 남으면 종료합니다.
 
-- 증상: `CRITICAL_BLOCKED` 상태
-- 조치: `critical/CRITICAL_REPORT.ko.md`의 미해결 이슈 확인, `revise`로 재시도
+보완 예산이 끝나면 **명세 보완 실패**를 표시합니다. `review/resolution.json`, 상태의 `resolution_history`·`diagnosed_keys`, 단계 상세에서 초안 해시·근거·진단·시도 내역을 확인할 수 있습니다. 실패 보고서는 저장된 진단으로 생성하므로 추가 모델 호출을 하지 않으며, 사용자 요구사항 부족으로 설명하지 않습니다. 해결 판단을 저장한 초안 사본 `review/resolved_draft.en.md`도 보존하며, 이후 실패하면 해시가 일치하는 마지막 사본으로 복구합니다.
 
-### 승인 실패
+형식·언어·출처 검증 실패만 단계당 최대 추가 3회의 공통 보정 예산을 사용합니다. 인증 오류·잘못된 상태·결과가 불확실한 제공자 호출은 자동 반복하지 않습니다. 정상적인 검토 미통과는 이 오류 보정 예산과 별개입니다. 새 필수 검토 필드가 없는 과거 작업은 재개하지 않으며 버전 분기·자동 변환·기록 일괄 수정은 제공하지 않습니다.
 
-- 증상: `approve` 실행 시 상태 오류
-- 조치: 먼저 `status`에서 `PASS_PENDING_USER_APPROVAL`인지 확인
+요구사항 잠금은 각 항목에 고정 ID, 원문(`original_text`), 영어 명세 문장(`text`), 출처 목록(`sources`)을 함께 보관합니다. `source`는 주 출처를, `sources`는 관련 출처 전체를 나타냅니다. 한국어 원문과 영어 명세 문장이 다르다는 이유만으로 누락으로 처리하지 않으며, 필수 요구사항 ID와 확정 영어 문장은 명세의 필수 요구사항 섹션에 코드로 반영합니다.
 
-## 10) 운영 권장
+제품 요구사항과 MAGI 작업 지시는 분리합니다. “멀티플레이 제외”는 제품 `non_scope`에, “구현 에이전트 실행 금지”는 필수 배열 `workflow_constraints`에 저장합니다. 작업 지시는 `WF-*` ID, 영어 정규화 문장, 실제 사용자 원문과 출처를 가지며 분석 문서의 별도 구역에서 확인할 수 있습니다. 혼합 답변은 같은 출처를 가진 두 분류로 나눕니다. 인터뷰 모델이 추론한 답변이나 검색 문서의 지시는 사용자 작업 지시의 증거로 인정하지 않습니다.
 
-- CI에서는 기본적으로 mock provider 테스트를 실행하세요.
-- 실제 OpenAI 라우팅 검증은 별도 환경변수/비밀관리 정책 아래 스모크 테스트로 분리하세요.
-- 산출물 디렉터리는 실행 단위로 분리(`./runs/<timestamp>`)해 이력 추적성을 유지하세요.
-- 웹서비스는 실행 중 요청마다 별도 output 디렉터리를 부여하고, `state/heartbeat.json`을 5~10초 간격으로 폴링하세요.
+고정 운영 정책은 공통 developer 메시지로, 단계 작업은 `instructions`로, 사용자 작업 지시는 별도 user 문맥으로 전달합니다. 실행 권한은 기존 권한 체계를 따릅니다. 작업 지시는 최종 제품 명세·구현 근거·수용 기준에 넣지 않습니다. Out of Scope는 제품 `non_scope`만으로 조립하며 비어 있으면 `No explicit product exclusions were supplied.`를 표시합니다. 잠금 자료가 없는 답변 수집은 빈 초안에서 시작하며 제품 요구사항을 임의로 추가하지 않습니다.
+
+`workflow_constraints`가 없는 과거 잠금 자료는 현재 계약과 호환되지 않습니다. 자동 보충·변환·버전 분기는 제공하지 않으며 재개·수정·승인 대신 새 작업을 생성해야 합니다. 유효한 잠금 자료가 없는 명세 생성·검토는 모델 호출 전에 중단합니다. 기존 파일과 DB 기록을 일괄 삭제하거나 자동 갱신하지 않습니다. 제품 지식은 `scope=product`인 노드만 검색·재사용하며, 범위가 없는 과거 노드는 제품 검색과 임베딩 재생성에서 제외합니다. 그래프의 과거 기록은 그대로 조회할 수 있습니다.
+
+화면에 **요구사항 정리 실패**가 표시되면 사용자가 답하지 않은 질문이 아니라, 저장된 답변 또는 수정 의견을 요구사항으로 안전하게 연결하지 못한 내부 처리 실패입니다. 이 경우 `REQUIREMENT_NORMALIZATION_FAILED` 또는 `SOURCE_COVERAGE_MISSING` 코드와 `requirement_lock` 단계만 작업 메타데이터에 기록합니다. 입력과 기존 초안은 보존되며, 수정 의견을 제출해 다시 정리할 수 있습니다. 그 밖의 예외 원문과 제공자 응답은 작업 조회·로그 메타데이터에 저장하지 않습니다.
+
+요구사항 정리 재처리 중 서버가 중단된 경우에도 저장된 상태와 증거 파일을 확인할 수 있을 때만 수정 요청을 다시 받을 수 있습니다. 이 기능은 작업을 자동 재실행하거나 승인 상태로 바꾸지 않습니다.
+
+제공자에는 고정 규칙, 원래 요청, 구조화된 누적 문맥, 현재 단계 입력을 분리한 메시지로
+전달합니다. 원래 요청과 수정 이력은 문맥으로 보존하고, 현재 질문·수정 의견만 해당 단계의
+입력으로 더합니다. 이 구조는 수정 요청이 원래 요구사항을 덮어쓰지 않도록 하기 위한 것이며,
+실제 제공자별 캐시 동작을 보장하지는 않습니다.
+
+## 산출물
+
+- `raw/`: 요청과 수정 의견
+- `context/`, `research/`, `evidence/`: 프로젝트·검색 근거
+- `analysis/`: 인터뷰와 구조화된 requirement lock
+- `review/`: 마지막 체크리스트 결과
+- `draft/`: 검토 대상 명세
+- `final/FINAL_AGENT_SPEC.md`: 승인된 최종 명세
+- `critical/`: 실패 보고서와 실패 초안
+- `state/`: 실행 상태, 라우팅 정보, heartbeat
+
+인터뷰에서 종료하면 lock sheet와 검토 결과는 아직 없습니다. 초안은 검토 전에도 생성되며, 최종 문서는 `approve` 후에 생성됩니다. heartbeat는 실행 중 10초마다 갱신됩니다.
+
+## Python API
+
+```python
+from backend import MagiSpecEngine
+
+engine = MagiSpecEngine()
+result = engine.generate_from_text(
+    text="보고서 생성 도구를 만들어주세요.",
+    output_dir="./magi_output",
+    web_search_mode="off",
+)
+print(result.status)
+```
+
+OpenAI 실행은 `MagiSpecEngine()`을 사용합니다. 파일 입력, 승인, 수정,
+답변, 상태 조회 API도 제공합니다.
+
+## 대화 상태와 구조화 응답
+
+첫 모델 호출 전에 `client.conversations.create()`로 작업별 대화를 생성하고 ID를
+`state/conversation_state.json`에 원자적으로 저장합니다. 인터뷰·요구사항 정리·명세 작성·
+검토·실패 보고와 사용자 답변·수정은 같은 `conversation`을 사용합니다. 서버 재시작 후에도
+저장된 ID를 재사용하지만 실행 중 작업의 자동 재개 기능은 추가하지 않습니다.
+
+새 생성과 덮어쓰기 생성은 새 대화입니다. 이전 응답 ID 형식의 기록은 이관하거나 복원하지
+않습니다. conversation ID가 없는 기존 작업은 열람만 가능하며 새 작업을 생성해야 합니다. 원격 대화 삭제,
+손상된 상태, 통신·응답 처리 결과가 불명확한 작업은 중단하고 새 생성을 안내합니다.
+자동 재전송·과거 문맥 복원·원격 대화 삭제·컨텍스트 자동 요약은 하지 않습니다.
+
+최초 developer 메시지에는 고정 운영 규칙을 넣습니다. 매 호출의 `instructions`에는
+현재 단계의 역할·작업·판단 기준·필드별 언어를 넣고, user 메시지에는 사용자 결정과
+자료를 전달합니다. 모델 결과는 OpenAI가 assistant 출력으로 자동 누적합니다.
+코드가 조립한 실제 명세는 실행 지시가 아닌 검토 대상 자료로 별도 전달합니다.
+
+응답은 Pydantic Structured Outputs로 받고 SDK의 `output_parsed`를 직접 사용합니다.
+명세 제목·번호·잠금 요구사항은 코드가 조립합니다. 출처·필수 요구사항 보존·검토·사용자
+승인 검증은 유지합니다. API 오류·거절·미완료·파싱 실패는 성공으로 처리하지 않습니다.
+대화 ID 저장 실패 시 모델 호출을 하지 않으며, 호출 전 진행 상태를 저장해 중복 전송을 막습니다.
+
+## 단계별 언어
+
+- 질문·가정 설명·요청 요약·미해결 질문·검토 설명·실패 보고는 한국어입니다.
+- 정규화된 요구사항과 가정, 수용 기준, 명세 섹션 본문은 영어입니다.
+- 검토의 수정 설명은 한국어로, 명세에 삽입할 문장은 영어 인용으로 작성합니다.
+- 사용자 답변·`original_text`·근거 인용·코드·경로·식별자는 번역하지 않습니다.
+- 영어 본문에 필요한 원문 인용은 Markdown 인용문 또는 `<original_quote>` 블록으로,
+  코드는 코드 span이나 fenced block으로 표시합니다.
+- `analysis_language=ko`, `final_spec_language=en`만 지원하며 다른 설정은 오류로 처리합니다.
+
+구조 검증과 별도로 영어 본문의 한글 혼입, 한국어 설명의 한글 누락을 검사합니다.
+코드·명시적 인용·기술 식별자는 예외이며 완전한 언어 판별기는 아닙니다. 언어 위반은
+같은 대화에서 최대 3회 보정합니다. 요구사항 단계는 언어·출처·누락 보정 전체에서
+동일한 추가 시도 3회를 공유합니다. 오류 종류가 바뀌어도 횟수를 초기화하지 않습니다.
+재시도 메시지는 원래 입력과 지시를 유지하고, 현재 단계·재시도 횟수·최대 횟수·오류 유형·
+검증 실패 항목·단계별 언어 규칙·전체 구조화 결과 재생성 지시를 덧붙입니다.
+잘못된 응답 전체나 외부 예외 원문은 다시 복사하지 않습니다.
+
+응답은 `store=True`로 저장되며 이전 문맥도 입력 과금에 포함됩니다. 실제 모델의 언어
+준수율·명세 품질·비용·캐시 효과는 별도 측정이 필요합니다.
+
+## 현재 제한
+
+- 실제 OpenAI 응답 품질과 실행 이력의 캐시 효과는 테스트 검증과 별도로 새 작업에서 확인해야 합니다.
+- 저장된 답변과 수정 의견은 출처가 연결된 영어 요구사항으로 lock에 반영되어야 합니다. 정규화 실패는 사용자 미답변으로 바꾸지 않으며, 수정 요청으로만 다시 처리할 수 있습니다.
+- 모든 필수 요구사항은 정규화된 형태로 section 7에 포함되어야 합니다. ID 누락·중복 또는 확정 영어 문장 변경, 미해결 blocking 또는 major 이슈, 검토 응답의 형식 오류는 승인 후보를 만들지 않습니다.
+- 프로젝트 스캔의 보호 파일 제외 규칙은 완전하지 않습니다. 공유 가능한 파일만 준비한 폴더를 사용하세요.
+- 웹 검색은 제목과 URL을 수집하며 페이지 본문은 읽지 않습니다.
+- 로컬 명령 실행 기능은 제공하지 않습니다.
+
+uv run python -m backend.server
+
+$env:FLASK_SKIP_DOTENV = '1'
+uv run python -m flask --app gateway.app:create_app run --host 127.0.0.1 --port 5000 --no-reload
+
+http://127.0.0.1:5000/
+## 세션 지식 저장과 재사용
+
+### 작업 공간과 데이터 정리
+
+왼쪽의 **작업 공간 / 지식 검색**으로 이동합니다. 데이터 관리는 관리자 페이지의 **작업·데이터**에 있습니다. 최근 활동순 대화 세션을 검색·상태로 좁힐 수 있습니다. 완료 세션은 최종 명세를, 승인 대기는 명세를, 답변 대기는 검토·질문을 먼저 표시합니다. 실행 이력의 상세 단계는 펼쳐서 확인합니다. 명세의 목차와 언어·다운로드 버튼은 현재 선택한 문서에 적용됩니다.
+
+**새 작업**은 기존 선택을 해제하고 새 세션을 만듭니다. 완료 세션의 **이어서 요청하기**는 작업·대화 ID를 유지하고 실행 ID만 추가합니다. 입력창에 표시된 세션을 확인하세요. 기존 질문은 답변으로, 승인 전 변경은 수정 의견으로 제출합니다. 세션 전환과 실시간 갱신에도 미제출 입력과 선택한 탭·과거 문서를 유지합니다. 접수 응답이 불확실하면 같은 요청을 다시 보내기 전에 대화 이력을 확인하세요.
+
+후속 작성 중에도 **이전 완료본 열기**로 마지막 승인 명세를 볼 수 있습니다. 새 초안은 재검토와 사용자 승인을 거친 뒤 최신 완료본이 되며, 과거 완료본은 별도로 남습니다. `completed/<hash>.json`에는 완료 명세와 확정 근거가 저장되고, 대표 완료 파일은 저장된 포인터로 복구됩니다. 문서별 한국어본과 다운로드도 해당 보존본에 연결됩니다. 파일 전용 설치에서도 세션과 완료본 이력을 사용할 수 있습니다.
+
+대화 ID 누락·손상·제공자 대화 조회 실패·이전 호출 결과 불확실은 각각 안내하고 이어하기를 중단합니다. 대화 이력과 완료 명세는 보존하며 새 대화 생성이나 동일 요청 재전송을 자동 수행하지 않습니다. 새 필수 계약에 맞지 않는 기록은 자동 변환하지 않습니다. 운영 서버 재시작과 새로고침 후 새 화면·API가 함께 적용됩니다.
+
+지식 검색은 가용 화면 전체를 그래프로 사용합니다. 기본 **요약**에서는 같은 작업·문서 버전의 명세를 묶고, **상세**에서는 조회된 원래 항목을 표시합니다. 화면에 표시한 노드 수와 실제 조회 항목·관계 수는 구분되며, 최대 100개 부분 조회를 세션 전체로 취급하지 않습니다. 초기 조회는 유형별 항목과 직접 연결을 우선 포함하며 연결 없는 항목도 기본 표시합니다. 세션 선택 목록은 대화 목록과 같고, 같은 이름은 생성 시각과 짧은 ID로 구분합니다. 지식이 없는 세션은 빈 상태로 안내합니다.
+
+노드를 선택하면 오른쪽에 근거와 원문이 열리고, 빈 배경 또는 Escape로 닫습니다. **이 항목 중심으로 보기**는 1단계, **2단계 주변 보기**는 2단계 관계를 조회합니다. **주변 관계 펼치기**는 최대 100개까지 기존 위치와 시점을 유지하며 병합합니다. **전체 요약**으로 돌아갈 수 있습니다. 명세 묶음을 선택하면 구성 항목과 **명세 묶음 펼치기**가 나옵니다.
+
+휠·핀치로 확대·축소하고 배경을 끌어 이동하거나 노드를 옮깁니다. 노드를 끌면 주변이 짧게 반응한 뒤 안정화합니다. **설정**에서 간격·연결 길이·라벨 양과 배치 일시정지·전체 재배치를 조절합니다. 라벨은 우선순위와 겹침에 따라 최대 8개(상세 확대 시 최대 20개)만 표시합니다. **목록**은 키보드로도 탐색할 수 있으며 검색하면 결과 목록이 열립니다. 임베딩 재시도는 **관리**에 있습니다.
+
+관리자가 **관리자 페이지 → 작업·데이터**에서 세션을 선택한 뒤 삭제 미리보기를 확인하세요. 미리보기에는 파일 수·용량, 노드·청크·모든 모델 세대의 벡터 수와 외부 출처 연결 수가 표시됩니다. 전체 초기화는 **전체 기록 삭제** 문구를 입력해야 합니다. 확인은 10분 동안 유효하며 이후 대상·상태가 달라지면 다시 확인해야 합니다. 대기·실행·번역·저장 중인 작업이 포함되면 일부만 삭제하지 않고 요청 전체를 거절합니다.
+
+삭제는 영구적입니다. 원문·답변·명세·번역·진단·실행 이력과 DB·벡터를 함께 제거하지만 모델 파일·설정·DB 스키마·모델 등록 정보는 유지합니다. 다른 작업의 문서는 고치지 않으며 삭제 대상과 연결된 그래프 관계만 제거합니다. 삭제 API는 관리자 인증이 설정된 공개 서비스에서만 제공합니다. 구형 계약의 작업도 데이터 관리에서 삭제할 수 있습니다. 알 수 없는 폴더와 링크가 있는 경로는 자동 삭제하지 않습니다.
+
+파일은 데이터 폴더 내부 `.cleanup` 아래에 임시 격리한 뒤 DB 삭제를 확정합니다. DB가 실패하면 복원하며, 파일 제거만 실패하면 **파일 정리 재시도**로 마무리합니다. 서버 재시작 시 작업을 복원하기 전에 미완료 정리를 복구합니다. `.cleanup` 폴더나 삭제 방지용 DB 메타데이터를 직접 지우지 마세요. DB에는 삭제한 작업·노드 ID와 확정된 정리 ID만 남겨 늦은 저장에 의한 부활과 불확실한 커밋을 방지합니다. 저장장치 보안 소거나 DB 파일 강제 축소 기능은 아닙니다.
+
+변경 후 백엔드와 게이트웨이를 재시작하고 브라우저를 새로고침해야 현재 화면과 관리 API가 함께 적용됩니다. 실제 데이터를 지우기 전에 반드시 미리보기 범위를 확인하세요.
+
+PostgreSQL + pgvector 설정이 있는 백엔드에서는 세션별로 지식을 조회·검색합니다. 별도 프로젝트 생성·이동 기능은 종료했으며 기존 프로젝트 행은 저장·복원 호환을 위해 보존합니다. 새 세션의 내부 프로젝트와 최초 요청은 함께 저장되며 접수 실패 시 롤백합니다. 실행 큐 등록 실패는 오류 세션으로 남습니다.
+
+결정·요구사항·명세는 버전별로 보존됩니다. 그래프의 항목을 선택하면 명시된 근거와 적용 조건, 연결된 항목, 해당 버전의 명세 원문을 확인할 수 있습니다. **대체된 항목** 필터는 변경 전 이력을 보여줍니다. 작은 화면에서도 접이식 상세 패널과 항목 목록으로 탐색할 수 있습니다. 운영체제에서 동작 줄이기를 설정하면 배치 애니메이션을 끕니다. 관계선은 저장된 연결을 사용하며 검색 유사도만으로 생성하지 않습니다.
+
+선택을 A→B→A로 되돌려도 세 번의 변경을 별도 버전으로 남깁니다. 새 요구사항을 확정한 뒤 아직 다시 생성하지 않은 초안은 과거 항목으로 표시합니다. 검색의 유형·상태 필터는 결과 순위를 정하기 전에 적용되므로 전체 검색 상위 항목에 가려진 결정도 찾을 수 있습니다.
+
+사용자 입력으로 확인되는 결정과 LLM의 제안·가정은 별도로 표시합니다. 인터뷰 모델이 추정한 답변은 실제 사용자 입력으로 확인되지 않으면 사용자 확정으로 표시하지 않습니다. 문서 전체를 승인해도 LLM 제안의 작성 주체가 사용자로 바뀌지는 않습니다.
+
+검색은 로컬 임베딩과 텍스트 검색을 결합합니다. 임베딩을 사용할 수 없으면 텍스트 검색으로 표시하며 원본 저장은 계속됩니다. 모델 준비 후 **임베딩 재시도**로 다시 생성합니다. 모델 다운로드나 유료 임베딩 API 호출은 자동으로 수행하지 않습니다.
+
+관련 세션 지식은 생성·수정 시 LLM에 참조 자료로 제공됩니다. 재사용된 선택은 현재 세션의 새 LLM 제안으로 저장하며 원래 지식과 적용 근거를 연결합니다. 현재 세션의 명시적인 사용자 결정이 우선합니다.
+
+DB 접속·모델 설정 및 기존 자료 이관 명령은 저장소 README의 **결정 지식 그래프와 로컬 임베딩** 항목을 참고하세요. 실제 `.env` 값은 화면·API·진단 로그에 공개하지 않습니다.
+
+
+### 청크 검색과 BGE-M3
+
+검색 결과에 표시되는 인용문은 실제로 일치한 원문 청크입니다. 각 인용문에는 본문·결정 이유·조건 중 어느 필드의 몇 번째 문자 구간인지 표시하며 **원본 열기**로 해당 버전의 내용을 확인합니다. 인접 청크의 중복 구간은 합쳐 표시합니다.
+
+BGE-M3는 백엔드가 실행되는 장치에서 CPU로 동작합니다. 입력은 최대 512토큰이며 청크를 하나씩 처리하므로 처음 색인할 때 시간이 걸릴 수 있습니다. 완료 전에는 텍스트 검색을 사용합니다. 실패한 경우 **임베딩 재시도**를 누르면 이미 완료한 벡터는 재사용합니다. 모델 파일 준비는 README의 BGE-M3 설치 절차를 따르며, 실행 중 자동 다운로드하지 않습니다.
+
+## 계정과 관리자 기능
+
+상단 **내 계정** 메뉴에서 사용자 ID, 권한, 사용량과 로그아웃을 확인합니다.
+데이터 목록 조회와 모든 삭제는 관리자 페이지의 **작업·데이터**에서 수행합니다. 일반 사용자는 관리자에게 삭제를 요청하세요.
+관리자는 **지식 그래프**에서 전체 프로젝트 중 하나를 선택하고 작업별로 검색·관계·원문을 확인할 수 있습니다.

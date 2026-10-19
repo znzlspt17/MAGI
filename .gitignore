@@ -1,3 +1,4 @@
+# Python 환경과 빌드·캐시
 .venv/
 venv/
 __pycache__/
@@ -6,12 +7,81 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.cache/
+node_modules/
+.coverage
+.coverage.*
+htmlcov/
 dist/
 build/
-magi_output/
+# 로컬 편집기·에이전트 설정
+.vscode/
+.idea/
+.codex/
+
+# 비밀 설정과 인증 자료
 .env
 .env.*
 !.env.example
+credentials.json
+secrets.json
+token.json
+service-account*.json
+service_account*.json
+client_secret*.json
+client-secret*.json
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
+*-private.pem
+private*.pem
+.git-credentials
+.npmrc
+.pypirc
+.netrc
+.ssh/
+.aws/
+.azure/
+.config/gcloud/
+.kube/
+
+# 사용자 입력·실행 기록·생성 산출물
 request.md
 answer.json
 answers.json
+/magi_output/
+/magi_web_data/
+/output/
+/logs/
+*.log
+*.log.*
+/test-results/
+/playwright-report/
+
+# 로컬 DB와 모델 가중치 (backend/models 소스는 포함)
+/pgdata/
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+*.dump
+*.backup
+/models/
+*.safetensors
+*.gguf
+*.onnx
+pytorch_model*.bin
+
+# 운영체제 메타데이터
+.DS_Store
+Thumbs.db
+desktop.ini

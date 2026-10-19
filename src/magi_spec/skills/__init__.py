@@ -1,1 +1,0 @@
-"""MAGI skill implementations."""

@@ -1,6 +1,5 @@
-[build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+[tool.uv]
+package = false
 
 [project]
 name = "magi-spec-engine"
@@ -9,24 +8,29 @@ description = "MAGI Spec Engine generates reviewed AI-agent-ready implementation
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "Flask>=3.1.0",
+  "Flask-Sock>=0.7.0",
+  "openai>=3.31.0",
+  "pydantic>=2.0,<3",
   "langgraph>=1.0.0",
   "pyyaml>=6.0.0",
+  "websockets>=15,<17",
+  "psycopg[binary]>=3.2,<4",
+  "python-dotenv>=1.0,<2",
+  "Authlib>=1.6,<2",
+  "requests>=2.32,<3",
 ]
-
-[project.scripts]
-magi-spec = "magi_spec.cli:main"
 
 [project.optional-dependencies]
-dev = [
-  "pytest>=8.0.0",
-]
+embedding = ["sentence-transformers>=5.1,<6"]
+test = ["pytest>=8,<10"]
+production = ["gunicorn>=23,<24; sys_platform != 'win32'"]
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
+include = ["backend*", "gateway*", "protocol*", "frontend*"]
 
 [tool.setuptools.package-data]
-"magi_spec" = ["prompts/*.md"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src"]
+"backend" = ["prompts/*.md"]
+"backend.knowledge" = ["migrations/*.sql"]
+"frontend" = ["templates/*.html", "static/*.css", "static/*.js", "static/vendor/*.js", "static/vendor/*.txt"]

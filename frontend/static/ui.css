@@ -1,0 +1,196 @@
+/* 공통 화면의 정보 위계와 조작 스타일. */
+:root{--ink:#202338;--muted:#657089;--line:#e3e6ee;--accent:#6d4bd1;color-scheme:light}
+body{color:var(--ink);background:#f5f6fa;font-family:Inter,"Pretendard","Segoe UI","Malgun Gothic",sans-serif}
+button,input,select,textarea{font:inherit} :focus-visible{outline:3px solid #8c73db;outline-offset:4px} button:disabled{cursor:wait;opacity:.55}
+[hidden]{display:none!important} a{color:#6142b5}.brand{font-size:20px;font-weight:800;text-decoration:none;letter-spacing:-.7px}
+#public-account{display:flex;align-items:center;gap:16px;min-height:64px;padding:10px 24px;box-sizing:border-box;background:white;border-bottom:1px solid var(--line)}
+#public-account p{margin:0;font-size:13px}#public-account #lease-warning:empty{display:none}
+.account-menu{margin-left:auto;position:relative}.account-menu summary{cursor:pointer;padding:8px 12px;border:1px solid var(--line);border-radius:8px}
+.account-menu>div{position:absolute;right:0;top:44px;width:min(350px,85vw);padding:18px;border:1px solid var(--line);border-radius:12px;box-shadow:0 16px 48px #25314b22;background:white;z-index:100}
+.account-menu p{margin-bottom:12px!important;overflow-wrap:anywhere}.workspace-shell{min-height:calc(100dvh - 65px)}.workspace-sidebar{padding:24px 18px;background:#fff}
+.workspace-content{padding:32px}.workspace-header{max-width:900px;margin:0 auto 24px}.workspace-header h2{font-size:26px;letter-spacing:-.6px}#request-form{max-width:900px;padding:28px}#request-text{min-height:200px}
+.primary-nav{margin-top:24px}.primary-nav button{text-align:left;border-radius:8px}
+body[data-surface=knowledge] .history-filters,body[data-surface=knowledge] #history-query,body[data-surface=knowledge] #history-status,body[data-surface=knowledge] #job-list,body[data-surface=knowledge] #history-toggle,body[data-surface=knowledge] .workspace-sidebar>.mt-8{display:none}
+body[data-surface=knowledge] .knowledge-panel{height:calc(100dvh - 65px)}body[data-surface=knowledge] .workspace-shell{height:calc(100dvh - 65px)}body:not(.admin-page) .graph-menu:has(#knowledge-retry){display:none}
+.workflow-progress{display:flex;list-style:none;gap:8px;padding:0;margin:0 0 24px}.workflow-progress li{flex:1;padding:12px;border-bottom:3px solid var(--line);color:var(--muted);font-size:13px}.workflow-progress li[aria-current=step]{border-color:var(--accent);color:var(--accent);font-weight:700}
+.workspace-tabs{justify-content:flex-end;padding-bottom:12px}.workspace-tabs button{font-size:12px}.execution-layout{display:block}.execution-panel{margin-bottom:16px}.detail-panel{box-shadow:none}.job-actions{border-top:1px solid var(--line)}
+body[data-worktab=document] #completed-documents,body[data-worktab=document] #detail-tabs{display:none!important}
+body[data-auth=local] .workspace-sidebar{top:0}
+.graph-drawer{box-sizing:border-box}
+#public-login{max-width:640px;margin:12vh auto;padding:32px;border:1px solid var(--line);background:white;border-radius:16px}
+@media(max-width:800px){#public-account{padding:10px 16px;gap:10px;flex-wrap:wrap}#service-state{max-width:55vw}.workspace-content{padding:20px 14px}.workspace-sidebar{padding:14px}.workflow-progress{gap:0}.workflow-progress li{padding:8px 4px;font-size:11px}#request-form{padding:20px}.graph-topbar{flex-wrap:wrap}}
+
+body[data-surface=knowledge] .workflow-progress{display:none}
+
+/* 탐색과 작성 영역을 구분하되 기존 화면 전환 규칙은 유지한다. */
+body:not(.admin-page) {
+    --ink: #252b3b;
+    --muted: #657089;
+    --line: #e2e6ef;
+    --accent: #6550cc;
+    background: #f6f7fb;
+}
+.workspace-sidebar {
+    background: #171c30;
+    color: #f5f6ff;
+    border-right: 1px solid #252c44;
+}
+.sidebar-brand { padding: 4px 8px 10px; }
+.sidebar-brand h1 { font-size: 20px; letter-spacing: .08em; }
+.sidebar-brand p { color: #aeb7d2; margin-top: 2px; }
+.brand-mark {
+    color: #fff;
+    background: #7461d9;
+    box-shadow: 0 4px 16px #090d2533;
+    border: 1px solid #9c8ce8;
+}
+#new-job {
+    min-height: 46px;
+    background: #7c68e4;
+    border: 1px solid #9583ee;
+    box-shadow: 0 5px 16px #090c2426;
+}
+#new-job:hover { background: #8a77ee; }
+.workspace-sidebar .primary-nav { gap: 6px; margin-top: 26px; }
+.workspace-sidebar .primary-nav button {
+    color: #b9c2dc;
+    padding: 12px 14px;
+    border: 1px solid transparent;
+}
+.workspace-sidebar .primary-nav button:hover { background: #242b43; color: #fff; }
+.workspace-sidebar .primary-nav button[aria-current] {
+    background: #2d3152;
+    border-color: #47426d;
+    color: #e4ddff;
+}
+.workspace-sidebar .history-filters input,
+.workspace-sidebar .history-filters select {
+    background: #20263c;
+    border-color: #39415a;
+    color: #dce2f4;
+    min-height: 40px;
+    color-scheme: dark;
+}
+.workspace-sidebar .history-filters input::placeholder { color: #a1abc7; }
+.workspace-sidebar > .mt-8 { margin-top: 26px; }
+.workspace-sidebar > .mt-8 h2, #job-count { color: #a6b0cb; }
+.workspace-sidebar #job-list > button { color: #e1e6f5; padding: 12px; border-radius: 10px; }
+.workspace-sidebar #job-list > button:hover { background: #252d46; }
+.workspace-sidebar #job-list > button.bg-slate-800 {
+    background: #303451;
+    border-color: #555079;
+    color: #f1ebff;
+}
+.workspace-sidebar #job-list span:last-child { color: #b0bad5; }
+.workspace-sidebar .sidebar-privacy {
+    border-color: #353d55;
+    color: #aeb8d3;
+    background: #1d2338;
+    font-size: 11px;
+    line-height: 1.8;
+}
+.workspace-sidebar .mobile-history-toggle { border-color: #4e5772; color: #dce2f4; }
+body[data-surface=workspace] .workspace-content { padding: 40px clamp(24px, 4vw, 72px) 64px; }
+body[data-surface=workspace] .workspace-header,
+body[data-surface=workspace] .workflow-progress,
+body[data-surface=workspace] #request-form,
+body[data-surface=workspace] #job-workspace,
+body[data-surface=workspace] #notice { width: 100%; max-width: 1100px; margin-left: auto; margin-right: auto; }
+.workspace-header { gap: 24px; flex-wrap: wrap; }
+.workspace-header > div:first-child { flex: 1 1 340px; }
+.workspace-header > div > p:first-child { font-size: 10px; color: #6550cc; letter-spacing: .16em; }
+.workspace-header h2 { font-size: 28px; line-height: 1.35; font-weight: 750; }
+#workspace-help { font-size: 13px; line-height: 1.8; }
+.workflow-progress { counter-reset: phase; gap: 12px; margin-bottom: 28px; }
+.workflow-progress li {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 14px 4px;
+    border-bottom-width: 2px;
+    line-height: 1.5;
+}
+.workflow-progress li::before {
+    counter-increment: phase;
+    content: counter(phase, decimal-leading-zero);
+    font-size: 11px;
+    font-weight: 700;
+    color: #727d94;
+}
+.workflow-progress li[aria-current=step]::before { color: #6550cc; }
+#request-form {
+    padding: clamp(24px, 3vw, 40px);
+    border-radius: 18px;
+    border-color: #e0e4ee;
+    box-shadow: 0 8px 32px #28344b06;
+}
+.request-intro { padding-bottom: 24px; margin-bottom: 26px; border-bottom: 1px solid #edf0f6; }
+.request-eyebrow { display: inline-block; color: #6550cc; font-size: 11px; font-weight: 700; margin-bottom: 10px; }
+.request-intro h3 { font-size: clamp(22px, 2.2vw, 29px); font-weight: 750; letter-spacing: -.8px; line-height: 1.4; }
+.request-intro p { color: #657089; font-size: 13px; line-height: 1.8; margin-top: 10px; }
+#request-text {
+    min-height: 220px;
+    resize: vertical;
+    border-color: #d9deea;
+    background: #fcfcfe;
+    box-shadow: none;
+    padding: 18px;
+    line-height: 1.85;
+}
+#request-text:focus { background: #fff; border-color: #7c68d9; box-shadow: 0 0 0 4px #7c68d914; }
+.request-guidance { display: flex; flex-wrap: wrap; gap: 10px 24px; }
+.request-guidance span { color: #657089; font-size: 12px; }
+.request-guidance b { color: #7863c7; font-size: 10px; margin-right: 6px; }
+.request-provider { font-size: 12px; line-height: 1.8; }
+#generate-button { background: #6550cc; min-height: 48px; border-radius: 10px; box-shadow: 0 3px 8px #6550cc1a; }
+#generate-button:hover { background: #5441b8; }
+.workspace-tabs { justify-content: flex-start; gap: 6px; border-bottom: 1px solid #dce1ed; }
+.workspace-tabs button { min-height: 42px; font-size: 13px; }
+.workspace-tabs button:hover { background: #eceef6; }
+.workspace-tabs button[aria-pressed=true] { background: #eae5fb; color: #5944bb; }
+.status-summary {
+    /* 긴 제목이 요약 카드의 내부 열을 밀어내지 않도록 너비를 확보한다. */
+    flex: 0 0 auto;
+    width: min(100%, 480px);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    border-radius: 12px;
+    box-shadow: none;
+}
+.status-summary > div { padding: 12px; }
+.status-summary strong { margin-top: 6px; white-space: normal; overflow-wrap: anywhere; }
+.session-conversation, .detail-panel, .execution-panel { border-color: #e0e4ee; border-radius: 14px; box-shadow: 0 4px 20px #28344b04; }
+.panel-heading { padding: 20px 24px; }
+.session-turn { border-left-color: #b7a9eb; }
+.completed-documents { padding: 14px 18px; border: 1px solid #e0e4ee; border-radius: 12px; background: #fff; }
+.completed-documents:empty { display: none; }
+#public-login { padding: 40px; box-shadow: 0 12px 48px #28344b0a; }
+#public-login h1 { font-size: 25px; font-weight: 750; line-height: 1.5; margin-bottom: 20px; }
+#public-login p { color: #657089; line-height: 1.85; margin: 14px 0; }
+#google-login { display: inline-flex; padding: 12px 20px; background: #6550cc; color: #fff; border-radius: 9px; text-decoration: none; }
+@media (min-width: 1024px) {
+    .workspace-sidebar { height: 100dvh; }
+    body[data-auth=signed-in] .workspace-sidebar { height: calc(100dvh - 65px); }
+}
+@media (max-width: 1023px) {
+    .workspace-sidebar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 20px; }
+    .sidebar-brand { padding: 0; }
+    #new-job { margin-top: 0; padding: 10px 20px; }
+    .workspace-sidebar .primary-nav { margin-top: 0; display: flex; grid-column: 1 / -1; }
+    .workspace-sidebar .history-filters, .workspace-sidebar > .mt-8, #job-list,
+    .sidebar-privacy, .mobile-history-toggle { grid-column: 1 / -1; }
+    .workspace-sidebar .sidebar-privacy { display: none; }
+}
+@media (max-width: 760px) {
+    .status-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    body[data-surface=workspace] .workspace-content { padding: 24px 16px 40px; }
+    .workspace-header h2 { font-size: 23px; }
+    .workflow-progress { gap: 6px; margin-bottom: 22px; }
+    .workflow-progress li { display: block; padding: 10px 2px; font-size: 11px; }
+    .workflow-progress li::before { display: block; margin-bottom: 5px; }
+    #request-form { padding: 22px 18px; border-radius: 14px; }
+    .request-intro { padding-bottom: 20px; margin-bottom: 20px; }
+    #request-text { min-height: 220px; padding: 14px; }
+    .workspace-tabs { gap: 2px; flex-wrap: wrap; }
+    .workspace-tabs button { padding: 9px 11px; }
+    #public-login { margin: 24px 16px; padding: 24px; }
+}

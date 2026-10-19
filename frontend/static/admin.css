@@ -1,0 +1,12 @@
+.admin-page,.admin-page[data-surface=knowledge]{height:auto;overflow:auto;background:#f5f6fa}.admin-page main{max-width:1280px;margin:auto;padding:28px}
+.admin-heading{display:flex;justify-content:space-between;align-items:center;gap:16px}.admin-heading h1{margin:6px 0;font-size:24px}.admin-account{margin:16px 0;color:var(--muted);font-size:13px}.admin-account p{overflow-wrap:anywhere}
+.admin-nav{display:flex;gap:8px;flex-wrap:wrap;margin:24px 0;border-bottom:1px solid var(--line);padding-bottom:16px}.admin-nav a{padding:10px 16px;text-decoration:none;border-radius:8px;color:var(--muted)}.admin-nav a[aria-current=page]{background:#ede8fb;color:#5f3fbd;font-weight:700}
+.admin-page section[data-admin-section]{margin-top:20px;padding:24px;background:white;border:1px solid var(--line);border-radius:12px}.admin-page h2{font-size:19px;margin:0 0 18px}.admin-page h3{font-size:16px;margin:20px 0 12px}
+.admin-page form,.data-toolbar{display:flex;flex-wrap:wrap;gap:12px;align-items:end;padding:16px 0;border-bottom:1px solid var(--line)}.admin-page label{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)}
+.admin-page input,.admin-page select,.admin-page button{padding:10px 12px;border:1px solid #cfd4e1;border-radius:7px;background:white;color:var(--ink);max-width:100%;box-sizing:border-box}.admin-page button{cursor:pointer}.admin-page strong,.admin-page p,.admin-page span{overflow-wrap:anywhere}
+.admin-page pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:440px;overflow:auto}.admin-page dialog{width:min(680px,90vw);max-height:85vh;padding:24px;border:1px solid var(--line);border-radius:12px}dialog::backdrop{background:#15203866}
+.admin-page [role=alert]{color:#a02735}#cleanup-list>label{flex-direction:row;align-items:center;padding:16px 0;border-bottom:1px solid var(--line)}#cleanup-list span{flex:1}#cleanup-all,#cleanup-execute{color:#a02735;border-color:#e7bdc2}
+.admin-page .admin-knowledge{padding:16px}.admin-page .graph-topbar button{padding:7px}
+.admin-page .graph-topbar{height:auto;min-height:64px;flex-shrink:0}
+.admin-page .knowledge-panel{display:block;height:auto!important;min-height:0;overflow:visible}.admin-page .graph-workspace{height:clamp(440px,60vh,700px);min-height:440px;flex:none}
+@media(max-width:700px){.admin-page main{padding:16px 12px}.admin-page section[data-admin-section]{padding:16px}.admin-page form>*{width:100%}.admin-heading{align-items:start}.admin-nav a{padding:8px}}
