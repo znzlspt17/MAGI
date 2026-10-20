@@ -108,6 +108,38 @@ def finalize(output):
     (output / 'SHA256SUMS').write_text(''.join(lines), encoding='utf-8')
 
 
+def summarize_scans(output):
+    """JSON 전용 출력으로 숨겨진 차단 원인을 로그에 표시하고 실패 정책을 유지한다."""
+    safe = True
+    for role in ROLES:
+        path = output / f'{role}.vulnerabilities.json'
+        try:
+            report = json.loads(path.read_text(encoding='utf-8'))
+            if report.get('SchemaVersion') != 2 or not isinstance(report.get('Results'), list):
+                raise ValueError
+        except (OSError, ValueError, AttributeError):
+            print(f'{role}: 검사 보고서가 없거나 형식이 올바르지 않습니다.')
+            safe = False
+            continue
+        findings = []
+        try:
+            for result in report['Results']:
+                for item in result.get('Vulnerabilities') or []:
+                    if item.get('Severity') == 'CRITICAL' and item.get('FixedVersion'):
+                        findings.append({key: item.get(key) for key in (
+                            'VulnerabilityID', 'PkgName', 'InstalledVersion', 'FixedVersion', 'Severity')})
+        except (TypeError, AttributeError):
+            print(f'{role}: 검사 보고서의 취약점 목록이 올바르지 않습니다.')
+            safe = False
+            continue
+        print(f'{role}: 수정 가능한 CRITICAL 취약점 {len(findings)}건')
+        for finding in findings:
+            # 외부 보고서의 개행·명령 문자열이 로그 명령으로 해석되지 않게 JSON으로 출력한다.
+            print(json.dumps(finding, ensure_ascii=True))
+        safe &= not findings
+    return bool(safe)
+
+
 def verify(output, check_images=False):
     expected = BASE_FILES | REPORTS
     entries = {}
@@ -133,7 +165,7 @@ def verify(output, check_images=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('build', 'finalize', 'verify', 'check-inputs'))
+    parser.add_argument('action', choices=('build', 'finalize', 'verify', 'check-inputs', 'summarize-scans'))
     parser.add_argument('--output', type=Path)
     parser.add_argument('--release')
     parser.add_argument('--model-revision')
@@ -143,7 +175,9 @@ def main():
         release_inputs()
         return
     if args.output is None:
-        parser.error('build·finalize·verify에는 --output이 필요합니다.')
+        parser.error('이 작업에는 --output이 필요합니다.')
+    if args.action == 'summarize-scans':
+        raise SystemExit(0 if summarize_scans(args.output) else 1)
     if args.action == 'build':
         if not args.release or not args.model_revision:
             parser.error('build에는 --release와 --model-revision이 필요합니다.')
