@@ -12,7 +12,8 @@ import subprocess
 CADDY = 'caddy:2-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f'
 ROLES = ('gateway', 'backend', 'caddy')
 BASE_FILES = {'magi-images.tar', 'release.json', 'images.txt', 'compose.portainer.yaml',
-              'Caddyfile', 'RASPBERRY_PI.ko.md', 'release.py', 'measure.py'}
+              'Caddyfile', 'release.py', 'measure.py'}
+SUPPORT_FILES = ('compose.portainer.yaml', 'Caddyfile', 'release.py', 'measure.py')
 REPORTS = {f'{role}.{suffix}' for role in ROLES
            for suffix in ('spdx.json', 'vulnerabilities.json')}
 
@@ -30,6 +31,15 @@ def sha256(path):
     return digest.hexdigest()
 
 
+def release_inputs():
+    # Git에서 제외한 로컬 문서는 릴리스 입력으로 요구하거나 복사하지 않는다.
+    sources = {name: Path('deploy') / name for name in SUPPORT_FILES}
+    missing = [str(path) for path in sources.values() if not path.is_file() or path.is_symlink()]
+    if missing:
+        raise ValueError('릴리스 필수 파일이 누락되었거나 일반 파일이 아닙니다: ' + ', '.join(missing))
+    return sources
+
+
 def build(output, release, revision):
     if not re.fullmatch(r'[a-z0-9][a-z0-9_.-]{0,127}', release):
         raise ValueError('릴리스 이름은 Docker 태그 형식이어야 합니다.')
@@ -37,6 +47,7 @@ def build(output, release, revision):
         raise ValueError('모델 revision은 40자리 commit SHA여야 합니다.')
     if run('git', 'status', '--porcelain', capture=True):
         raise ValueError('소스 식별을 위해 커밋된 깨끗한 체크아웃에서 빌드하세요.')
+    sources = release_inputs()
     if output.exists() and any(output.iterdir()):
         raise ValueError('기존 릴리스를 덮어쓰지 않도록 빈 출력 경로를 지정하세요.')
     output.mkdir(parents=True, exist_ok=True)
@@ -72,9 +83,8 @@ def build(output, release, revision):
         '--entrypoint', 'caddy', images['caddy'], 'validate', '--config', '/etc/caddy/Caddyfile',
         '--adapter', 'caddyfile')
     run('docker', 'image', 'save', '--output', str(output / 'magi-images.tar'), *images.values())
-    for name in ('compose.portainer.yaml', 'Caddyfile', 'release.py', 'measure.py'):
-        shutil.copyfile(Path('deploy') / name, output / name)
-    shutil.copyfile('docs/RASPBERRY_PI.ko.md', output / 'RASPBERRY_PI.ko.md')
+    for name, source in sources.items():
+        shutil.copyfile(source, output / name)
     manifest = {
         'source_commit': commit, 'release': release, 'images': metadata,
         'caddy_source': CADDY, 'model': {'name': 'BAAI/bge-m3', 'revision': revision,
@@ -123,12 +133,17 @@ def verify(output, check_images=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('build', 'finalize', 'verify'))
-    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('action', choices=('build', 'finalize', 'verify', 'check-inputs'))
+    parser.add_argument('--output', type=Path)
     parser.add_argument('--release')
     parser.add_argument('--model-revision')
     parser.add_argument('--check-images', action='store_true')
     args = parser.parse_args()
+    if args.action == 'check-inputs':
+        release_inputs()
+        return
+    if args.output is None:
+        parser.error('build·finalize·verify에는 --output이 필요합니다.')
     if args.action == 'build':
         if not args.release or not args.model_revision:
             parser.error('build에는 --release와 --model-revision이 필요합니다.')

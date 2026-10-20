@@ -36,3 +36,5 @@ jobs:
       # /tests는 로컬 전용이다. 이 검사는 Python 회귀 테스트를 대체하지 않는다.
       - name: Python syntax check (regression tests run locally)
         run: .venv/bin/python -m compileall -q backend gateway protocol deploy frontend/__init__.py
+      - name: Check release packaging inputs
+        run: .venv/bin/python deploy/release.py check-inputs
