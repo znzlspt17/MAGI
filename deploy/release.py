@@ -67,17 +67,20 @@ def build(output, release, revision):
             raise ValueError('ARM64 Linux 이미지가 아닙니다: ' + role)
         metadata[role] = {'tag': tag, 'id': info['Id'], 'platform': 'linux/arm64'}
     # QEMU smoke 검증은 실제 Pi의 메모리·지연 검증을 대체하지 않는다.
-    run('docker', 'run', '--rm', '--network', 'none', '--read-only',
+    run('docker', 'run', '--rm', '--init', '--network', 'none', '--read-only',
+        '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--user', '10001:10001',
         '--tmpfs', '/tmp:rw,nosuid,nodev,size=64m,uid=10001,gid=10001',
         '--entrypoint', 'python', images['backend'], '-c',
         'import torch; import backend.server.app; '
         'assert torch.version.cuda is None; '
         'assert torch.ones(2).sum().item() == 2')
-    run('docker', 'run', '--rm', '--network', 'none', '--read-only',
+    run('docker', 'run', '--rm', '--init', '--network', 'none', '--read-only',
+        '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--user', '10001:10001',
         '--entrypoint', 'python', images['gateway'], '-c',
         'import gateway.app; from pathlib import Path; '
         'assert Path("frontend/static/dist/manifest.json").is_file()')
-    run('docker', 'run', '--rm', '--network', 'none', '--read-only',
+    run('docker', 'run', '--rm', '--init', '--network', 'none', '--read-only',
+        '--cap-drop', 'ALL', '--cap-add', 'NET_BIND_SERVICE', '--security-opt', 'no-new-privileges:true',
         '--user', '10001:10001', '--env', 'MAGI_PUBLIC_ORIGIN=https://magi.example',
         '--mount', f'type=bind,source={Path("deploy/Caddyfile").resolve()},target=/etc/caddy/Caddyfile,readonly',
         '--entrypoint', 'caddy', images['caddy'], 'validate', '--config', '/etc/caddy/Caddyfile',

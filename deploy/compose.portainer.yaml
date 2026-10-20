@@ -23,6 +23,8 @@ x-app: &app
 services:
   caddy:
     <<: *app
+    # 공식 이미지 실행 파일의 file capability와 cap_drop: ALL의 충돌을 피한다.
+    cap_add: [NET_BIND_SERVICE]
     image: ${MAGI_CADDY_IMAGE:?릴리스의 Caddy 이미지 태그를 입력하세요}
     environment:
       MAGI_PUBLIC_ORIGIN: ${MAGI_PUBLIC_ORIGIN:?HTTPS origin을 입력하세요}
