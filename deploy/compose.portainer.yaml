@@ -2,7 +2,7 @@ name: magi
 
 x-app: &app
   platform: linux/arm64
-  pull_policy: never
+  pull_policy: missing
   user: "10001:10001"
   init: true
   read_only: true

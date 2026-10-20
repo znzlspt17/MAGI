@@ -1,4 +1,4 @@
-"""레지스트리·운영 비밀 없이 ARM64 릴리스 파일을 제작하고 검증한다."""
+"""ARM64 릴리스를 검증하고, 검사한 동일 이미지를 GHCR에 게시한다."""
 
 import argparse
 import hashlib
@@ -163,13 +163,51 @@ def verify(output, check_images=False):
                 raise ValueError('로드된 이미지가 릴리스와 일치하지 않습니다: ' + role)
 
 
+def publish(output, repository, images_file):
+    """운영 비밀 없이 CI의 레지스트리 인증을 사용하고 전체 게시 성공 후 주소를 기록한다."""
+    repository = repository.lower()
+    if not re.fullmatch(r'[a-z0-9][a-z0-9_.-]*/[a-z0-9][a-z0-9_.-]*', repository):
+        raise ValueError('게시 대상은 GitHub owner/repository 형식이어야 합니다.')
+    if images_file.exists() or images_file.resolve().is_relative_to(output.resolve()):
+        raise ValueError('이미지 주소 파일은 릴리스 밖의 새 경로여야 합니다.')
+    verify(output, check_images=True)
+    if not summarize_scans(output):
+        raise ValueError('보안 검사를 통과하지 못한 릴리스는 게시하지 않습니다.')
+    manifest = json.loads((output / 'release.json').read_text(encoding='utf-8'))
+    release = manifest['release']
+    if not re.fullmatch(r'[a-z0-9][a-z0-9_.-]{0,127}', release):
+        raise ValueError('릴리스 이름은 Docker 태그 형식이어야 합니다.')
+    lines = []
+    for role in ROLES:
+        image = manifest['images'][role]
+        target = f'ghcr.io/{repository}-{role}'
+        tag = f'{target}:{release}'
+        run('docker', 'image', 'tag', image['tag'], tag)
+        run('docker', 'image', 'push', tag)
+        descriptor = json.loads(run('docker', 'buildx', 'imagetools', 'inspect', tag,
+                                    '--format', '{{json .Manifest}}', capture=True))
+        digest = descriptor['digest']
+        if not re.fullmatch(r'sha256:[0-9a-f]{64}', digest):
+            raise ValueError('레지스트리 digest가 올바르지 않습니다: ' + role)
+        reference = f'{target}@{digest}'
+        remote = json.loads(run('docker', 'buildx', 'imagetools', 'inspect', reference,
+                                '--raw', capture=True))
+        if remote.get('config', {}).get('digest') != image['id']:
+            raise ValueError('게시한 이미지가 검사한 이미지와 다릅니다: ' + role)
+        lines.append(f'MAGI_{role.upper()}_IMAGE={reference}\n')
+    images_file.parent.mkdir(parents=True, exist_ok=True)
+    images_file.write_text(''.join(lines), encoding='utf-8')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('build', 'finalize', 'verify', 'check-inputs', 'summarize-scans'))
+    parser.add_argument('action', choices=('build', 'finalize', 'verify', 'check-inputs', 'summarize-scans', 'publish'))
     parser.add_argument('--output', type=Path)
     parser.add_argument('--release')
     parser.add_argument('--model-revision')
     parser.add_argument('--check-images', action='store_true')
+    parser.add_argument('--repository')
+    parser.add_argument('--images-file', type=Path)
     args = parser.parse_args()
     if args.action == 'check-inputs':
         release_inputs()
@@ -178,6 +216,11 @@ def main():
         parser.error('이 작업에는 --output이 필요합니다.')
     if args.action == 'summarize-scans':
         raise SystemExit(0 if summarize_scans(args.output) else 1)
+    if args.action == 'publish':
+        if not args.repository or args.images_file is None:
+            parser.error('publish에는 --repository와 --images-file이 필요합니다.')
+        publish(args.output, args.repository, args.images_file)
+        return
     if args.action == 'build':
         if not args.release or not args.model_revision:
             parser.error('build에는 --release와 --model-revision이 필요합니다.')

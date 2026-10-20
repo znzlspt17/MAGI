@@ -23,6 +23,9 @@ jobs:
 
   build:
     needs: verify
+    permissions:
+      contents: read
+      packages: write
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -129,5 +132,30 @@ jobs:
         with:
           name: magi-arm64-${{ env.RELEASE_ID }}
           path: output/release/
+          retention-days: 14
+          if-no-files-found: error
+      # 모든 검사와 체크섬 검증 뒤에만 로그인하며, 운영 환경의 PAT는 사용하지 않는다.
+      - name: Authenticate to GHCR after successful release checks
+        uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish scanned images and verify registry identities
+        run: python deploy/release.py publish --output output/release --repository "$GITHUB_REPOSITORY" --images-file output/portainer-images.txt
+      - name: Show image variables for Portainer
+        run: |
+          {
+            echo '### Portainer image variables'
+            echo '보안 검사를 통과한 동일 ARM64 이미지입니다. Stack 환경변수에 아래 3줄을 입력하세요.'
+            echo '```dotenv'
+            cat output/portainer-images.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve registry image references
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: magi-portainer-images-${{ env.RELEASE_ID }}
+          path: output/portainer-images.txt
           retention-days: 14
           if-no-files-found: error
