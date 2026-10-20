@@ -1,0 +1,19 @@
+{
+    admin off
+    http_port 8080
+    https_port 8443
+}
+
+{$MAGI_PUBLIC_ORIGIN} {
+    # 접근 로그를 켜지 않는다. OAuth code·state·쿠키를 기록하지 않는다.
+    @internal path /health /health/*
+    respond @internal 404
+    request_body {
+        max_size 128KB
+    }
+    reverse_proxy 127.0.0.1:5000 {
+        transport http {
+            response_header_timeout 600s
+        }
+    }
+}

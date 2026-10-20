@@ -12,6 +12,7 @@ METHODS |= {"projects.list", "projects.create", "projects.assign", "knowledge.se
             "knowledge.graph", "knowledge.node", "knowledge.document", "knowledge.retry"}
 METHODS |= {"cleanup.catalog", "cleanup.preview", "cleanup.execute"}
 METHODS.add("continue")
+METHODS.add("health.check")
 METHODS |= {'admin.projects','admin.graph','admin.search','admin.node','admin.document','admin.jobs'}
 METHODS |= {'auth.info','auth.start','auth.callback','auth.me','auth.logout','service.status','usage',
             'lease.keep','lease.release','lease.resume','admin.overview','admin.user','admin.claim','admin.stop','admin.job','admin.settle','admin.settings'}

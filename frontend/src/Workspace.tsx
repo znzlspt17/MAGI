@@ -1,0 +1,1076 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { api, post } from "./api";
+import { useAuth } from "./Auth";
+import { Button, Notice, statusLabel, formatTime, usageLabel } from "./UI";
+import { DocumentView } from "./DocumentView";
+import { QuestionActions, questionDetails } from "./QuestionActions";
+import Knowledge from "./Knowledge";
+import type { Job, RecordData, Step } from "./types";
+export function graphNodes(job: Job): Step[] {
+  if (job.execution_graph?.nodes?.length) return job.execution_graph.nodes;
+  return [
+    {
+      id: "legacy",
+      stage: "request",
+      status: job.status,
+      summary: job.message || job.request,
+      has_document: !!(job.final || job.candidate),
+      detail_available: true,
+    },
+  ];
+}
+const stageLabel = (node?: Step) =>
+  node?.title ||
+  {
+    request: "요청 접수",
+    generate: "요청 접수",
+    interview: "요청 분석",
+    await_user: "요구사항 확인 필요",
+    answer: "답변 저장",
+    requirement_lock: "요구사항 확정",
+    revise: "수정 의견",
+    spec_compile: "명세 생성",
+    checklist_critic: "명세 검토",
+    review_resolution: "해결 방법 판단",
+    approve: "최종 승인",
+    compose_candidate: "검토본 준비",
+    critical_report: "명세 보완 실패 보고",
+  }[node?.stage || ""] ||
+  "실행 단계";
+function legacyDetail(job: Job) {
+  return {
+    result: {
+      summary: job.message,
+      questions: job.state?.blocking_questions,
+      report: job.critical,
+    },
+    document:
+      job.final || job.candidate
+        ? {
+            content: job.final || job.candidate,
+            filename: job.final
+              ? "FINAL_AGENT_SPEC.md"
+              : "approval_candidate_spec.en.md",
+          }
+        : null,
+  };
+}
+export default function Workspace() {
+  const auth = useAuth(),
+    navigate = useNavigate(),
+    location = useLocation(),
+    { id } = useParams();
+  const [connectionEpoch, setConnectionEpoch] = useState(0);
+  useEffect(() => {
+    const resume = (event: PageTransitionEvent) => {
+      if (event.persisted) setConnectionEpoch((value) => value + 1);
+    };
+    window.addEventListener("pageshow", resume);
+    return () => window.removeEventListener("pageshow", resume);
+  }, []);
+  const [jobs, setJobs] = useState<Job[]>([]),
+    [job, setJob] = useState<Job | null>(null),
+    [surface, setSurface] = useState("workspace"),
+    [query, setQuery] = useState(""),
+    [filter, setFilter] = useState(""),
+    [expanded, setExpanded] = useState(false),
+    [busy, setBusy] = useState(false),
+    [refreshIndex, setRefreshIndex] = useState(0),
+    [tab, setTab] = useState("document"),
+    [step, setStep] = useState(""),
+    [detail, setDetail] = useState<RecordData | null>(null),
+    [loading, setLoading] = useState(false),
+    [connection, setConnection] = useState("");
+  const manual = useRef(false),
+    views = useRef(
+      new Map<string, { step: string; tab: string; manual: boolean }>(),
+    ),
+    currentView = useRef({ id, step, tab }),
+    fetchSequence = useRef(0),
+    selectedId = useRef(id),
+    navigation = useRef(location.key),
+    mutating = useRef(false);
+  const draftKey = `magi:draft:${auth.user?.id || "local"}`;
+  const [request, setRequest] = useState(
+    () => sessionStorage.getItem(draftKey) || "",
+  );
+  selectedId.current = id;
+  navigation.current = location.key;
+  currentView.current = { id, step, tab };
+  const isAdmin = !auth.publicMode || auth.user?.role === "admin",
+    blocked = busy || !!(auth.status.busy && !auth.status.mine);
+  const refresh = useCallback(() => setRefreshIndex((i) => i + 1), []);
+  useEffect(() => {
+    let alive = true,
+      inFlight = false,
+      pending = false,
+      controller: AbortController | null = null;
+    const load = async () => {
+      if (inFlight) {
+        pending = true;
+        return;
+      }
+      inFlight = true;
+      controller = new AbortController();
+      try {
+        const list = await api<Job[]>("/api/jobs", {
+          signal: controller.signal,
+        });
+        if (alive) setJobs(list);
+      } catch (e) {
+        if (alive && (e as Error).name !== "AbortError")
+          auth.setNotice((e as Error).message);
+      } finally {
+        inFlight = false;
+        if (alive && pending) {
+          pending = false;
+          void load();
+        }
+      }
+    };
+    let socket: WebSocket | null = null,
+      reconnect: ReturnType<typeof setTimeout> | undefined,
+      attempt = 0;
+    const connect = () => {
+      if (!alive) return;
+      socket = new WebSocket(
+        `${locationProtocol()}//${window.location.host}/ws/events`,
+      );
+      socket.onopen = () => {
+        if (alive) {
+          attempt = 0;
+          setConnection("");
+          void load();
+          refresh();
+        }
+      };
+      socket.onmessage = (event) => {
+        if (!alive) return;
+        let value;
+        try {
+          value = JSON.parse(event.data);
+        } catch {
+          return;
+        }
+        if (["ready", "job.changed"].includes(value.event)) {
+          void load();
+          refresh();
+        } else if (value.event === "records.deleted") {
+          for (const deletedId of value.ids || []) {
+            views.current.delete(deletedId);
+            const prefix =
+              "magi:draft:" +
+              (auth.user?.id || "local") +
+              ":" +
+              deletedId +
+              ":";
+            Object.keys(sessionStorage)
+              .filter((key) => key.startsWith(prefix))
+              .forEach((key) => sessionStorage.removeItem(key));
+          }
+          if ((value.ids || []).includes(selectedId.current)) navigate("/");
+          window.dispatchEvent(new Event("magi:cleanup"));
+          void load();
+          refresh();
+        } else if (value.event === "service.status")
+          window.dispatchEvent(
+            new CustomEvent("magi:service-status", { detail: value.status }),
+          );
+        else if (value.event === "server_error") socket?.close();
+      };
+      socket.onclose = () => {
+        if (!alive) return;
+        setConnection("작업 서버 연결이 끊어졌습니다. 재연결 중입니다.");
+        reconnect = setTimeout(
+          connect,
+          [1000, 2000, 4000, 8000, 10000][Math.min(attempt++, 4)],
+        );
+      };
+      socket.onerror = () => socket?.close();
+    };
+    void load();
+    connect();
+    const poll = setInterval(() => {
+      void load();
+      refresh();
+    }, 15000);
+    const pagehide = () => {
+      alive = false;
+      clearTimeout(reconnect);
+      clearInterval(poll);
+      socket?.close();
+      controller?.abort();
+    };
+    window.addEventListener("pagehide", pagehide);
+    return () => {
+      pagehide();
+      window.removeEventListener("pagehide", pagehide);
+    };
+  }, [auth.user?.id, connectionEpoch]);
+  useEffect(() => {
+    setJob(null);
+    setDetail(null);
+    manual.current = false;
+    const saved = id ? views.current.get(id) : null;
+    setStep(saved?.step || "");
+    setTab(saved?.tab || "document");
+    manual.current = saved?.manual || false;
+    setSurface("workspace");
+  }, [id]);
+  useEffect(() => {
+    if (!id) return;
+    let alive = true;
+    const sequence = ++fetchSequence.current,
+      controller = new AbortController();
+    setLoading(true);
+    api<Job>(`/api/jobs/${encodeURIComponent(id)}`, {
+      signal: controller.signal,
+    })
+      .then((value) => {
+        if (!alive || sequence !== fetchSequence.current) return;
+        setJob(value);
+        if (
+          !["queued", "running"].includes(value.status) &&
+          [
+            "작업을 대기열에 넣었습니다.",
+            "새 작업을 대기열에 넣었습니다.",
+          ].includes(auth.notice)
+        )
+          auth.setNotice("");
+        setStep((previous) => {
+          const nodes = graphNodes(value),
+            exists =
+              nodes.some((n) => n.id === previous) ||
+              (value.completed_documents || []).some(
+                (n: Step) => n.id === previous,
+              );
+          if (manual.current && exists) return previous;
+          const doc = [...nodes].reverse().find((n) => n.has_document);
+          return (doc || nodes.at(-1))?.id || "";
+        });
+      })
+      .catch((e) => {
+        if (alive && e.name !== "AbortError") auth.setNotice(e.message);
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+      controller.abort();
+    };
+  }, [id, refreshIndex]);
+  const node =
+    job &&
+    [...graphNodes(job), ...(job.completed_documents || [])].find(
+      (n) => n.id === step,
+    );
+  const nodeSignature = JSON.stringify(node);
+  useEffect(() => {
+    if (!job || job.id !== id || !step) return;
+    let alive = true;
+    const controller = new AbortController();
+    setDetail(null);
+    if (!job.execution_graph?.nodes) {
+      setDetail(legacyDetail(job));
+      return;
+    }
+    if (!node?.detail_available) {
+      setDetail({
+        unavailable: true,
+        message: "이 단계의 상세 기록이 저장되지 않았습니다.",
+      });
+      return;
+    }
+    api(
+      `/api/jobs/${encodeURIComponent(id!)}/steps/${encodeURIComponent(step)}`,
+      { signal: controller.signal },
+    )
+      .then((value) => {
+        if (alive) setDetail(value.step || value.detail || value);
+      })
+      .catch((e) => {
+        if (alive && e.name !== "AbortError")
+          setDetail({ unavailable: true, message: e.message });
+      });
+    return () => {
+      alive = false;
+      controller.abort();
+    };
+  }, [id, step, nodeSignature]);
+  useEffect(() => {
+    const old = currentView.current;
+    return () => {
+      if (old.id)
+        views.current.set(old.id, {
+          step: old.step,
+          tab: old.tab,
+          manual: manual.current,
+        });
+    };
+  }, [id, step, tab]);
+  useEffect(() => {
+    const leave = (event: BeforeUnloadEvent) => {
+      if (
+        request.trim() ||
+        (document.activeElement instanceof HTMLTextAreaElement &&
+          document.activeElement.value)
+      ) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", leave);
+    return () => window.removeEventListener("beforeunload", leave);
+  }, [request]);
+  function selectStep(value: string) {
+    manual.current = true;
+    setStep(value);
+    setTab("document");
+  }
+  async function mutate(action: string, payload: unknown) {
+    if (!id || mutating.current) return;
+    mutating.current = true;
+    setBusy(true);
+    const target = id;
+    try {
+      await post(`/api/jobs/${encodeURIComponent(id)}/${action}`, {
+        payload,
+        execution_id: job?.execution_id,
+      });
+      if (selectedId.current === target) {
+        manual.current = false;
+        auth.setNotice("작업을 대기열에 넣었습니다.");
+        refresh();
+      }
+    } catch (e) {
+      auth.setNotice((e as Error).message);
+      throw e;
+    } finally {
+      mutating.current = false;
+      setBusy(false);
+      void auth.refreshStatus().catch(() => {});
+    }
+  }
+  async function generate() {
+    if (mutating.current) return;
+    if (!request.trim()) {
+      auth.setNotice("개발 요청을 입력하세요.");
+      return;
+    }
+    mutating.current = true;
+    setBusy(true);
+    const submitted = navigation.current;
+    try {
+      const value = await post<Job>("/api/jobs", {
+        request: request.trim(),
+        provider: "openai",
+        project_id: null,
+      });
+      if (submitted === navigation.current) {
+        setRequest("");
+        sessionStorage.removeItem(draftKey);
+        navigate(`/jobs/${value.id}`);
+      }
+      setJobs((previous) => [
+        value,
+        ...previous.filter((j) => j.id !== value.id),
+      ]);
+      auth.setNotice("새 작업을 대기열에 넣었습니다.");
+      refresh();
+    } catch (e) {
+      auth.setNotice((e as Error).message);
+    } finally {
+      mutating.current = false;
+      setBusy(false);
+    }
+  }
+  const filtered = jobs.filter(
+    (j) =>
+      (!query ||
+        `${j.request} ${j.id}`.toLowerCase().includes(query.toLowerCase())) &&
+      (!filter ||
+        (filter === "active"
+          ? [
+              "queued",
+              "running",
+              "NEEDS_USER_INPUT",
+              "PASS_PENDING_USER_APPROVAL",
+            ].includes(j.status)
+          : j.status === filter)),
+  );
+  const actualJob = job?.id === id ? job : null;
+  const result = detail?.result || {};
+  const counts =
+    actualJob?.execution_graph?.unresolved_issue_counts ||
+    (actualJob
+      ? [...graphNodes(actualJob)].reverse().find((node) => node.issue_counts)
+          ?.issue_counts
+      : {}) ||
+    {};
+  const phase = !actualJob
+    ? 0
+    : actualJob.status === "FINALIZED"
+      ? 3
+      : actualJob.status === "PASS_PENDING_USER_APPROVAL" ||
+          graphNodes(actualJob).some((n) => n.has_document)
+        ? 2
+        : 1;
+  return (
+    <div className="app-shell">
+      <aside className={`sidebar ${expanded ? "expanded" : ""}`}>
+        <Link className="brand" to="/" onClick={() => setSurface("workspace")}>
+          <span className="brand-mark">M</span>
+          <span>
+            MAGI<small>명세 작업 공간</small>
+          </span>
+        </Link>
+        <Button
+          className="primary new-job"
+          onClick={() => {
+            navigate("/");
+            setSurface("workspace");
+          }}
+        >
+          ＋ 새 작업
+        </Button>
+        <nav className="primary-nav">
+          <Button
+            aria-current={surface === "workspace" ? "page" : undefined}
+            onClick={() => setSurface("workspace")}
+          >
+            작업 공간
+          </Button>
+          <Button
+            disabled={!!(auth.status.busy && !auth.status.mine)}
+            aria-current={surface === "knowledge" ? "page" : undefined}
+            onClick={() => setSurface("knowledge")}
+          >
+            지식 검색
+          </Button>
+        </nav>
+        <Button
+          className="history-toggle"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((v) => !v)}
+        >
+          작업 목록 {expanded ? "접기" : "펼치기"}
+        </Button>
+        <div className="history">
+          <label className="sr-only" htmlFor="history-query">
+            작업 검색
+          </label>
+          <input
+            id="history-query"
+            placeholder="작업 검색"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <select
+            aria-label="작업 상태"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          >
+            <option value="">전체 상태</option>
+            <option value="active">진행 중</option>
+            <option value="NEEDS_USER_INPUT">요구사항 확인 필요</option>
+            <option value="FINALIZED">최종 완료</option>
+            <option value="error">오류</option>
+            <option value="CRITICAL_BLOCKED">명세 보완 실패</option>
+          </select>
+          <h2>
+            대화 세션 <span>{filtered.length}</span>
+          </h2>
+          <nav aria-label="작업 기록">
+            {filtered.map((item) => (
+              <Link
+                key={item.id}
+                to={`/jobs/${item.id}`}
+                aria-current={id === item.id ? "page" : undefined}
+                onClick={() => {
+                  setSurface("workspace");
+                  setExpanded(false);
+                }}
+              >
+                <strong>{item.request?.slice(0, 70) || "저장된 작업"}</strong>
+                <small>
+                  {statusLabel(item.status)} ·{" "}
+                  {formatTime(item.updated_at || item.created_at)}
+                </small>
+              </Link>
+            ))}
+          </nav>
+        </div>
+        <p className="sidebar-privacy">
+          요청과 답변은 명세 생성을 위해 AI 제공자에게 전송됩니다. 비밀값과
+          민감한 정보는 입력하지 마세요.
+        </p>
+        <a href="/privacy">정보 처리 안내</a>
+      </aside>
+      <div className="workspace-content">
+        <Account />
+        <main>
+          <header className="workspace-header">
+            <span className="eyebrow">
+              MAGI / {surface === "knowledge" ? "KNOWLEDGE" : "WORKSPACE"}
+            </span>
+            <h1>
+              {surface === "knowledge"
+                ? "지식 검색"
+                : id
+                  ? actualJob?.request?.slice(0, 70) || "작업 불러오는 중…"
+                  : "새 개발 요청"}
+            </h1>
+            <p>
+              {surface === "knowledge"
+                ? "저장된 요구사항과 명세의 관계를 살펴보세요."
+                : "아이디어를 구체화하고 검토 가능한 명세를 완성하세요."}
+            </p>
+          </header>
+          <Notice>{auth.notice || connection}</Notice>
+          {surface === "knowledge" ? (
+            <Knowledge selectedJobId={id} />
+          ) : (
+            <>
+              <ol className="workflow-progress" aria-label="명세 생성 단계">
+                {[
+                  "요청 작성",
+                  "요구사항 확인",
+                  "명세 검토·승인",
+                  "완료·다운로드",
+                ].map((label, i) => (
+                  <li
+                    key={label}
+                    aria-current={phase === i ? "step" : undefined}
+                  >
+                    <span>{String(i + 1).padStart(2, "0")}</span>
+                    {label}
+                  </li>
+                ))}
+              </ol>
+              {!id ? (
+                <form
+                  className="request-form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void generate();
+                  }}
+                >
+                  <span className="eyebrow">FROM IDEA TO SPECIFICATION</span>
+                  <h2>무엇을 만들고 싶으신가요?</h2>
+                  <p>
+                    완벽하게 정리하지 않아도 괜찮습니다.
+                    <br />
+                    필요한 내용을 함께 구체화합니다.
+                  </p>
+                  <label htmlFor="request-text">개발 요청</label>
+                  <textarea
+                    id="request-text"
+                    required
+                    maxLength={20000}
+                    rows={10}
+                    value={request}
+                    placeholder="예: 팀이 매주 진행 상황을 공유할 수 있는 보고서 생성 기능을 만들어주세요."
+                    onChange={(e) => {
+                      setRequest(e.target.value);
+                      sessionStorage.setItem(draftKey, e.target.value);
+                    }}
+                  />
+                  <div className="request-guidance">
+                    <span>01 만들고 싶은 것</span>
+                    <span>02 사용할 사람</span>
+                    <span>03 지켜야 할 조건</span>
+                  </div>
+                  <p className="subtle">
+                    OpenAI로 명세를 생성합니다. 추가 확인이 필요하면 질문을
+                    드립니다.
+                  </p>
+                  <Button className="primary" type="submit" disabled={blocked}>
+                    명세 생성 시작
+                  </Button>
+                </form>
+              ) : actualJob ? (
+                <>
+                  <div className="status-summary">
+                    <span>
+                      <small>현재 상태</small>
+                      <strong>{statusLabel(actualJob.status)}</strong>
+                    </span>
+                    <span>
+                      <small>미해결 검토</small>
+                      <strong>
+                        {(Number(counts.blocking) || 0) +
+                          (Number(counts.major) || 0)}
+                        건
+                      </strong>
+                    </span>
+                    <span>
+                      <small>다음 행동</small>
+                      <strong>
+                        {actualJob.can_continue
+                          ? "이어서 요청하기"
+                          : actualJob.status === "NEEDS_USER_INPUT"
+                            ? "답변 제출"
+                            : actualJob.status === "PASS_PENDING_USER_APPROVAL"
+                              ? "명세 승인 또는 수정"
+                              : "작업 결과 확인"}
+                      </strong>
+                    </span>
+                    {isAdmin && (
+                      <span>
+                        <small>호출 사용량</small>
+                        <strong>{actualJob.usage?.calls || 0}회</strong>
+                      </span>
+                    )}
+                  </div>
+                  {isAdmin && actualJob.usage && (
+                    <p className="subtle">{usageLabel(actualJob.usage)}</p>
+                  )}
+                  <div
+                    className="workspace-tabs"
+                    role="tablist"
+                    aria-label="작업 보기"
+                  >
+                    {[
+                      ["document", "명세"],
+                      ["conversation", "대화"],
+                      ...(isAdmin ? [["history", "실행 이력"]] : []),
+                    ].map(([key, label]) => (
+                      <Button
+                        key={key}
+                        role="tab"
+                        aria-selected={tab === key}
+                        onClick={() => setTab(key)}
+                      >
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                  <CompletedDocuments job={actualJob} select={selectStep} />
+                  {tab === "conversation" ? (
+                    <Conversation job={actualJob} select={selectStep} />
+                  ) : (
+                    <div className="document-action-layout">
+                      <section className="document-panel">
+                        {tab === "history" && (
+                          <div
+                            className="execution-list"
+                            aria-label="실행 흐름"
+                          >
+                            {graphNodes(actualJob).map((n) => (
+                              <Button
+                                key={n.id}
+                                aria-pressed={step === n.id}
+                                onClick={() => {
+                                  manual.current = true;
+                                  setStep(n.id);
+                                }}
+                              >
+                                {stageLabel(n)} · {statusLabel(n.status)}
+                              </Button>
+                            ))}
+                            {actualJob.execution_graph
+                              ?.recording_incomplete && (
+                              <Notice>일부 이력 기록 누락</Notice>
+                            )}
+                          </div>
+                        )}
+                        {detail?.unavailable ? (
+                          <Notice>기록 확인 불가: {detail.message}</Notice>
+                        ) : !detail ? (
+                          <p role="status">
+                            {loading ? "작업" : "단계 상세"}를 불러오는
+                            중입니다.
+                          </p>
+                        ) : detail.document?.content ? (
+                          <DocumentView
+                            jobId={actualJob.id}
+                            stepId={step}
+                            document={detail.document}
+                          />
+                        ) : (
+                          <StepResult node={node} detail={detail} />
+                        )}
+                        {(result.issues?.length ||
+                          result.resolved_issues?.length ||
+                          result.report) && <Issues result={result} />}
+                      </section>
+                      <aside className="action-panel">
+                        <CurrentActions
+                          job={actualJob}
+                          step={step}
+                          manual={manual.current}
+                          onCurrent={() => {
+                            manual.current = false;
+                            setStep(graphNodes(actualJob).at(-1)?.id || "");
+                          }}
+                          onAction={mutate}
+                          busy={busy}
+                        />
+                      </aside>
+                    </div>
+                  )}
+                  {tab === "conversation" && (
+                    <QuestionActions
+                      key={actualJob.id}
+                      job={actualJob}
+                      onAction={mutate}
+                      busy={busy}
+                    />
+                  )}
+                </>
+              ) : (
+                <p role="status">
+                  {loading
+                    ? "작업을 불러오는 중입니다."
+                    : "작업을 표시할 수 없습니다."}
+                </p>
+              )}
+            </>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}
+function locationProtocol() {
+  return window.location.protocol === "https:" ? "wss:" : "ws:";
+}
+function Account() {
+  const auth = useAuth(),
+    [remaining, setRemaining] = useState<number | null>(null),
+    location = useLocation();
+  useEffect(() => {
+    const update = () =>
+      setRemaining(
+        auth.status.deadline
+          ? Math.max(0, Math.ceil(auth.status.deadline - Date.now() / 1000))
+          : null,
+      );
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [auth.status.deadline]);
+  async function lease(action: string) {
+    try {
+      await post(
+        `/api/lease/${action}`,
+        action === "resume" ? { id: location.pathname.split("/").pop() } : {},
+      );
+      await auth.refreshStatus();
+    } catch (e) {
+      auth.setNotice((e as Error).message);
+    }
+  }
+  return (
+    <header className="account-header">
+      <p role="status">
+        {!auth.publicMode
+          ? "로컬 작업 공간"
+          : auth.status.recovering
+            ? "서비스 복구 확인 중입니다."
+            : !auth.status.busy
+              ? "MAGI를 사용할 수 있습니다."
+              : auth.status.mine
+                ? `내 작업을 처리 중입니다.${remaining !== null ? ` · ${remaining}초 후 사용권 해제` : ""}`
+                : "다른 사용자가 사용 중입니다. 내 기록은 열람할 수 있습니다."}
+      </p>
+      {remaining !== null && remaining <= 30 && (
+        <p role="alert">곧 사용권이 해제됩니다.</p>
+      )}
+      <div className="account-controls">
+        {auth.status.mine && (
+          <>
+            <Button onClick={() => void lease("keep")}>계속 사용</Button>
+            <Button onClick={() => void lease("release")}>사용 종료</Button>
+          </>
+        )}
+        {auth.publicMode &&
+          !auth.status.busy &&
+          location.pathname.startsWith("/jobs/") && (
+            <Button onClick={() => void lease("resume")}>
+              이 작업 사용권 다시 얻기
+            </Button>
+          )}
+        {auth.user && (
+          <details className="account-menu">
+            <summary>내 계정</summary>
+            <div>
+              <p>사용자 ID: {auth.user.id}</p>
+              <p>
+                권한: {auth.user.role === "admin" ? "관리자" : "일반 사용자"}
+              </p>
+              {auth.usage && (
+                <p>
+                  오늘 실행 {auth.usage.runs}회 · 잔여{" "}
+                  {auth.usage.remaining_runs}회
+                  {auth.usage.limit_reached ? " · 비용 한도 도달" : ""} · 갱신{" "}
+                  {auth.usage.resets_at
+                    ? formatTime(auth.usage.resets_at)
+                    : "확인 중"}
+                </p>
+              )}
+              <Button
+                onClick={() =>
+                  void navigator.clipboard
+                    .writeText(auth.user!.id)
+                    .then(() => auth.setNotice("사용자 ID를 복사했습니다."))
+                    .catch(() => auth.setNotice("표시된 ID를 직접 복사하세요."))
+                }
+              >
+                사용자 ID 복사
+              </Button>
+              {auth.user.role === "admin" && <a href="/admin">관리자 페이지</a>}
+              <Button onClick={() => void auth.logout()}>로그아웃</Button>
+            </div>
+          </details>
+        )}
+      </div>
+    </header>
+  );
+}
+function CompletedDocuments({
+  job,
+  select,
+}: {
+  job: Job;
+  select: (id: string) => void;
+}) {
+  const [selected, setSelected] = useState("");
+  return (
+    <div className="completed-documents">
+      <span>
+        {job.status === "FINALIZED"
+          ? "최근 완료본"
+          : job.latest_completed
+            ? "현재 작업 중인 초안 · 이전 완료본은 별도 보존됩니다."
+            : "아직 승인된 완료 명세가 없습니다."}
+      </span>
+      {job.latest_completed?.step_id && (
+        <Button onClick={() => select(job.latest_completed.step_id)}>
+          {job.status === "FINALIZED"
+            ? "최근 완료 명세 열기"
+            : "이전 완료본 열기"}
+        </Button>
+      )}
+      {job.completed_documents?.length > 1 && (
+        <>
+          <select
+            aria-label="보존된 완료 명세"
+            value={selected || job.completed_documents[0].id}
+            onChange={(e) => setSelected(e.target.value)}
+          >
+            {job.completed_documents.map((d: RecordData, i: number) => (
+              <option key={d.id} value={d.id}>
+                완료본 {i + 1}
+              </option>
+            ))}
+          </select>
+          <Button
+            onClick={() => select(selected || job.completed_documents[0].id)}
+          >
+            선택한 완료본 열기
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+function Conversation({
+  job,
+  select,
+}: {
+  job: Job;
+  select: (id: string) => void;
+}) {
+  return (
+    <section className="conversation" aria-label="대화 이력">
+      {(job.session_events || []).map((event: RecordData, index: number) => (
+        <article className="session-turn" key={event.id || index}>
+          <h3>
+            {{
+              generate: "처음 요청",
+              answer: "질문에 답변",
+              revise: "후속·수정 요청",
+              approve: "사용자 승인",
+            }[event.action as string] || event.action}{" "}
+            · {formatTime(event.started_at)}
+          </h3>
+          <p>
+            {event.input?.request ||
+              event.input?.feedback ||
+              (event.input?.answers || [])
+                .map((a: RecordData) => `${a.question}\n${a.answer}`)
+                .join("\n\n")}
+          </p>
+          <small>
+            {statusLabel(event.status)} {event.summary}
+          </small>
+          {event.questions?.length > 0 && (
+            <ol>
+              {event.questions.map((q: string, i: number) => (
+                <li key={i}>{questionDetails(q, i).label}</li>
+              ))}
+            </ol>
+          )}
+          {event.document_step_id && (
+            <Button onClick={() => select(event.document_step_id)}>
+              이 시점의 명세 열기
+            </Button>
+          )}
+        </article>
+      ))}
+      {!job.session_events?.length && (
+        <p>이 세션에 저장된 대화 이력이 없습니다.</p>
+      )}
+    </section>
+  );
+}
+function StepResult({ node, detail }: { node?: Step; detail: RecordData }) {
+  const result = detail.result || {};
+  const source = result.requirements || result;
+  const groups = Array.isArray(source)
+    ? [["확정 요구사항", source]]
+    : [
+        ["필수 요구사항", source.mandatory_requirements],
+        ["권장 요구사항", source.recommended_requirements],
+        ["선택 요구사항", source.optional_requirements],
+        ["제약 조건", source.constraints],
+      ];
+  return (
+    <section className="step-result">
+      <span className="eyebrow">{statusLabel(node?.status)}</span>
+      <h2>{stageLabel(node)}</h2>
+      {detail.recording_incomplete && (
+        <Notice>
+          일부 상세 기록이 누락되었습니다. 표시 가능한 결과만 제공합니다.
+        </Notice>
+      )}
+      <p>{result.summary || node?.summary || "기록된 요약이 없습니다."}</p>
+      {result.purpose && <p>{result.purpose}</p>}
+      {result.request && <p>{result.request}</p>}
+      {result.feedback && <p>{result.feedback}</p>}
+      {(result.answers || []).map((a: RecordData, i: number) => (
+        <p key={i}>
+          {a.question}: {a.answer}
+        </p>
+      ))}
+      {(result.questions || result.blocking_questions || []).map(
+        (q: string, i: number) => (
+          <p key={i}>{questionDetails(q, i).label}</p>
+        ),
+      )}
+      {groups.map(([label, items]) =>
+        Array.isArray(items) && items.length ? (
+          <section key={String(label)}>
+            <h3>{String(label)}</h3>
+            <ul>
+              {items.map((item: RecordData | string, i: number) => (
+                <li key={i}>
+                  {typeof item === "string"
+                    ? item
+                    : `${item.id || ""} ${item.text || ""}`}
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null,
+      )}
+      {!detail.document && (
+        <p className="subtle">명세가 준비되면 여기에 표시됩니다.</p>
+      )}
+    </section>
+  );
+}
+function Issues({ result }: { result: RecordData }) {
+  const render = (items: RecordData[], resolved = false) =>
+    items.map((issue, i) => (
+      <article className="issue-card" key={i}>
+        <small>
+          {resolved
+            ? "해소됨"
+            : issue.lifecycle === "persistent"
+              ? "계속 남음"
+              : "새 지적"}{" "}
+          · {issue.severity}
+        </small>
+        <h4>{issue.problem || issue.title || "검토 항목"}</h4>
+        {[
+          ["requirement_id", "요구사항"],
+          ["section", "섹션"],
+          ["defect_kind", "결함 유형"],
+          ["resolution_reason", "해결 판단"],
+          ["missing_information", "미확정 내용"],
+          ["decision_key", "결정 주제"],
+          ["required_change", "필요한 수정"],
+        ].map(([key, label]) =>
+          issue[key] ? (
+            <p key={key}>
+              <strong>{label}: </strong>
+              {issue[key]}
+            </p>
+          ) : null,
+        )}
+        {(Array.isArray(issue.evidence)
+          ? issue.evidence
+          : issue.evidence
+            ? [issue.evidence]
+            : []
+        ).map((e: RecordData | string, n: number) => (
+          <blockquote key={n}>
+            {typeof e === "string" ? e : `${e.source || ""} · ${e.quote || ""}`}
+          </blockquote>
+        ))}
+      </article>
+    ));
+  return (
+    <details className="issues">
+      <summary>검토 항목 · {result.issues?.length || 0}건</summary>
+      {render(result.issues || [])}
+      {!!result.resolved_issues?.length && (
+        <details>
+          <summary>
+            다음 검토에서 해소됨 · {result.resolved_issues.length}건
+          </summary>
+          {render(result.resolved_issues, true)}
+        </details>
+      )}
+      {result.report && (
+        <details>
+          <summary>원본 검토 보고서 보기</summary>
+          <pre>{result.report}</pre>
+        </details>
+      )}
+    </details>
+  );
+}
+
+function CurrentActions({
+  job,
+  step,
+  manual,
+  onCurrent,
+  onAction,
+  busy,
+}: {
+  job: Job;
+  step: string;
+  manual: boolean;
+  onCurrent: () => void;
+  onAction: (action: string, payload: unknown) => Promise<void>;
+  busy: boolean;
+}) {
+  const past = manual && step !== graphNodes(job).at(-1)?.id;
+  return past ? (
+    <section className="action-card">
+      <h3>과거 기록</h3>
+      <p>
+        과거 명세를 보고 있습니다. 답변·승인·수정은 현재 단계에서 진행하세요.
+      </p>
+      <Button onClick={onCurrent}>현재 단계로 돌아가기</Button>
+    </section>
+  ) : (
+    <QuestionActions key={job.id} job={job} onAction={onAction} busy={busy} />
+  );
+}

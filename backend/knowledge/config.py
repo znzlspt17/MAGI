@@ -43,5 +43,7 @@ class KnowledgeConfig:
 
 def load_environment():
     # 실행 프로그램만 호출한다. 테스트와 모듈 import는 보호 파일을 읽지 않는다.
+    if os.environ.get("MAGI_CONTAINER") == "1":
+        return  # 컨테이너는 운영자가 주입한 환경만 사용한다.
     from dotenv import load_dotenv
     load_dotenv(Path.cwd() / ".env", override=False)

@@ -22,9 +22,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-embedding = ["sentence-transformers>=5.1,<6"]
+embedding = ["sentence-transformers>=5.1,<6", "torch>=2,<3"]
 test = ["pytest>=8,<10"]
 production = ["gunicorn>=23,<24; sys_platform != 'win32'"]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -33,4 +41,4 @@ include = ["backend*", "gateway*", "protocol*", "frontend*"]
 [tool.setuptools.package-data]
 "backend" = ["prompts/*.md"]
 "backend.knowledge" = ["migrations/*.sql"]
-"frontend" = ["templates/*.html", "static/*.css", "static/*.js", "static/vendor/*.js", "static/vendor/*.txt"]
+"frontend" = ["templates/*.html", "static/dist/manifest.json", "static/dist/assets/*", "static/vendor/*.txt"]

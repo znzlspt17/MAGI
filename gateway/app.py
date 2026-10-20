@@ -8,7 +8,7 @@ import json
 import os
 from importlib.resources import files
 
-from flask import Flask, abort, jsonify, render_template, request, send_file, g, current_app
+from flask import Flask, abort, jsonify, request, send_file, g, current_app
 from flask_sock import Sock
 from werkzeug.exceptions import HTTPException
 
@@ -17,6 +17,8 @@ from protocol.diagnostics import traceback_frames
 
 
 def create_app(config: dict | None = None) -> Flask:
+    from protocol.deployment import validate_container
+    validate_container('gateway')
     frontend = files("frontend")
     app = Flask(
         __name__,
@@ -55,6 +57,9 @@ def create_app(config: dict | None = None) -> Flask:
     from gateway.public import install
     install(app,client)
 
+    from gateway.health import install_health
+    install_health(app, client)
+
     @app.errorhandler(HTTPException)
     def http_error(error):
         if request.path.startswith("/api/"):
@@ -75,11 +80,13 @@ def create_app(config: dict | None = None) -> Flask:
 
     @app.get("/")
     def index():
-        return render_template("index.html")
+        from gateway.frontend import render_frontend
+        return render_frontend()
 
     @app.get('/jobs/<ident>')
     def workspace_job(ident):
-        return render_template('index.html')
+        from gateway.frontend import render_frontend
+        return render_frontend()
 
     @app.get("/api/jobs")
     def jobs():

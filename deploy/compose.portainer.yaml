@@ -1,0 +1,125 @@
+name: magi
+
+x-app: &app
+  platform: linux/arm64
+  pull_policy: never
+  user: "10001:10001"
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+  stop_grace_period: 600s
+  pids_limit: 256
+  mem_swappiness: 0
+  tmpfs:
+    - /tmp:rw,nosuid,nodev,noexec,size=64m,uid=10001,gid=10001,mode=1770
+  logging:
+    driver: local
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  caddy:
+    <<: *app
+    image: ${MAGI_CADDY_IMAGE:?릴리스의 Caddy 이미지 태그를 입력하세요}
+    environment:
+      MAGI_PUBLIC_ORIGIN: ${MAGI_PUBLIC_ORIGIN:?HTTPS origin을 입력하세요}
+    ports:
+      - "80:8080"
+      - "443:8443"
+    networks: [magi-db]
+    mem_limit: 128m
+    memswap_limit: 128m
+    volumes:
+      - type: bind
+        source: ${MAGI_DEPLOY_ROOT:?Pi의 절대 배포 경로를 입력하세요}/Caddyfile
+        target: /etc/caddy/Caddyfile
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${MAGI_DEPLOY_ROOT}/caddy-data
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${MAGI_DEPLOY_ROOT}/caddy-config
+        target: /config
+        bind:
+          create_host_path: false
+
+  backend:
+    <<: *app
+    image: ${MAGI_BACKEND_IMAGE:?릴리스의 backend 이미지 태그를 입력하세요}
+    network_mode: service:caddy
+    depends_on:
+      caddy:
+        condition: service_started
+    mem_limit: 3584m
+    memswap_limit: 3584m
+    environment:
+      MAGI_PUBLIC_MODE: "1"
+      MAGI_LOCAL_LOGIN: "0"
+      MAGI_PUBLIC_ORIGIN: ${MAGI_PUBLIC_ORIGIN}
+      MAGI_INTERNAL_KEY: ${MAGI_INTERNAL_KEY:?운영 환경에 내부 인증 키를 주입하세요}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?운영 환경에 API 키를 주입하세요}
+      GOOGLE_OAUTH_ID: ${GOOGLE_OAUTH_ID:?운영 환경에 OAuth ID를 주입하세요}
+      GOOGLE_OAUTH_SECRET: ${GOOGLE_OAUTH_SECRET:?운영 환경에 OAuth secret을 주입하세요}
+      MAGI_SUBJECT_PEPPER: ${MAGI_SUBJECT_PEPPER:?기존 계정 식별 설정을 유지하세요}
+      MAGI_DB_HOST: magi-postgres
+      MAGI_DB_PORT: "5432"
+      MAGI_DB_NAME: ${MAGI_DB_NAME:?MAGI 전용 DB 이름을 입력하세요}
+      MAGI_DB_USER: ${MAGI_DB_USER:?MAGI 일반 서비스 계정을 입력하세요}
+      MAGI_DB_PASSWORD: ${MAGI_DB_PASSWORD:?운영 환경에 DB 비밀번호를 주입하세요}
+      MAGI_DB_SSLMODE: ${MAGI_DB_SSLMODE:-disable}
+      MAGI_DATA_DIR: /data
+      MAGI_EMBEDDING_MODEL_PATH: /models/bge-m3
+      MAGI_EMBEDDING_DEVICE: cpu
+    volumes:
+      - type: bind
+        source: ${MAGI_DEPLOY_ROOT}/data
+        target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${MAGI_MODEL_ROOT:?동일 revision 모델의 Pi 절대 경로를 입력하세요}
+        target: /models/bge-m3
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: [CMD, python, -m, protocol.deployment, backend]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  gateway:
+    <<: *app
+    image: ${MAGI_GATEWAY_IMAGE:?릴리스의 gateway 이미지 태그를 입력하세요}
+    network_mode: service:caddy
+    depends_on:
+      backend:
+        condition: service_healthy
+    mem_limit: 384m
+    memswap_limit: 384m
+    environment:
+      MAGI_PUBLIC_MODE: "1"
+      MAGI_LOCAL_LOGIN: "0"
+      MAGI_PUBLIC_ORIGIN: ${MAGI_PUBLIC_ORIGIN}
+      MAGI_PROXY_HOPS: "1"
+      MAGI_SERVER_URL: ws://127.0.0.1:8765
+      MAGI_INTERNAL_KEY: ${MAGI_INTERNAL_KEY}
+    healthcheck:
+      test: [CMD, python, -m, protocol.deployment, gateway]
+      interval: 30s
+      timeout: 12s
+      retries: 3
+      start_period: 30s
+
+networks:
+  magi-db:
+    external: true
+    name: magi-db

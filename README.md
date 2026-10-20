@@ -36,6 +36,7 @@
 ### 준비 사항
 
 - Python 3.11 이상과 [uv](https://docs.astral.sh/uv/)
+- 프론트엔드 빌드용 Node.js 22.12 이상과 pnpm 11.25.0 (운영 실행에는 Node 서버가 필요하지 않습니다.)
 - OpenAI API를 사용할 수 있는 `OPENAI_API_KEY`
 - 공개 모드로 운영할 경우 PostgreSQL·pgvector와 Google OAuth 설정
 
@@ -43,6 +44,23 @@
 
 ```sh
 uv sync
+```
+
+프론트엔드를 빌드합니다. 모든 화면은 React이며, Flask가 빌드된 정적 파일을 같은 출처에서 제공합니다.
+
+```sh
+cd frontend
+pnpm install --frozen-lockfile
+pnpm build
+cd ..
+```
+
+개발 중에는 `frontend/`에서 `pnpm dev`로 변경 사항을 자동 빌드하고 Flask 주소에서 확인합니다. 검증은 `pnpm typecheck`와 `pnpm test`로 실행합니다. manifest나 참조 자산이 없는 경우 화면 요청은 준비 오류(503)를 반환합니다.
+
+배포 패키지는 위 빌드 후 생성합니다. `frontend/static/dist/manifest.json`과 모든 자산은 Python 패키지에 포함됩니다. 서비스 디렉터리 밖에서 완성한 Python 코드·템플릿·manifest·자산을 하나의 릴리스로 교체하고 이전 릴리스를 보관하세요. 운영 디렉터리에서 직접 재빌드하지 않으며, 문제가 생기면 해당 릴리스 전체를 함께 되돌립니다.
+
+```sh
+uv build --wheel
 ```
 
 API 키와 접속 비밀번호는 실행 환경에 주입합니다. 실제 값을 소스·문서·명령 예제에 넣지 않습니다. 백엔드 실행 프로그램은 저장소 루트의 `.env`도 읽지만, 이미 설정된 환경변수를 우선합니다. `.env`와 실행 산출물은 Git에서 제외됩니다.
@@ -161,13 +179,13 @@ uv run python -m backend.knowledge reindex
 ## 소스 구조와 Python API
 
 ```text
-frontend/   HTML·CSS·JavaScript 작업 공간
+frontend/   React·TypeScript 작업 공간과 Vite 빌드
 gateway/    Flask HTTP API와 브라우저 이벤트 중계
 backend/    명세 엔진·파이프라인·모델 호출·저장·작업 서버
 protocol/   공통 통신 규약과 진단 유틸리티
 ```
 
-브라우저는 게이트웨이와 통신하고, 게이트웨이는 loopback WebSocket으로 백엔드에 요청합니다. 모델 호출과 상태 저장은 백엔드가 담당합니다. 프런트엔드에는 별도 빌드 단계가 없습니다.
+브라우저는 게이트웨이와 통신하고, 게이트웨이는 loopback WebSocket으로 백엔드에 요청합니다. 모델 호출과 상태 저장은 백엔드가 담당합니다. 프론트엔드는 Vite로 사전 빌드하고, 운영에서는 Flask가 해당 자산을 제공합니다.
 
 Python에서 직접 사용하는 진입점은 `MagiSpecEngine`입니다. 기존 `magi_spec` 패키지와 `magi-spec` CLI는 현재 지원하지 않습니다.
 
@@ -196,5 +214,6 @@ print(result.status)
 
 ## 상세 문서
 
+- [Raspberry Pi·Portainer 배포](docs/RASPBERRY_PI.ko.md): GitHub Actions ARM64 이미지 제작, 파일 전달, 기존 DB 보존과 장치 검증.
 - [사용자 가이드](docs/USER_GUIDE.ko.md): 화면 사용법, 질문·수정·승인, 지식 검색과 기록 이관
 - [공개 서비스 운영](docs/PUBLIC_SERVICE.ko.md): 로그인, DB 권한, 배포, 관리자와 비용·장애 복구

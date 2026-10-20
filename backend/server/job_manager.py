@@ -123,7 +123,9 @@ class JobManager:
             if self.closed:
                 return
             self.closed = True
-            self.executor.shutdown(wait=False, cancel_futures=True)
+        # 완료 콜백도 self.lock을 사용하므로 잠금 밖에서 실행 종료를 기다린다.
+        # DB 독점 잠금을 해제하기 전에 진행 중인 외부 호출·저장을 마쳐야 한다.
+        self.executor.shutdown(wait=True, cancel_futures=True)
         if getattr(self, 'public_service', None):
             self.public_service.recovery.close()
         if self.knowledge is not None:

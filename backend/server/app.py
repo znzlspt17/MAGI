@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import hmac
+import signal
 from ipaddress import ip_address
 from pathlib import Path
 
@@ -82,7 +83,7 @@ class MagiServer:
     async def handler(self, socket) -> None:
         queue: asyncio.Queue[str] | None = None
         sender: asyncio.Task | None = None
-        if self.public:
+        if self.public or self.internal_key:
             # 공개 경로는 게이트웨이뿐이다. 브라우저와 비로컬 RPC 연결은 받지 않는다.
             peer = socket.remote_address
             if not peer or not ip_address(peer[0]).is_loopback or (socket.request and 'Origin' in socket.request.headers):
@@ -157,6 +158,18 @@ class MagiServer:
                 return
 
     def _dispatch(self, request: dict) -> str:
+        if request['method'] == 'health.check':
+            # 내부 키를 검사한 loopback 소켓에서만 DB 준비 상태를 확인한다.
+            if not self.internal_key or self.manager.closed or self.manager.knowledge is None:
+                return error(request['request_id'], '준비되지 않았습니다.', 'unavailable')
+            try:
+                store = self.manager.knowledge.store
+                with store.connect(**store.config.connection) as connection:
+                    connection.execute("SET LOCAL statement_timeout = '3s'")
+                    connection.execute("SELECT 1").fetchone()
+                return rpc_result(request['request_id'], {'ready': True})
+            except Exception:
+                return error(request['request_id'], '준비되지 않았습니다.', 'unavailable')
         if self.public:
             from backend.access.context import AccessError
             try:
@@ -267,6 +280,11 @@ async def main() -> None:
     from backend.knowledge.runtime import KnowledgeService
     from backend.knowledge.store import KnowledgeStore
     load_environment()
+    from protocol.deployment import validate_container
+    validate_container('backend')
+    if os.environ.get('MAGI_CONTAINER') == '1':
+        from backend.knowledge.prepare_model import verify_prepared_model
+        verify_prepared_model(os.environ['MAGI_EMBEDDING_MODEL_PATH'], os.environ['MAGI_EXPECTED_MODEL_REVISION'])
     public_mode=os.environ.get('MAGI_PUBLIC_MODE','1')!='0'
     internal_key=os.environ.get('MAGI_INTERNAL_KEY','')
     runtime=None
@@ -290,6 +308,16 @@ async def main() -> None:
     except Exception as exc:
         _log_exception("server initialization failed", exc)
         raise SystemExit(1) from None
+    loop = asyncio.get_running_loop()
+    stopped = asyncio.Event()
+    registered_signals = []
+    # Linux 컨테이너의 SIGTERM을 정상 종료 경로로 연결한다.
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(signum, stopped.set)
+            registered_signals.append(signum)
+        except (NotImplementedError, RuntimeError):
+            pass
     try:
         async with serve(
             server.handler,
@@ -300,14 +328,16 @@ async def main() -> None:
             max_queue=16,
         ):
             LOGGER.info("server started address=%s", _ADDRESS)
-            await asyncio.Future()
+            await stopped.wait()
     except (asyncio.CancelledError, KeyboardInterrupt):
         LOGGER.info("server shutdown requested address=%s", _ADDRESS)
     except Exception as exc:
         _log_exception("server stopped unexpectedly", exc)
         raise SystemExit(1) from None
     finally:
-        server.manager.close()
+        for signum in registered_signals:
+            loop.remove_signal_handler(signum)
+        await asyncio.to_thread(server.manager.close)
         if runtime:
             runtime.close()
         LOGGER.info("server stopped address=%s", _ADDRESS)

@@ -5,10 +5,11 @@ import hashlib
 import threading
 import time
 from urllib.parse import urlsplit
-from flask import abort, g, jsonify, redirect, request, render_template
+from flask import abort, g, jsonify, redirect, request
 from gateway.magi_client import MagiClientError
 from protocol.web_config import login_origin
 from ipaddress import ip_address
+from gateway.frontend import render_frontend
 
 COOKIE='__Host-magi_session'
 LOGIN_COOKIE='__Host-magi_login'
@@ -59,7 +60,7 @@ def install(app, client):
                     return jsonify(error='요청이 너무 많습니다. 잠시 후 다시 시도하세요.',request_id=g.request_id),429
                 windows[identity]=(minute,old[1]+1)
         if not origin:
-            if request.path not in {'/','/api/auth/info'} and not request.path.startswith('/static/'):
+            if request.path not in {'/','/privacy','/api/auth/info'} and not request.path.startswith('/static/'):
                 return jsonify(error='공개 서비스 설정이 필요합니다.',request_id=g.request_id),503
         if request.path in {'/','/privacy','/api/auth/info','/auth/google/start','/auth/google/callback'} or request.path.startswith('/static/'):
             return None
@@ -148,11 +149,13 @@ def install(app, client):
             actor=client().call('auth.me')
         except MagiClientError as exc:
             if exc.status==401:
-                return render_template('admin.html', login_required=True),401
+                page = app.make_response(render_frontend())
+                page.status_code = 401
+                return page
             return '관리자 인증 상태를 확인할 수 없습니다. 잠시 후 다시 시도하세요.',exc.status
         if actor['role']!='admin':
             abort(403)
-        return render_template('admin.html', login_required=False)
+        return render_frontend()
 
     @app.get('/api/me')
     def me():
@@ -199,8 +202,4 @@ def install(app, client):
 
     @app.get('/privacy')
     def privacy():
-        return ('<!doctype html><html lang="ko"><meta charset="utf-8"><title>MAGI 정보 처리 안내</title>'
-                '<main><h1>MAGI 정보 처리 안내</h1><p>이름·이메일·프로필을 요청하지 않습니다. 로그인에는 계정 구분용 식별 정보와 인증 세션만 사용합니다.</p>'
-                '<p>명세 생성을 위해 작성한 요청과 답변은 AI 제공자에게 전송됩니다. 민감한 정보나 비밀값을 입력하지 마세요.</p>'
-                '<p>작업 기록과 문서는 본인 계정에 보관됩니다. 기록 삭제는 관리자에게 요청하세요. 백업 보존·삭제 기간과 운영자 연락처는 공개 전 운영 문서에 확정해야 합니다.</p>'
-                '<a href="/">돌아가기</a></main></html>')
+        return render_frontend()
