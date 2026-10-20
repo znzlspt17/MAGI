@@ -27,8 +27,9 @@ services:
     environment:
       MAGI_PUBLIC_ORIGIN: ${MAGI_PUBLIC_ORIGIN:?HTTPS origin을 입력하세요}
     ports:
-      - "80:8080"
-      - "443:8443"
+      # OMV의 기존 웹 포트를 유지한다. 공유기 외부 80/443을 이 호스트 포트로 전달한다.
+      - "${MAGI_HTTP_PORT:-8080}:8080"
+      - "${MAGI_HTTPS_PORT:-8443}:8443"
     networks: [magi-db]
     mem_limit: 128m
     memswap_limit: 128m
