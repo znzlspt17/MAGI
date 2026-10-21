@@ -32,10 +32,20 @@ class Meter:
         if self.initial is not None and self.initial[1] == model:
             ident, _ = self.initial
             self.initial = None
-            return ident
-        return self.access.reserve(self.uid, self.jid, self.generation, model, amount)
+        else:
+            ident = self.access.reserve(self.uid, self.jid, self.generation, model, amount)
+        self.access.mark_called(ident)
+        return ident
+
+    def record_usage(self, ident, model, incoming, outgoing, cached):
+        _, _, context, output = self.price(model)
+        incoming = incoming if type(incoming) is int and 0 <= incoming <= context else None
+        outgoing = outgoing if type(outgoing) is int and 0 <= outgoing <= output else None
+        self.access.record_tokens(ident,incoming,outgoing,cached)
 
     def settle(self, ident, model, result):
+        if result is not None:
+            self.record_usage(ident,model,result.input_tokens,result.output_tokens,result.cached_tokens)
         # 실패/타임아웃은 제공자의 실제 과금 여부를 추정하지 않는다.
         if result is None or type(result.input_tokens) is not int or type(result.output_tokens) is not int:
             self.access.settle(ident)
@@ -50,4 +60,4 @@ class Meter:
             outgoing=Decimal(str(row['short_output_usd_per_million']))
         incoming *= Decimal(str(row.get('cache_write_multiplier',1)))
         actual = ((result.input_tokens * incoming + result.output_tokens * outgoing) / Decimal(1000000)).quantize(Decimal('.00000001'), rounding='ROUND_UP')
-        self.access.settle(ident, actual)
+        self.access.settle(ident, actual, source='calculated')

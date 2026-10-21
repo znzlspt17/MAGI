@@ -1,4 +1,9 @@
 {
+  "victory-vendor@37.3.6": {
+    "file": "victory-vendor-37.3.6.txt",
+    "url": "https://github.com/FormidableLabs/victory/blob/v37.3.6/LICENSE.txt",
+    "note": "Package root omits LICENSE. Includes official v37.3.6 MIT license and all lib-vendor dependency LICENSE files preserved in the installed 37.3.6 npm package (MIT/ISC)."
+  },
   "react-remove-scroll-bar@2.3.8": {
     "file": "react-remove-scroll-bar-2.3.8.txt",
     "url": "https://raw.githubusercontent.com/theKashey/react-remove-scroll-bar/8ca9ba5ea52de03308fe8ced94f7b159a44d28ff/LICENSE",

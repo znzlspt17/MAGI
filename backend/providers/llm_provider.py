@@ -154,21 +154,25 @@ class OpenAIProvider:
                 meter.settle(reservation,model,None)
             # SDK 예외에는 요청과 응답 원문이 포함될 수 있어 전파하지 않는다.
             raise MagiError("OpenAI request failed.") from None
-        if response.status != "completed":
-            if meter is not None:
-                meter.settle(reservation,model,None)
-            raise MagiError("OpenAI response did not complete.")
-        text = response.output_text
-        if not isinstance(text, str) or not text.strip():
-            if meter is not None:
-                meter.settle(reservation,model,None)
-            raise MagiError("OpenAI returned no text response.")
-        parsed = response.output_parsed if text_format is not None else None
-        if text_format is not None and not isinstance(parsed, text_format):
-            if meter is not None:
-                meter.settle(reservation,model,None)
-            raise MagiError("OpenAI returned no structured response.")
         data = response.model_dump()
+        text = response.output_text
+        parsed = None
+        failure = None
+        if response.status != "completed":
+            failure = "OpenAI response did not complete."
+        elif not isinstance(text, str) or not text.strip():
+            failure = "OpenAI returned no text response."
+        else:
+            parsed = response.output_parsed if text_format is not None else None
+            if text_format is not None and not isinstance(parsed, text_format):
+                failure = "OpenAI returned no structured response."
+        if failure:
+            if meter is not None:
+                # 실패 응답에도 관측된 사용량은 보존하되 비용은 미확정으로 남긴다.
+                meter.record_usage(reservation,model,_usage_count(data,"input_tokens"),
+                                   _usage_count(data,"output_tokens"),_cached_tokens(data))
+                meter.settle(reservation,model,None)
+            raise MagiError(failure)
 
         result = CompletionResult(
             text=text.strip(),

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { api, post } from "./api";
 import { useAuth } from "./Auth";
 import { Markdown, statusLabel } from "./UI";
 import Knowledge from "./Knowledge";
+const UsageDashboard = lazy(() => import("./UsageDashboard"));
 import "./admin-knowledge.css";
 const views = [
   ["overview", "운영 현황"],
@@ -25,6 +26,10 @@ export default function Admin() {
     [status, setStatus] = useState(""),
     [selected, setSelected] = useState(new Set<string>()),
     [jobId, setJobId] = useState(""),
+    [ownerId, setOwnerId] = useState(""),
+    [ownerJobs, setOwnerJobs] = useState<any[]>([]),
+    [ownerLoading, setOwnerLoading] = useState(false),
+    [ownerError, setOwnerError] = useState(""),
     [job, setJob] = useState<any>(null),
     [operation, setOperation] = useState<any>(null),
     [confirmation, setConfirmation] = useState(""),
@@ -69,6 +74,18 @@ export default function Admin() {
     };
   }, [authorized, view, version]);
   useEffect(() => {
+    if (!authorized || view !== "data" || !ownerId) return;
+    let live = true;
+    setOwnerLoading(true);
+    setOwnerError("");
+    setOwnerJobs([]);
+    api("/api/admin/user_jobs?owner_id=" + encodeURIComponent(ownerId))
+      .then((value) => live && setOwnerJobs(value))
+      .catch((e) => live && setOwnerError(e.message || "사용자 작업을 조회하지 못했습니다."))
+      .finally(() => live && setOwnerLoading(false));
+    return () => { live = false; };
+  }, [authorized, view, ownerId, version]);
+  useEffect(() => {
     if (!operation) return;
     const opener = document.activeElement as HTMLElement | null;
     dialog.current?.showModal();
@@ -108,6 +125,11 @@ export default function Admin() {
       if (ticket === jobRequest.current && alive.current) fail(e);
     }
   }
+  const linkedJobId = new URLSearchParams(location.search).get("job_id");
+  useEffect(() => {
+    if (authorized && view === "data" && linkedJobId) void inspect(linkedJobId);
+    return () => { jobRequest.current++; };
+  }, [authorized, view, linkedJobId]);
   async function preview(scope: string) {
     if (scope === "jobs" && !selected.size) {
       setError("삭제할 작업을 선택하세요.");
@@ -266,72 +288,7 @@ export default function Admin() {
             ))}
           </section>
         )}
-        {view === "costs" && (
-          <section data-admin-section="costs">
-            <h2>비용·한도</h2>
-            {data && (
-              <form
-                className="admin-form"
-                key={version}
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const values = new FormData(e.currentTarget);
-                  void act("/api/admin/settings", {
-                    daily_usd: values.get("daily_usd"),
-                  });
-                }}
-              >
-                <label>
-                  전체 일일 API 비용 상한 (US$)
-                  <input
-                    type="number"
-                    name="daily_usd"
-                    min="0"
-                    max="10000"
-                    step=".01"
-                    defaultValue={data.daily_usd}
-                    required
-                  />
-                </label>
-                <button>상한 저장</button>
-              </form>
-            )}
-            <h3>산정 비용 및 미정산</h3>
-            {data?.costs?.length === 0 && <p>비용 기록이 없습니다.</p>}
-            {data?.costs?.map((cost: any) => (
-              <article className="cost-row" key={cost.id}>
-                <p>
-                  {cost.day} · {cost.model} · {cost.state} · 예약 $
-                  {cost.reserved} · 산정 비용 ${cost.actual ?? "미정"}
-                </p>
-                {cost.state !== "settled" && (
-                  <form
-                    className="admin-form"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      void act("/api/admin/settle", {
-                        id: cost.id,
-                        actual: new FormData(e.currentTarget).get("actual"),
-                      });
-                    }}
-                  >
-                    <label>
-                      확인된 실제 비용 US$
-                      <input
-                        type="number"
-                        name="actual"
-                        min="0"
-                        step=".00000001"
-                        required
-                      />
-                    </label>
-                    <button>정산</button>
-                  </form>
-                )}
-              </article>
-            ))}
-          </section>
-        )}
+        {view === "costs" && <Suspense fallback={<p role="status">사용량 화면을 불러오는 중…</p>}><UsageDashboard version={version} save={act} /></Suspense>}
         {view === "data" && (
           <>
             <section data-admin-section="data">
@@ -363,6 +320,38 @@ export default function Admin() {
             </section>
             <section data-admin-section="data">
               <h2 id="job-title">작업 조회</h2>
+              <label>
+                사용자별 작업 조회
+                <select value={ownerId} onChange={(e) => {
+                  setOwnerId(e.target.value);
+                  setOwnerJobs([]);
+                  setOwnerError("");
+                  setJob(null);
+                  jobRequest.current++;
+                }}>
+                  <option value="">사용자를 선택하세요</option>
+                  {data?.users?.map((user: any) => (
+                    <option key={user.id} value={user.id}>{user.id}</option>
+                  ))}
+                </select>
+              </label>
+              {ownerId && (
+                <div aria-label="사용자 작업 목록">
+                  {ownerLoading ? <p role="status">작업 조회 중…</p> : ownerError ? (
+                    <p role="alert">{ownerError}</p>
+                  ) : ownerJobs.length === 0 ? <p>이 사용자의 작업이 없습니다.</p> : (
+                    <>
+                      <p>작업 {ownerJobs.length}개</p>
+                      {ownerJobs.map((item) => (
+                        <div className="cleanup-row" key={item.id}>
+                          <span>{item.request || "작업"} · {statusLabel(item.status)} · {item.id}</span>
+                          <button onClick={() => void inspect(item.id)}>상세 조회</button>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
               <form
                 id="job-form"
                 className="admin-form"

@@ -142,8 +142,8 @@ class AccessStore:
             self.check_money(c, uid, amount, day)
             ident = uuid4().hex
             c.execute('UPDATE magi_daily_usage SET reserved=reserved+%s WHERE day=%s AND user_id=%s', (amount, day, uid))
-            c.execute('INSERT INTO magi_cost_calls(id,day,user_id,job_id,model,reserved) VALUES (%s,%s,%s,%s,%s,%s)',
-                      (ident, day, uid, jid, model, amount))
+            c.execute('INSERT INTO magi_cost_calls(id,day,user_id,job_id,model,reserved,reserved_at) VALUES (%s,%s,%s,%s,%s,%s,to_timestamp(%s))',
+                      (ident, day, uid, jid, model, amount, self.clock()))
         return ident
 
     def check_execution(self, uid, jid, generation):
@@ -154,7 +154,21 @@ class AccessStore:
             if not c.execute('SELECT id FROM magi_users WHERE id=%s AND NOT suspended',(uid,)).fetchone():
                 raise AccessError('이 계정은 이용할 수 없습니다.')
 
-    def settle(self, ident, actual=None):
+    def mark_called(self, ident):
+        with self.store.transaction() as c:
+            c.execute('UPDATE magi_cost_calls SET called_at=COALESCE(called_at,to_timestamp(%s)) WHERE id=%s',
+                      (self.clock(),ident))
+
+    def record_tokens(self, ident, incoming, outgoing, cached):
+        # 누락·잘못된 값은 0으로 채우지 않고 관측한 값만 저장한다.
+        incoming = incoming if type(incoming) is int and incoming >= 0 else None
+        outgoing = outgoing if type(outgoing) is int and outgoing >= 0 else None
+        cached = cached if type(cached) is int and incoming is not None and 0 <= cached <= incoming else None
+        with self.store.transaction() as c:
+            c.execute('UPDATE magi_cost_calls SET input_tokens=%s,output_tokens=%s,cached_tokens=%s WHERE id=%s',
+                      (incoming,outgoing,cached,ident))
+
+    def settle(self, ident, actual=None, *, source='calculated'):
         with self.store.transaction() as c:
             row = c.execute('SELECT * FROM magi_cost_calls WHERE id=%s FOR UPDATE', (ident,)).fetchone()
             if not row or row['state'] == 'settled':
@@ -167,7 +181,8 @@ class AccessStore:
                 raise AccessError('비용 산정을 확인해야 합니다.', 'unavailable')
             c.execute('UPDATE magi_daily_usage SET reserved=reserved-%s,spent=spent+%s WHERE day=%s AND user_id=%s',
                       (row['reserved'], actual, row['day'], row['user_id']))
-            c.execute("UPDATE magi_cost_calls SET actual=%s,state='settled' WHERE id=%s", (actual, ident))
+            c.execute("UPDATE magi_cost_calls SET actual=%s,state='settled',settled_at=to_timestamp(%s),settlement_source=%s WHERE id=%s",
+                      (actual,self.clock(),source,ident))
 
     def finish(self, jid, generation, waiting=False):
         with self.store.transaction() as c:

@@ -184,7 +184,7 @@ def install(app, client):
 
     @app.route('/api/admin/<action>',methods=['GET','POST'])
     def admin(action):
-        allowed={'overview','job','projects','jobs','graph','search','node','document'} if request.method=='GET' else {'user','claim','stop','settle','settings'}
+        allowed={'overview','job','user_jobs','usage','projects','jobs','graph','search','node','document'} if request.method=='GET' else {'user','claim','stop','settle','settings'}
         if action not in allowed:
             abort(404)
         params=dict(request.args) if request.method=='GET' else request.get_json(silent=True) or {}
@@ -193,6 +193,15 @@ def install(app, client):
                 try: params[key]=int(params[key])
                 except (ValueError,TypeError): abort(400)
         return relay('admin.'+action,params)
+
+    @app.get('/api/admin/usage/rows')
+    def admin_usage_rows():
+        params=dict(request.args)
+        for key in ('limit','offset'):
+            if key in params:
+                try: params[key]=int(params[key])
+                except (ValueError,TypeError): abort(400)
+        return relay('admin.usage.rows',params)
 
     @app.route('/api/admin/cleanup/<action>',methods=['GET','POST'])
     def admin_cleanup(action):

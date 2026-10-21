@@ -345,6 +345,10 @@ class PublicService:
                 ACTOR.reset(token)
 
     def admin(self, actor, method, params):
+        if method in {'admin.usage','admin.usage.rows'}:
+            from backend.access.usage import usage
+            self.require_admin(actor)
+            return usage(self,method,params)
         if method in {'admin.projects','admin.jobs','admin.graph','admin.search','admin.node','admin.document'}:
             return self.admin_knowledge(actor, method, params)
         with self.manager.lock, self.store.transaction() as c:
@@ -354,6 +358,13 @@ class PublicService:
                         'lease':self.access.lease(c),'embedding_status':self.manager.knowledge.last_error,
                         'daily_usd':c.execute('SELECT daily_usd FROM magi_service_settings WHERE singleton=1').fetchone()['daily_usd'],
                         'unowned':c.execute('SELECT id FROM magi_jobs WHERE owner_id IS NULL ORDER BY id').fetchall()}
+            if method=='admin.user_jobs':
+                owner=params.get('owner_id')
+                if not isinstance(owner,str) or not owner.strip():
+                    raise AccessError('사용자 ID를 선택하세요.')
+                if not c.execute('SELECT id FROM magi_users WHERE id=%s',(owner,)).fetchone():
+                    raise AccessError('사용자를 찾을 수 없습니다.')
+                return c.execute("SELECT id,owner_id,data->>'request' AS request,data->>'status' AS status,data->>'created_at' AS created_at FROM magi_jobs WHERE owner_id=%s ORDER BY data->>'created_at' DESC NULLS LAST,id",(owner,)).fetchall()
             if method=='admin.job':
                 result=self.manager.public(params.get('id'))
                 result['owner_id']=self.manager.jobs[params['id']].get('owner_id')
@@ -402,7 +413,7 @@ class PublicService:
                 actual=Decimal(str(params.get('actual')))
                 if not actual.is_finite() or actual<0:
                     self._deny()
-                self.access.settle(params.get('id'),actual)
+                self.access.settle(params.get('id'),actual,source='manual')
             else:
                 self._deny()
             c.execute('INSERT INTO magi_admin_audit(id,actor_id,action,target_id) VALUES (%s,%s,%s,%s)',(uuid4().hex,actor['id'],method,params.get('id')))
