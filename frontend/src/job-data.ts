@@ -1,3 +1,5 @@
+import type { SessionEvent } from "./types";
+
 export type JobRecord = {
   id: string;
   request?: string | null;
@@ -9,7 +11,7 @@ export type JobDetail = JobRecord & {
   final?: string;
   candidate?: string;
   critical?: string;
-  session_events?: { action?: string; status?: string }[];
+  session_events?: Partial<SessionEvent>[];
 };
 export type JobCatalog = { jobs: JobRecord[]; pending: string[] };
 export type CleanupOperation = {

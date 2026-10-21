@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { CopyIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { useEffect, useState } from "react";
+import { CopyIcon, WarningCircleIcon, CaretDownIcon, ClockIcon } from "@phosphor-icons/react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./components/ui/collapsible";
 import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "./components/ui/sheet";
@@ -43,6 +44,8 @@ export default function JobDetailSheet({ id, job, fallback, loading, error, tab,
   tab: string; setTab: (value: string) => void; close: () => void; retry: () => void; restoreFocus: () => void;
 }) {
   const value = job || fallback;
+  const [history, setHistory] = useState<{ jobId: string; open: Record<string, boolean> }>({ jobId: id, open: {} });
+  useEffect(() => { setHistory({ jobId: id, open: {} }); }, [id]);
   return <Sheet open={!!id} onOpenChange={open => { if (!open) close(); }}>
     <SheetContent className="jobs-detail" onCloseAutoFocus={event => { event.preventDefault(); restoreFocus(); }}>
       <SheetHeader>
@@ -74,12 +77,44 @@ export default function JobDetailSheet({ id, job, fallback, loading, error, tab,
               </TabsContent>,
             )}
             <TabsContent value="history">
-              {job.session_events?.length ? <ol className="jobs-history">{job.session_events.map((event, index) =>
-                <li key={index}><span className="jobs-history-number">{index + 1}</span><div><strong>{event.action || "처리 기록"}</strong><p>{jobStatusLabel(event.status)}</p></div></li>,
-              )}</ol> : <p className="jobs-empty">저장된 처리 이력이 없습니다.</p>}
+              <JobHistory events={job.session_events} open={history.jobId === id ? history.open : {}} setOpen={(key, open) => setHistory(previous => ({ jobId: id, open: { ...(previous.jobId === id ? previous.open : {}), [key]: open } }))} />
             </TabsContent>
           </Tabs>}
       </div>
     </SheetContent>
   </Sheet>;
+}
+
+const historyLabels: Record<string, string> = { generate: "최초 요청", answer: "질문에 답변", revise: "수정 요청", approve: "명세 승인" };
+
+export function JobHistory({ events, open, setOpen }: { events: JobDetail["session_events"]; open: Record<string, boolean>; setOpen: (key: string, open: boolean) => void }) {
+  if (!events?.length) return <p className="jobs-empty">저장된 처리 이력이 없습니다.</p>;
+  return <ol className="jobs-history" aria-label="실행별 처리 이력">{events.map((event, index) => {
+    const key = event.id || `legacy-${index}`;
+    const title = historyLabels[event.action || ""] || "처리 기록";
+    const summary = event.summary?.trim() ? event.summary : "저장된 결과 요약이 없습니다";
+    const time = jobTime(event.started_at);
+    const answers = event.input?.answers?.filter(answer => answer.answer?.trim()) || [];
+    const questions = event.questions?.filter(question => question.trim()) || [];
+    return <li key={key}><span className="jobs-history-number" aria-hidden>{index + 1}</span><div className="jobs-history-entry">
+      <div className="jobs-history-heading"><h3>{title}</h3><JobStatus status={event.status} /></div>
+      <p className="jobs-history-time"><ClockIcon size={14} aria-hidden />{time === "기록 없음" ? "시각 기록 없음" : `${time} (KST)`}</p>
+      <p className="jobs-history-summary">{summary}</p>
+      <Collapsible open={!!open[key]} onOpenChange={value => setOpen(key, value)}>
+        <CollapsibleTrigger className="jobs-history-trigger" aria-label={`${index + 1}. ${title} 상세 보기`}>상세 보기<CaretDownIcon size={15} aria-hidden /></CollapsibleTrigger>
+        <CollapsibleContent className="jobs-history-detail">
+          <section><h4>사용자 입력</h4>
+            {event.input?.request?.trim() && <p>{event.input.request}</p>}
+            {event.input?.feedback?.trim() && <p>{event.input.feedback}</p>}
+            {!!answers.length && <dl className="jobs-history-answers">{answers.map((answer, answerIndex) => <div key={`${answerIndex}:${answer.question_id || "answer"}`}><dt>{answer.question?.trim() || "질문 원문 기록 없음"}</dt><dd>{answer.answer}</dd></div>)}</dl>}
+            {event.action === "approve" && <p>사용자가 명세를 승인했습니다</p>}
+            {!event.input?.request?.trim() && !event.input?.feedback?.trim() && !answers.length && event.action !== "approve" && <p className="jobs-muted">저장된 사용자 입력이 없습니다</p>}
+          </section>
+          <section><h4>MAGI 결과</h4><p>{summary}</p></section>
+          <section><h4>추가 확인 질문</h4>{questions.length ? <ol>{questions.map((question, questionIndex) => <li key={questionIndex}>{question}</li>)}</ol> : <p className="jobs-muted">저장된 추가 확인 질문이 없습니다</p>}</section>
+          {!historyLabels[event.action || ""] && event.action && <p className="jobs-muted">기록된 동작: {event.action}</p>}
+        </CollapsibleContent>
+      </Collapsible>
+    </div></li>;
+  })}</ol>;
 }
