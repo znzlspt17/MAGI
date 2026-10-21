@@ -10,6 +10,7 @@ import "./styles.css";
 import "./workspace-design.css";
 import "./chat-design.css";
 import { Licenses } from "./Licenses";
+import { WorkspaceReturnLink } from "./components/WorkspaceReturnLink";
 try { migrateSessionKeys(window.sessionStorage); } catch { /* 저장소 사용 불가 시 이전 초안 보존 */ }
 
 export function Privacy() {
@@ -43,7 +44,7 @@ export function Privacy() {
       <p>
         연락처 znzlsit@naver.com
       </p>
-      <div className="public-links"><a href="/">돌아가기</a><a href="/licenses">오픈소스 라이선스</a></div>
+      <div className="public-links"><WorkspaceReturnLink /><a href="/licenses">오픈소스 라이선스</a></div>
     </main>
   );
 }
