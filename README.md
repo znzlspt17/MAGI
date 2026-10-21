@@ -214,6 +214,5 @@ print(result.status)
 
 ## 상세 문서
 
-- [Raspberry Pi·Portainer 배포](docs/RASPBERRY_PI.ko.md): GitHub Actions ARM64 이미지 제작, 파일 전달, 기존 DB 보존과 장치 검증.
 - [사용자 가이드](docs/USER_GUIDE.ko.md): 화면 사용법, 질문·수정·승인, 지식 검색과 기록 이관
 - [공개 서비스 운영](docs/PUBLIC_SERVICE.ko.md): 로그인, DB 권한, 배포, 관리자와 비용·장애 복구
