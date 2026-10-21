@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from typing import Any
+from datetime import datetime, timezone
 from backend.infrastructure.web_search import (
     should_research,
     summarize_web_research,
@@ -20,12 +21,24 @@ class WebResearchStage:
         created = list(state.get("created_artifacts", []))
         mode = state.get("web_search_mode", "auto")
         sources: list[dict[str, Any]] = []
-        if should_research(state.get("user_request", ""), mode):
+        performed = should_research(state.get("user_request", ""), mode)
+        research = {"mode": mode, "search_method": "duckduckgo_html_links", "performed": performed, "outcome": "skipped",
+                    "reason": "disabled" if mode == "off" else "not_required",
+                    "query": state.get("user_request", "") if performed else "",
+                    "retrieved_at": datetime.now(timezone.utc).isoformat(), "sources": [], "result_count": 0}
+        failure = None
+        if performed:
             try:
                 sources = web_search(state.get("user_request", ""), max_results=5)
-            except Exception:
-                if mode == "on":
-                    raise
+                research.update(outcome="links_found" if sources else "no_results", reason="search_results")
+            except Exception as exc:
+                research.update(outcome="failed", reason="search_failed")
+                failure = exc
+        research.update(sources=sources, result_count=len(sources))
+        self.context.writer.write_json("research/research_record.json", research)
+        if failure is not None and mode == "on":
+            failure.research_record = research
+            raise failure
         for source in sources:
             self.context.evidence.add(
                 "WEB_SOURCE",
@@ -40,10 +53,11 @@ class WebResearchStage:
             "research/web_research_summary.ko.md", summarize_web_research(sources, mode)
         )
         created.extend(
-            ["research/web_sources.json", "research/web_research_summary.ko.md"]
+            ["research/web_sources.json", "research/web_research_summary.ko.md", "research/research_record.json"]
         )
         return {
             "status": STATUS_RESEARCHING,
+            "research": research,
             "web_sources_path": str(
                 self.context.writer.path("research/web_sources.json")
             ),

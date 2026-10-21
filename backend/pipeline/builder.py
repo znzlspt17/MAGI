@@ -91,7 +91,7 @@ def _stage(name: str, node, callback):
                 from backend.infrastructure.output_language import OutputLanguageError
                 retryable = isinstance(exc, (RequirementNormalizationError, ReviewValidationError, SpecCompilationError, OutputLanguageError))
                 if not retryable or attempt == MAX_RETRIES:
-                    _progress(callback, name, "failed")
+                    _progress(callback, name, "failed", {"research": exc.research_record} if name == "web_research" and hasattr(exc, "research_record") else None)
                     raise
                 _progress(callback, name, "retrying", {
                     "retry_attempt": attempt + 1,
@@ -119,11 +119,12 @@ def _progress(
         event = {"stage": stage, "state": state}
         if state == "retrying":
             event["result"] = result
-        if state == "completed" and isinstance(result, dict):
+        if state in {"completed", "failed"} and isinstance(result, dict):
             # 실행 이력에는 상태 판단에 필요한 결과만 전달한다.
             event["result"] = {
                 key: result[key]
                 for key in (
+                    "research",
                     "status",
                     "blocking_questions",
                     "structured_issues",

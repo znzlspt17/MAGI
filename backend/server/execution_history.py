@@ -294,6 +294,8 @@ class ExecutionHistory:
             result.update(copy.deepcopy(detail["result"]))
         payload = _summary_node(node)
         payload["result"] = result
+        if isinstance(result.get("research"), dict):
+            payload["research"] = copy.deepcopy(result["research"])
         if isinstance(node.get("usage"), dict):
             payload["usage"] = copy.deepcopy(node["usage"])
         if isinstance(detail.get("document"), dict):
@@ -425,7 +427,7 @@ def _summary_node(node: dict) -> dict:
 
 
 def _safe_result(value: dict) -> dict:
-    allowed = {"status", "blocking_questions", "structured_issues", "critic_pass_count", "request_type", "awaiting_input_reason", "review_questions", "question_forms", "resolution_history", "diagnosed_keys"}
+    allowed = {"research", "status", "blocking_questions", "structured_issues", "critic_pass_count", "request_type", "awaiting_input_reason", "review_questions", "question_forms", "resolution_history", "diagnosed_keys"}
     return {key: copy.deepcopy(value[key]) for key in allowed if key in value}
 
 
@@ -473,7 +475,13 @@ def _summary(stage: str, result: dict) -> str:
         return "사용자 답변을 기다리고 있습니다." if result.get("blocking_questions") else "답변을 저장했습니다."
     if stage == "checklist_critic":
         return "검토 결과를 저장했습니다."
-    return "단계를 완료했습니다."
+    if stage == "web_research" and isinstance(result.get("research"), dict):
+        research = result["research"]
+        return {"skipped": "외부 검색을 생략했습니다.", "no_results": "검색 결과 링크가 없습니다.",
+                "failed": "외부 검색에 실패했습니다.", "links_found": f"검색 결과 링크 {research.get('result_count', 0)}개 발견"}.get(research.get("outcome"), "조사 기록을 확인하세요.")
+    if stage == "interview":
+        return f"확인이 필요한 질문 {len(result.get('blocking_questions') or [])}개를 정리했습니다."
+    return "상세 결과 기록 없음"
 
 
 def _terminal_node_status(status: str) -> str:

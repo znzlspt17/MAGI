@@ -39,7 +39,8 @@ export function Privacy() {
       <p>
         로그아웃해도 저장된 기록은 삭제되지 않습니다. 기록 삭제가 필요한 경우
         관리자에게 요청하세요.
-
+      </p>
+      <p>
         연락처 znzlsit@naver.com
       </p>
       <div className="public-links"><a href="/">돌아가기</a><a href="/licenses">오픈소스 라이선스</a></div>

@@ -1,3 +1,4 @@
+import { ExecutionTimeline, ResearchResult } from "./ExecutionTimeline";
 import { ServiceStatusNotice, serviceState } from "./ServiceStatus";
 import { Conversation } from "./Conversation";
 import { PromptInput } from "./components/PromptInput";
@@ -524,27 +525,10 @@ export default function Workspace() {
                       <section className="document-panel">
                         {tab === "history" && actualJob.usage && <p className="subtle">{usageLabel(actualJob.usage)}</p>}
                         {tab === "history" && (
-                          <div
-                            className="execution-list"
-                            aria-label="실행 흐름"
-                          >
-                            {graphNodes(actualJob).map((n) => (
-                              <Button
-                                key={n.id}
-                                aria-pressed={step === n.id}
-                                onClick={() => {
-                                  manual.current = true;
-                                  setStep(n.id);
-                                }}
-                              >
-                                {stageLabel(n)} · {statusLabel(n.status)}
-                              </Button>
-                            ))}
-                            {actualJob.execution_graph
-                              ?.recording_incomplete && (
-                              <Notice>일부 이력 기록 누락</Notice>
-                            )}
-                          </div>
+                          <>
+                            <ExecutionTimeline key={actualJob.id} job={actualJob} nodes={graphNodes(actualJob)} selected={step} select={selected => { manual.current = true; setStep(selected); }} />
+                            {actualJob.execution_graph?.recording_incomplete && <Notice>일부 이력 기록 누락</Notice>}
+                          </>
                         )}
                         {detail?.unavailable ? (
                           <Notice>기록 확인 불가: {detail.message}</Notice>
@@ -560,7 +544,7 @@ export default function Workspace() {
                             document={detail.document}
                           />
                         ) : (
-                          <StepResult node={node} detail={detail} />
+                          <StepResult node={node} detail={detail} hideQuestions={!!actualJob.session_events?.find(event => event.id === node?.execution_id)?.questions?.length && JSON.stringify(actualJob.session_events?.find(event => event.id === node?.execution_id)?.questions) === JSON.stringify(detail?.result?.questions || detail?.result?.blocking_questions || [])} />
                         )}
                         {(result.issues?.length ||
                           result.resolved_issues?.length ||
@@ -689,7 +673,7 @@ function CompletedDocuments({
     </div>
   );
 }
-function StepResult({ node, detail }: { node?: Step; detail: RecordData }) {
+function StepResult({ node, detail, hideQuestions = false }: { node?: Step; detail: RecordData; hideQuestions?: boolean }) {
   const result = detail.result || {};
   const source = result.requirements || result;
   const groups = Array.isArray(source)
@@ -709,20 +693,15 @@ function StepResult({ node, detail }: { node?: Step; detail: RecordData }) {
           일부 상세 기록이 누락되었습니다. 표시 가능한 결과만 제공합니다.
         </Notice>
       )}
-      <p>{result.summary || node?.summary || "기록된 요약이 없습니다."}</p>
+      {node?.stage !== "web_research" && <p>{["단계를 완료했습니다.", "사용자 작업을 접수했습니다."].includes(result.summary || node?.summary) ? "상세 결과 기록 없음" : result.summary || node?.summary || "상세 결과 기록 없음"}</p>}
+      {node?.stage === "web_research" && <ResearchResult research={detail.research || result.research} />}
       {result.purpose && <p>{result.purpose}</p>}
       {result.request && <p>{result.request}</p>}
       {result.feedback && <p>{result.feedback}</p>}
-      {(result.answers || []).map((a: RecordData, i: number) => (
-        <p key={i}>
-          {a.question}: {a.answer}
-        </p>
+      {(result.answers || []).map((answer: RecordData, i: number) => (
+        <section className="execution-answer" key={i}><h3>질문</h3><p>{answer.question ? questionDetails(answer.question, i).label : "질문 원문 기록 없음"}</p><h3>답변</h3><p>{answer.answer || "답변 기록 없음"}</p>{answer.question_id && <details><summary>질문 참조</summary><code>{answer.question_id}</code></details>}</section>
       ))}
-      {(result.questions || result.blocking_questions || []).map(
-        (q: string, i: number) => (
-          <p key={i}>{questionDetails(q, i).label}</p>
-        ),
-      )}
+      {!hideQuestions && (result.questions || result.blocking_questions || []).map((q: string, i: number) => <p key={i}>{questionDetails(q, i).label}</p>)}
       {groups.map(([label, items]) =>
         Array.isArray(items) && items.length ? (
           <section key={String(label)}>
@@ -739,9 +718,7 @@ function StepResult({ node, detail }: { node?: Step; detail: RecordData }) {
           </section>
         ) : null,
       )}
-      {!detail.document && (
-        <p className="subtle">명세가 준비되면 여기에 표시됩니다.</p>
-      )}
+
     </section>
   );
 }

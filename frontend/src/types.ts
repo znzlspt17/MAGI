@@ -34,6 +34,12 @@ export interface DocumentData {
 }
 // 서버의 저장 이력은 단계별로 다른 결과를 가진다. 구체적인 필드는 소비 위치에서 검사한다.
 export type RecordData = Record<string, any>;
+export interface ResearchRecord {
+  search_method?: string;
+  mode: string; performed: boolean; outcome: "skipped" | "no_results" | "failed" | "links_found";
+  reason: string; query: string; retrieved_at: string; result_count: number;
+  sources: { title: string; url: string; query?: string; retrieved_at?: string }[];
+}
 export interface Step extends RecordData {
   id: string;
   stage?: string;
