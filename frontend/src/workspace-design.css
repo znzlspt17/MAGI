@@ -45,6 +45,7 @@ body { font-size: 15px; -webkit-font-smoothing: antialiased; }
 .sidebar-footer a { display: flex; align-items: center; gap: 7px; color: #6d687b; text-decoration: none; }
 .sidebar-footer a:hover { color: #7150d4; }
 .workspace-content { min-width: 0; background: #fafaf9; }
+.workspace-topbar { position: sticky; top: 0; z-index: 20; flex-shrink: 0; background: #fafaf9; }
 .account-header { background: transparent; padding: 19px 38px; border-bottom-color: #eeebf1; }
 .account-header > p:first-child::before { content: ""; display: inline-block; width: 6px; height: 6px; background: #438268; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
 .account-header > p[role="status"] { flex: 1; }

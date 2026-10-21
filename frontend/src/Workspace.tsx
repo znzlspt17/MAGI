@@ -475,8 +475,10 @@ export default function Workspace() {
         </SidebarGroup>
       </AppSidebar>
       <SidebarInset className="workspace-content">
-        <div className="mobile-workspace-bar"><SidebarTrigger  /><span>MAGI 작업 공간</span></div>
-        <Account />
+        <div className="workspace-topbar">
+          <div className="mobile-workspace-bar"><SidebarTrigger  /><span>MAGI 작업 공간</span></div>
+          <Account />
+        </div>
         <main>
           <header className={`workspace-header ${id && surface === "workspace" ? "chat-header" : ""}`}>
             <div><span className="eyebrow">MAGI / {surface === "knowledge" ? "KNOWLEDGE" : "WORKSPACE"}</span>
