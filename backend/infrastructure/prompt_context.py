@@ -57,6 +57,7 @@ class PromptContext:
         self.aliases = {}
         self.source_items = {}
         self.semantic_ids = set()
+        self.basis_source_aliases = set()
         self.stage = None
 
     def source(self, alias, text, *, question=""):
@@ -193,7 +194,7 @@ class PromptContext:
                 raise error
             if self.stage == "spec_compile":
                 raise SpecCompilationError(details)
-            raise ReviewValidationError(details)
+            raise ReviewValidationError(details, stage=self.stage, check="source_reference")
 
         def walk(value, key="", workflow=False, evidence=False, decision=False):
             if isinstance(value, list):
@@ -207,7 +208,9 @@ class PromptContext:
                                 versioned = [alias for alias in aliases if re.search(r":[0-9a-f]{64}$", alias)]
                                 chosen = versioned or aliases
                             elif key == "basis_refs":
-                                chosen = aliases
+                                # 해결 판단은 이번 확정 근거에 있는 별칭만 복원한다.
+                                chosen = ([alias for alias in aliases if alias in self.basis_source_aliases]
+                                          if self.stage == "review_resolution" else aliases)
                             else:
                                 chosen = [re.sub(r":[0-9a-f]{64}$", "", alias) for alias in aliases]
                             restored.extend(chosen or [reference(item, key, workflow, evidence)])
@@ -306,6 +309,7 @@ def prepare_context(writer, payload, stage):
         canonical = {"requirement_lock_sheet": canonical}
     canonical = {key: value for key, value in canonical.items() if key in CANONICAL_FIELDS[stage]}
     if stage == "review_resolution":
+        context.basis_source_aliases = set(canonical.get("confirmed_basis", {}))
         canonical["confirmed_basis"] = {key: value for key, value in canonical.get("confirmed_basis", {}).items() if not key.startswith("user_")}
         canonical["issues"] = [{key: value for key, value in issue.items() if key in ISSUE_FIELDS} for issue in canonical.get("issues", [])]
         canonical["previous_resolutions"] = [{"issues": [{key: issue[key] for key in ("issue_id", "requirement_id", "checklist_id", "decision_key", "required_change", "resolution_reason", "basis_refs") if key in issue}

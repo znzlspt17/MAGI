@@ -11,6 +11,7 @@ from backend.errors import (
     MagiError,
     MissingCredentialError,
     RequirementNormalizationError,
+    ReviewValidationError,
     SpecCompilationError,
     TranslationValidationError,
 )
@@ -100,7 +101,11 @@ def diagnose_exception(exc: BaseException) -> dict[str, Any]:
         ),
         "error_code": normalization["code"] if normalization is not None else None,
         "error_stage": normalization["stage"] if normalization is not None else None,
-        "failed_checks": next((item.failed_checks for item in chain if isinstance(item, TranslationValidationError)), []),
+        "failed_checks": next((
+            sorted(set(check for check in item.failed_checks if isinstance(check, str) and check in ReviewValidationError.checks))
+            if isinstance(item, ReviewValidationError) else item.failed_checks
+            for item in chain if isinstance(item, (TranslationValidationError, ReviewValidationError))
+        ), []),
         "exception_type": type(exc).__name__,
         "cause_types": [type(item).__name__ for item in chain[1:]],
         "http_status": _http_status(chain),
@@ -110,6 +115,11 @@ def diagnose_exception(exc: BaseException) -> dict[str, Any]:
 
 def _normalization_error(chain: list[BaseException]) -> dict[str, str] | None:
     for item in chain:
+        if isinstance(item, ReviewValidationError):
+            stage = getattr(item, "stage", None)
+            return {"code": "REVIEW_VALIDATION_FAILED",
+                    "stage": stage if isinstance(stage, str) and stage in ReviewValidationError.stages else "checklist_critic",
+                    "reason": "검토 응답의 근거·형식 또는 추가 질문을 검증하지 못해 작업을 중단했습니다."}
         if not isinstance(item, (RequirementNormalizationError, SpecCompilationError, TranslationValidationError)):
             continue
         code = getattr(item, "code", None)

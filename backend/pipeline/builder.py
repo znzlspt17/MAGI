@@ -176,7 +176,7 @@ def route_after_resolution(
     if any(issue.resolution_kind == "user_decision" and issue.status != "resolved" for issue in issues):
         from backend.errors import ReviewValidationError
         if state.get("awaiting_input_reason") != "review" or not state.get("blocking_questions"):
-            raise ReviewValidationError(["User-decision issues require pending review questions."])
+            raise ReviewValidationError(["User-decision issues require pending review questions."], stage="review_resolution", check="question_pending")
         return "await_user"
     unresolved = count_unresolved_required(issues)
     passes = int(state.get("critic_pass_count", 0))

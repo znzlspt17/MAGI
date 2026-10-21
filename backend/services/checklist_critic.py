@@ -144,16 +144,16 @@ def _parse_provider_issues(
         ):
             raise ReviewValidationError()
         if "requirement_id" not in item:
-            raise ReviewValidationError()
+            raise ReviewValidationError(check="review_requirement")
         if item["requirement_id"] is not None:
             if (
                 not isinstance(item["requirement_id"], str)
                 or not item["requirement_id"].strip()
                 or item["requirement_id"] not in known_requirement_ids
             ):
-                raise ReviewValidationError()
+                raise ReviewValidationError(check="review_requirement")
         if "evidence" not in item:
-            raise ReviewValidationError()
+            raise ReviewValidationError(check="review_evidence")
         evidence = item["evidence"]
         if not isinstance(evidence, list) or not evidence or any(
                 not isinstance(entry, dict)
@@ -163,20 +163,20 @@ def _parse_provider_issues(
                 or not entry["quote"].strip()
             for entry in evidence
         ):
-            raise ReviewValidationError()
+            raise ReviewValidationError(check="review_evidence")
         if item.get("defect_kind") not in {"requirements_gap", "spec_omission", "verification_gap", "confirmed_conflict"} or not all(
             isinstance(item.get(key), str) for key in ("resolution_reason", "missing_information", "decision_key")) or not item["resolution_reason"].strip() or not item["decision_key"].strip():
-            raise ReviewValidationError(["Supply defect_kind, resolution_reason, missing_information and a stable decision_key."])
+            raise ReviewValidationError(["Supply defect_kind, resolution_reason, missing_information and a stable decision_key."], check="review_classification")
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,100}", item["decision_key"]):
-            raise ReviewValidationError(["decision_key must be a stable English topic key."])
+            raise ReviewValidationError(["decision_key must be a stable English topic key."], check="decision_key")
         kind = item.get("resolution_kind", "auto_fix")
         question = item.get("decision_question")
         if kind not in {"auto_fix", "user_decision"}:
-            raise ReviewValidationError(["issues.resolution_kind must be auto_fix or user_decision."])
+            raise ReviewValidationError(["issues.resolution_kind must be auto_fix or user_decision."], check="review_classification")
         if kind == "user_decision" and (not isinstance(question, str) or not question.strip() or not has_hangul(prose(question))):
-            raise ReviewValidationError(["issues.decision_question must be a non-empty Korean question for user_decision."])
+            raise ReviewValidationError(["issues.decision_question must be a non-empty Korean question for user_decision."], check="question_text")
         if kind == "auto_fix" and question is not None:
-            raise ReviewValidationError(["issues.decision_question must be null for auto_fix."])
+            raise ReviewValidationError(["issues.decision_question must be null for auto_fix."], check="resolution_auto_fix")
     issues = parse_issue_list(parsed)
     if len(issues) != len(raw_items):
         raise ReviewValidationError()

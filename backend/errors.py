@@ -35,9 +35,18 @@ class ConversationUnavailableError(MagiError):
 class ReviewValidationError(MagiError):
     """검토 응답 오류를 제품 명세 결함과 구분한다."""
 
-    def __init__(self, details=None):
+    code = "REVIEW_VALIDATION_FAILED"
+    stages = frozenset({"interview", "requirement_lock", "spec_compile", "checklist_critic", "review_resolution"})
+    checks = frozenset({"review_response", "source_reference", "review_requirement", "review_evidence",
+                        "review_classification", "decision_key", "resolution_schema", "resolution_coverage",
+                        "resolution_language", "resolution_basis", "resolution_question", "resolution_auto_fix",
+                        "resolution_reconfirmation", "question_text", "question_form", "question_pending"})
+
+    def __init__(self, details=None, *, stage="checklist_critic", check="review_response"):
         super().__init__("Checklist review response could not be validated.")
         self.validation_details = details or ["Return a valid complete checklist review response."]
+        self.stage = stage if isinstance(stage, str) and stage in self.stages else "checklist_critic"
+        self.failed_checks = [check if isinstance(check, str) and check in self.checks else "review_response"]
 
 
 class SpecCompilationError(MagiError):

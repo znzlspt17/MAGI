@@ -13,6 +13,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from backend.engine import MagiSpecEngine
+from backend.errors import ReviewValidationError
 from backend.infrastructure.usage import provider_usage_summary
 from backend.models import MagiState
 from backend.server.diagnostics import diagnose_exception, safe_user_error
@@ -1089,7 +1090,8 @@ class JobManager:
         if (
             isinstance(code, str)
             and ((code in _NORMALIZATION_ERROR_CODES and stage == "requirement_lock")
-                 or (code == "SPEC_COMPILATION_INVALID" and stage == "spec_compile"))
+                 or (code == "SPEC_COMPILATION_INVALID" and stage == "spec_compile")
+                 or (code == "REVIEW_VALIDATION_FAILED" and isinstance(stage, str) and stage in ReviewValidationError.stages))
         ):
             job["error_code"] = code
             job["error_stage"] = stage
@@ -1110,7 +1112,8 @@ class JobManager:
         return (
             isinstance(code, str)
             and ((code in _NORMALIZATION_ERROR_CODES and stage == "requirement_lock")
-                 or (code == "SPEC_COMPILATION_INVALID" and stage == "spec_compile"))
+                 or (code == "SPEC_COMPILATION_INVALID" and stage == "spec_compile")
+                 or (code == "REVIEW_VALIDATION_FAILED" and isinstance(stage, str) and stage in ReviewValidationError.stages))
         )
 
     def _save_locked(self, data: dict) -> bool:
@@ -1330,7 +1333,7 @@ def _log_job_failure(
     LOGGER.error(
         "job failed id=%s action=%s provider=%s reason=%s "
         "error_code=%s error_stage=%s exception_type=%s cause_types=%s "
-        "http_status=%s frames=%s",
+        "http_status=%s failed_checks=%s frames=%s",
         ident,
         action,
         provider,
@@ -1340,5 +1343,6 @@ def _log_job_failure(
         diagnostic["exception_type"],
         diagnostic["cause_types"],
         diagnostic["http_status"],
+        diagnostic["failed_checks"],
         diagnostic["frames"],
     )

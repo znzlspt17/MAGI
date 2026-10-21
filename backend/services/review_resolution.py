@@ -32,28 +32,28 @@ def confirmed_basis(state, sheet):
 
 def validate_resolutions(packet, issues, basis, records, state):
     if not isinstance(packet, ReviewResolutionResponse):
-        raise ReviewValidationError(["Return the complete review resolution schema."])
+        raise ReviewValidationError(["Return the complete review resolution schema."], stage="review_resolution", check="resolution_schema")
     by_id = {issue.issue_id: issue for issue in issues}
     if len(packet.resolutions) != len(by_id) or {item.issue_id for item in packet.resolutions} != set(by_id):
-        raise ReviewValidationError(["Resolve each supplied issue exactly once without adding issues."])
+        raise ReviewValidationError(["Resolve each supplied issue exactly once without adding issues."], stage="review_resolution", check="resolution_coverage")
     reconfirm = set()
     for item in packet.resolutions:
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,100}", item.decision_key):
-            raise ReviewValidationError(["Use a stable English decision topic key."])
+            raise ReviewValidationError(["Use a stable English decision topic key."], stage="review_resolution", check="decision_key")
         for name in ("resolution_reason", "required_change"):
             if not has_hangul(prose(getattr(item, name))):
-                raise ReviewValidationError(["Resolution reason and required change must explain the action in Korean."])
+                raise ReviewValidationError(["Resolution reason and required change must explain the action in Korean."], stage="review_resolution", check="resolution_language")
         if not item.basis_refs or not set(item.basis_refs) <= basis.keys():
-            raise ReviewValidationError(["Cite only supplied confirmed product requirement IDs or actual user source references."])
+            raise ReviewValidationError(["Cite only supplied confirmed product requirement IDs or actual user source references."], stage="review_resolution", check="resolution_basis")
         issue = by_id[item.issue_id]
         # 검토기와 해결 판단기가 서로 다른 주제로 바꿔 반복 추적을 우회하지 못한다.
         if item.decision_key.casefold() != issue.decision_key.casefold():
-            raise ReviewValidationError(["Preserve the supplied stable decision_key; change classification rather than identity."])
+            raise ReviewValidationError(["Preserve the supplied stable decision_key; change classification rather than identity."], stage="review_resolution", check="decision_key")
         if item.resolution_kind == "user_decision":
             if item.defect_kind not in {"requirements_gap", "confirmed_conflict"} or item.impact == "none" or not item.missing_information.strip() or not item.decision_question or not has_hangul(prose(item.decision_question)):
-                raise ReviewValidationError(["Ask only for a missing material product decision, explaining missing information and impact in Korean."])
+                raise ReviewValidationError(["Ask only for a missing material product decision, explaining missing information and impact in Korean."], stage="review_resolution", check="resolution_question")
         elif item.decision_question is not None or item.decision_form is not None or item.missing_information.strip():
-            raise ReviewValidationError(["Auto fixes require null decision_question and empty missing_information; cite confirmed basis and a concrete fix."])
+            raise ReviewValidationError(["Auto fixes require null decision_question and empty missing_information; cite confirmed basis and a concrete fix."], stage="review_resolution", check="resolution_auto_fix")
         if item.conflicting_source is not None:
             key = decision_identity(issue)
             record = next((record for record in reversed(records) if record["decision_key"] == key), None)
@@ -61,10 +61,10 @@ def validate_resolutions(packet, issues, basis, records, state):
             if (item.resolution_kind != "user_decision" or item.defect_kind != "confirmed_conflict"
                     or item.conflicting_source != "user_feedback" or "user_feedback" not in item.basis_refs
                     or not feedback or record is None or record.get("feedback_hash") == text_hash(feedback)):
-                raise ReviewValidationError(["Reconfirmation requires a new, cited user_feedback conflicting with an existing answered decision."])
+                raise ReviewValidationError(["Reconfirmation requires a new, cited user_feedback conflicting with an existing answered decision."], stage="review_resolution", check="resolution_reconfirmation")
             answers = state.get("confirmed_user_sources", {})
             if "user_answer:" + record["question_id"] not in answers:
-                raise ReviewValidationError(["Only previously answered decisions can be reconfirmed."])
+                raise ReviewValidationError(["Only previously answered decisions can be reconfirmed."], stage="review_resolution", check="resolution_reconfirmation")
             reconfirm.add(key)
         issue.defect_kind = item.defect_kind
         issue.resolution_kind = item.resolution_kind

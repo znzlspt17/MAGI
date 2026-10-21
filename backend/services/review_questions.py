@@ -37,7 +37,7 @@ def collect_review_questions(
             continue
         question = issue.decision_question
         if not isinstance(question, str) or not question.strip() or not has_hangul(prose(question)):
-            raise ReviewValidationError(["user_decision requires a non-empty Korean decision_question."])
+            raise ReviewValidationError(["user_decision requires a non-empty Korean decision_question."], stage="review_resolution", check="question_text")
         question = question.strip()
         key = decision_identity(issue)
         record = by_key.get(key)
@@ -65,7 +65,7 @@ def collect_review_questions(
             try:
                 record["form"] = question_form(record["question_id"], question, issue.decision_form)
             except ValueError as error:
-                raise ReviewValidationError(["Invalid decision question form."]) from error
+                raise ReviewValidationError(["Invalid decision question form."], stage="review_resolution", check="question_form") from error
             records.append(record)
             by_key[key] = record
         if record["review_round"] != review_round:
