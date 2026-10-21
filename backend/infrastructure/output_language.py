@@ -2,7 +2,7 @@
 
 import re
 
-from backend.errors import MagiError
+from backend.errors import Error
 from backend.models import InterviewResponse, LockResponse, ReviewResponse, SpecResponse, SpecDraftResponse, ReportResponse
 from backend.models import ReviewResolutionResponse
 from backend.models import SpecTranslationResponse
@@ -19,7 +19,7 @@ LANGUAGE_RULES = {
 }
 
 
-class OutputLanguageError(MagiError):
+class OutputLanguageError(Error):
     def __init__(self, details):
         super().__init__("Output language validation failed.")
         self.validation_details = details

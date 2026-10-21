@@ -3,7 +3,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 
-from backend.config import MagiConfig
+from backend.config import Config
 from backend.infrastructure.artifact_writer import ArtifactWriter
 from backend.infrastructure.evidence_registry import EvidenceRegistry
 from backend.providers.llm_provider import OpenAIProvider
@@ -18,7 +18,7 @@ from backend.services.spec_compiler import SpecCompiler
 @dataclass(slots=True)
 class PipelineContext:
     writer: ArtifactWriter
-    config: MagiConfig
+    config: Config
     provider: OpenAIProvider
     skills: SkillRegistry
     evidence: EvidenceRegistry

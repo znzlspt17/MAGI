@@ -36,9 +36,9 @@ def configure_logging() -> None:
 
     전역 로거 또는 SDK·HTTP 라이브러리의 로그 수준은 변경하지 않는다.
     """
-    if not any(getattr(handler, "_magi_server", False) for handler in LOGGER.handlers):
+    if not any(getattr(handler, "_server", False) for handler in LOGGER.handlers):
         handler = logging.StreamHandler()
-        handler._magi_server = True  # type: ignore[attr-defined]
+        handler._server = True  # type: ignore[attr-defined]
         handler.setFormatter(
             logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
         )
@@ -47,7 +47,7 @@ def configure_logging() -> None:
     LOGGER.propagate = False
 
 
-class MagiServer:
+class Server:
     def __init__(self, data_dir: str | Path, knowledge=None, *, public=None, internal_key='') -> None:
         self.loop = asyncio.get_running_loop()
         self.subscribers: set[asyncio.Queue[str]] = set()
@@ -89,7 +89,7 @@ class MagiServer:
             if not peer or not ip_address(peer[0]).is_loopback or (socket.request and 'Origin' in socket.request.headers):
                 await socket.close(code=1008)
                 return
-            supplied = socket.request.headers.get('X-Magi-Internal','') if socket.request else ''
+            supplied = socket.request.headers.get('X-Internal','') if socket.request else ''
             if self.internal_key and not hmac.compare_digest(supplied,self.internal_key):
                 await socket.close(code=1008)
                 return
@@ -282,14 +282,16 @@ async def main() -> None:
     load_environment()
     from protocol.deployment import validate_container
     validate_container('backend')
-    if os.environ.get('MAGI_CONTAINER') == '1':
+    if os.environ.get('CONTAINER') == '1':
         from backend.knowledge.prepare_model import verify_prepared_model
-        verify_prepared_model(os.environ['MAGI_EMBEDDING_MODEL_PATH'])
-    public_mode=os.environ.get('MAGI_PUBLIC_MODE','1')!='0'
-    internal_key=os.environ.get('MAGI_INTERNAL_KEY','')
+        verify_prepared_model(os.environ['EMBEDDING_MODEL_PATH'])
+    public_mode=os.environ.get('PUBLIC_MODE','1')!='0'
+    internal_key=os.environ.get('INTERNAL_KEY','')
     runtime=None
-    data_dir = os.environ.get("MAGI_DATA_DIR", str(Path.cwd() / "magi_web_data"))
+    data_dir = os.environ.get("DATA_DIR", str(Path.cwd() / "web_data"))
     try:
+        from backend.knowledge.format_guard import require_current
+        require_current(data_dir)
         config = KnowledgeConfig.from_env()
         knowledge = None
         if config is not None:
@@ -302,7 +304,7 @@ async def main() -> None:
             from backend.access.runtime import PublicRuntime,service_factory
             runtime=PublicRuntime(store)
             runtime.acquire()
-        server = MagiServer(data_dir, knowledge=knowledge,public=service_factory if public_mode else None,internal_key=internal_key)
+        server = Server(data_dir, knowledge=knowledge,public=service_factory if public_mode else None,internal_key=internal_key)
         if knowledge is not None and not public_mode:
             knowledge.schedule()
     except Exception as exc:

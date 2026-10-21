@@ -66,7 +66,7 @@ export function QuestionActions({
   onReview?: () => void;
 }) {
   const { user, status } = useAuth();
-  const prefix = `magi:draft:${user?.id || "local"}:${job.id}:`;
+  const prefix = `draft:${user?.id || "local"}:${job.id}:`;
   const questions: string[] = job.state?.blocking_questions || [],
     forms: Record<string, QuestionForm> = job.state?.question_forms || {};
   const [drafts, setDrafts] = useState<Record<string, Draft>>({}),

@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from backend.infrastructure.artifact_writer import ArtifactWriter
-from backend.models import MagiState
+from backend.models import State
 
 
 HEARTBEAT_PATH = "state/heartbeat.json"
@@ -21,7 +21,7 @@ class RunHeartbeat:
         self,
         *,
         writer: ArtifactWriter,
-        state: MagiState,
+        state: State,
         interval_seconds: float = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     ) -> None:
         self.writer = writer
@@ -30,7 +30,7 @@ class RunHeartbeat:
         self._stop = threading.Event()
         self._thread = threading.Thread(
             target=self._run,
-            name=f"magi-heartbeat-{state.run_id}",
+            name=f"heartbeat-{state.run_id}",
             daemon=True,
         )
         self._sequence = 0

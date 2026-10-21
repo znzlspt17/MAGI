@@ -20,10 +20,10 @@ def merge_matches(row, matches):
 
 def search(store, query, kinds, active, filters, params, vector, model_id):
     columns = "SELECT n.*,j.project_id,c.id AS chunk_id,c.body AS quote,c.source_ranges,c.title_path"
-    joins = " FROM magi_nodes n JOIN magi_jobs j ON j.id=n.job_id"
-    chunks = (" JOIN magi_chunks c ON c.node_id=n.id JOIN magi_chunk_vectors v ON v.chunk_id=c.id "
-              "JOIN magi_models m ON m.id=v.model_id AND m.active "
-              "JOIN magi_chunk_sets s ON s.node_id=n.id AND s.model_id=m.id AND s.completed")
+    joins = " FROM nodes n JOIN jobs j ON j.id=n.job_id"
+    chunks = (" JOIN chunks c ON c.node_id=n.id JOIN chunk_vectors v ON v.chunk_id=c.id "
+              "JOIN models m ON m.id=v.model_id AND m.active "
+              "JOIN chunk_sets s ON s.node_id=n.id AND s.model_id=m.id AND s.completed")
     base = " WHERE " + active + " AND n.kind=ANY(%s) AND (n.kind NOT IN ('requirement','decision','spec') OR n.attrs->>'scope'='product')" + filters
     words = query.split()[:20]
     patterns = ["%" + word.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" for word in words]
@@ -36,7 +36,7 @@ def search(store, query, kinds, active, filters, params, vector, model_id):
             (kinds, *params, query, patterns, query, query, query, query, query)).fetchall()
         # 청크가 준비되지 않은 최신 원본도 검색에서 빠지지 않는다.
         fallback = conn.execute("SELECT n.*,j.project_id" + joins + base +
-            " AND NOT EXISTS (SELECT 1 FROM magi_chunk_sets s JOIN magi_models m ON m.id=s.model_id "
+            " AND NOT EXISTS (SELECT 1 FROM chunk_sets s JOIN models m ON m.id=s.model_id "
             "WHERE s.node_id=n.id AND s.completed AND m.active) "
             "AND (to_tsvector('simple',n.body) @@ plainto_tsquery('simple',%s) OR n.body ILIKE ANY(%s) "
             "OR n.logical_key=%s OR split_part(n.logical_key,':',2)=%s) "

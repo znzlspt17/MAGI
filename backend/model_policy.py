@@ -7,7 +7,7 @@ https://developers.openai.com/api/docs/pricing
 """
 from decimal import Decimal
 
-from backend.errors import MagiError
+from backend.errors import Error
 
 MODEL = 'gpt-6-luna'
 CONTEXT_TOKENS = 1_050_000
@@ -18,7 +18,7 @@ SERVICE_TIER = 'default'
 
 def require_model(model: str) -> None:
     if model != MODEL:
-        raise MagiError('MAGI는 gpt-6-luna 모델만 지원합니다.')
+        raise Error('MAGI는 gpt-6-luna 모델만 지원합니다.')
 
 
 def default_prices() -> dict:

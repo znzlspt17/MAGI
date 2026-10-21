@@ -15,6 +15,8 @@ from backend.knowledge.store import KnowledgeStore
 
 def import_legacy(data_dir, store=None):
     """store 없이 호출하면 어떤 설정과 DB에도 접근하지 않는 미리보기다."""
+    from backend.knowledge.format_guard import require_current
+    require_current(data_dir)
     root = Path(data_dir).resolve()
     results = []
     existing = {item["id"] for item in store.jobs()} if store is not None else set()
@@ -29,7 +31,7 @@ def import_legacy(data_dir, store=None):
             if job.get("id") != folder.name or not isinstance(job.get("request"), str):
                 continue
             artifacts = read_artifacts(folder)
-            state = json.loads(artifacts.get("state/magi_state.json", "{}"))
+            state = json.loads(artifacts.get("state/state.json", "{}"))
             state.setdefault("user_request", job["request"])
             sheet = state.get("requirement_lock_sheet")
             if sheet is not None:
@@ -60,7 +62,7 @@ def main():
     parser = argparse.ArgumentParser(description="지식 저장소 관리")
     sub = parser.add_subparsers(dest="command", required=True)
     legacy = sub.add_parser("import", help="기존 작업 미리보기; --apply로 DB에 이관")
-    legacy.add_argument("--data-dir", default="magi_web_data")
+    legacy.add_argument("--data-dir", default="web_data")
     legacy.add_argument("--apply", action="store_true")
     sub.add_parser("migrate", help="DB 스키마 생성·갱신")
     sub.add_parser("reindex", help="설정된 로컬 모델로 임베딩 재생성·재시도")

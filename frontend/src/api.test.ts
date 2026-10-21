@@ -33,9 +33,9 @@ it('5xx 응답은 문의 번호를 안내하고 재시도 키를 보존한다',a
 });
 it('이전 인증의 늦은 401은 현재 인증을 해제하지 않는다',async()=>{
  let finish!:(value:Response)=>void;vi.spyOn(globalThis,'fetch').mockImplementation(()=>new Promise(resolve=>finish=resolve));
- const listener=vi.fn();window.addEventListener('magi:signed-out',listener);
+ const listener=vi.fn();window.addEventListener('signed-out',listener);
  const request=api('/api/me').catch(()=>{});configureAuth({publicMode:true,csrf:'new-csrf'});finish(reply({error:'expired'},401));await request;
- expect(listener).not.toHaveBeenCalled();window.removeEventListener('magi:signed-out',listener);
+ expect(listener).not.toHaveBeenCalled();window.removeEventListener('signed-out',listener);
 });
 it('이전 계정의 응답은 새 계정의 재시도 키를 제거하지 않는다',async()=>{
  let finish!:(value:Response)=>void;const fetcher=vi.spyOn(globalThis,'fetch').mockImplementationOnce(()=>new Promise(resolve=>finish=resolve)).mockRejectedValueOnce(new TypeError('network unavailable')).mockResolvedValueOnce(reply({ok:true}));

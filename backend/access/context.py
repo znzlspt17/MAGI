@@ -2,10 +2,10 @@
 
 from contextvars import ContextVar
 
-ACTOR = ContextVar('magi_actor', default=None)
-TRANSACTION = ContextVar('magi_transaction', default=None)
-DEFERRED = ContextVar('magi_deferred', default=None)
-METER = ContextVar('magi_meter', default=None)
+ACTOR = ContextVar('actor', default=None)
+TRANSACTION = ContextVar('transaction', default=None)
+DEFERRED = ContextVar('deferred', default=None)
+METER = ContextVar('meter', default=None)
 
 
 class AccessError(ValueError):

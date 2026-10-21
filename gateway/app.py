@@ -12,7 +12,7 @@ from flask import Flask, abort, jsonify, request, send_file, g, current_app
 from flask_sock import Sock
 from werkzeug.exceptions import HTTPException
 
-from gateway.magi_client import MagiClient, MagiClientError
+from gateway.client import Client, ClientError
 from protocol.diagnostics import traceback_frames
 
 
@@ -26,19 +26,19 @@ def create_app(config: dict | None = None) -> Flask:
         static_folder=str(frontend.joinpath("static")),
     )
     app.config.update(
-        MAGI_SERVER_URL=os.environ.get("MAGI_SERVER_URL", "ws://127.0.0.1:8765"),
-        MAGI_CLIENT_FACTORY=MagiClient,
+        SERVER_URL=os.environ.get("SERVER_URL", "ws://127.0.0.1:8765"),
+        CLIENT_FACTORY=Client,
         MAX_CONTENT_LENGTH=128 * 1024,
         TRUSTED_HOSTS=["localhost", "127.0.0.1", "[::1]"],
         SOCK_SERVER_OPTIONS={"max_message_size": 128 * 1024, "ping_interval": 25},
-        MAGI_PUBLIC_MODE=os.environ.get('MAGI_PUBLIC_MODE','1')!='0',
-        MAGI_PUBLIC_ORIGIN=os.environ.get('MAGI_PUBLIC_ORIGIN',''),
-        MAGI_LOCAL_LOGIN=os.environ.get('MAGI_LOCAL_LOGIN','0')=='1',
-        MAGI_PROXY_HOPS=int(os.environ.get('MAGI_PROXY_HOPS','0')),
+        PUBLIC_MODE=os.environ.get('PUBLIC_MODE','1')!='0',
+        PUBLIC_ORIGIN=os.environ.get('PUBLIC_ORIGIN',''),
+        LOCAL_LOGIN=os.environ.get('LOCAL_LOGIN','0')=='1',
+        PROXY_HOPS=int(os.environ.get('PROXY_HOPS','0')),
     )
     if config:
         app.config.update(config)
-    hops=app.config['MAGI_PROXY_HOPS']
+    hops=app.config['PROXY_HOPS']
     if type(hops) is not int or not 0<=hops<=2:
         raise ValueError('신뢰할 프록시 수가 올바르지 않습니다.')
     if hops:
@@ -46,11 +46,11 @@ def create_app(config: dict | None = None) -> Flask:
         app.wsgi_app=ProxyFix(app.wsgi_app,x_for=hops,x_proto=hops,x_host=0)
     sock = Sock(app)
 
-    def client() -> MagiClient:
-        instance=app.config["MAGI_CLIENT_FACTORY"](app.config["MAGI_SERVER_URL"])
-        if app.config['MAGI_PUBLIC_MODE']:
+    def client() -> Client:
+        instance=app.config["CLIENT_FACTORY"](app.config["SERVER_URL"])
+        if app.config['PUBLIC_MODE']:
             instance.context={key:value for key,value in {
-                'session':request.cookies.get(app.config['MAGI_SESSION_COOKIE']),'csrf':request.headers.get('X-CSRF-Token'),
+                'session':request.cookies.get(app.config['SESSION_COOKIE']),'csrf':request.headers.get('X-CSRF-Token'),
                 'idempotency_key':request.headers.get('Idempotency-Key')}.items() if value is not None}
         return instance
 
@@ -92,7 +92,7 @@ def create_app(config: dict | None = None) -> Flask:
     def jobs():
         try:
             response = jsonify(client().call("list"))
-        except MagiClientError as exc:
+        except ClientError as exc:
             return _client_error(exc)
         response.headers["Cache-Control"] = "no-store"
         return response
@@ -103,7 +103,7 @@ def create_app(config: dict | None = None) -> Flask:
             response = jsonify(client().call("cleanup.catalog", {}))
             response.headers["Cache-Control"] = "no-store"
             return response
-        except MagiClientError as exc:
+        except ClientError as exc:
             return _client_error(exc)
 
     @app.post("/api/cleanup/<action>")
@@ -114,14 +114,14 @@ def create_app(config: dict | None = None) -> Flask:
             response = jsonify(client().call("cleanup." + action, _json()))
             response.headers["Cache-Control"] = "no-store"
             return response
-        except MagiClientError as exc:
+        except ClientError as exc:
             return _client_error(exc, mutation=action == "execute")
 
     @app.get("/api/jobs/<ident>")
     def job(ident):
         try:
             response = jsonify(client().call("get", {"id": ident}))
-        except MagiClientError as exc:
+        except ClientError as exc:
             return _client_error(exc)
         response.headers["Cache-Control"] = "no-store"
         return response
@@ -131,7 +131,7 @@ def create_app(config: dict | None = None) -> Flask:
         """Relay a single saved execution-step detail without exposing storage paths."""
         try:
             response = jsonify(client().call("get", {"id": ident, "step_id": step_id}))
-        except MagiClientError as exc:
+        except ClientError as exc:
             return _client_error(exc)
         response.headers["Cache-Control"] = "no-store"
         return response
@@ -146,7 +146,7 @@ def create_app(config: dict | None = None) -> Flask:
             response = jsonify(client().call("document", {"id": ident, "step_id": step_id, "language": language}))
             response.headers["Cache-Control"] = "no-store"
             return response
-        except MagiClientError as exc:
+        except ClientError as exc:
             return _client_error(exc)
 
     @app.post("/api/jobs")
@@ -168,7 +168,7 @@ def create_app(config: dict | None = None) -> Flask:
                     {"request": request_text, "demo": demo, "provider": provider, "project_id": data.get("project_id")},
                 )
             ), 202
-        except MagiClientError as exc:
+        except ClientError as exc:
             return _client_error(exc, mutation=True)
 
     @app.route("/api/projects", methods=["GET", "POST"])
@@ -177,7 +177,7 @@ def create_app(config: dict | None = None) -> Flask:
             if request.method == "POST":
                 return jsonify(error="프로젝트 생성은 지원이 종료되었습니다. 대화 세션을 사용하세요."), 410
             return jsonify(client().call("projects.list", {}))
-        except MagiClientError as exc:
+        except ClientError as exc:
             return _client_error(exc)
 
     @app.put("/api/jobs/<ident>/project")
@@ -199,7 +199,7 @@ def create_app(config: dict | None = None) -> Flask:
             response = jsonify(client().call("knowledge." + action, params))
             response.headers["Cache-Control"] = "no-store"
             return response
-        except MagiClientError as exc:
+        except ClientError as exc:
             return _client_error(exc)
 
     @app.post("/api/knowledge/retry")
@@ -207,7 +207,7 @@ def create_app(config: dict | None = None) -> Flask:
         _json()
         try:
             return jsonify(client().call("knowledge.retry", {})), 202
-        except MagiClientError as exc:
+        except ClientError as exc:
             return _client_error(exc, mutation=True)
 
     @app.post("/api/jobs/<ident>/<action>")
@@ -217,7 +217,7 @@ def create_app(config: dict | None = None) -> Flask:
         data = _json()
         try:
             return jsonify(client().call(action, {"id": ident, "payload": data.get("payload"), "execution_id": data.get("execution_id")})), 202
-        except MagiClientError as exc:
+        except ClientError as exc:
             return _client_error(exc, mutation=True)
 
     @app.get("/api/jobs/<ident>/download")
@@ -235,7 +235,7 @@ def create_app(config: dict | None = None) -> Flask:
                 download_name="FINAL_AGENT_SPEC.md",
                 mimetype="text/markdown",
             )
-        except MagiClientError as exc:
+        except ClientError as exc:
             return _client_error(exc)
         except ValueError:
             abort(404)
@@ -248,7 +248,7 @@ def create_app(config: dict | None = None) -> Flask:
         try:
             for event in client().events():
                 ws.send(json.dumps(event, ensure_ascii=False))
-        except MagiClientError:
+        except ClientError:
             try:
                 ws.send(json.dumps({"event": "server_error"}, ensure_ascii=False))
             except Exception:
@@ -259,7 +259,7 @@ def create_app(config: dict | None = None) -> Flask:
 
 def _json() -> dict:
     origin = request.headers.get("Origin")
-    expected=current_app.config.get('MAGI_PUBLIC_ORIGIN') if current_app.config.get('MAGI_PUBLIC_MODE') else request.host_url.rstrip('/')
+    expected=current_app.config.get('PUBLIC_ORIGIN') if current_app.config.get('PUBLIC_MODE') else request.host_url.rstrip('/')
     if (
         request.mimetype != "application/json"
         or request.headers.get("Sec-Fetch-Site") == "cross-site"
@@ -274,12 +274,12 @@ def _json() -> dict:
 
 def _event_origin_allowed() -> bool:
     origin = request.headers.get("Origin")
-    if current_app.config.get('MAGI_PUBLIC_MODE'):
-        return bool(origin) and origin==current_app.config.get('MAGI_PUBLIC_ORIGIN')
+    if current_app.config.get('PUBLIC_MODE'):
+        return bool(origin) and origin==current_app.config.get('PUBLIC_ORIGIN')
     return not origin or origin == request.host_url.rstrip("/")
 
 
-def _client_error(error: MagiClientError, *, mutation: bool = False):
+def _client_error(error: ClientError, *, mutation: bool = False):
     current_app.logger.warning('backend request failed endpoint=%s status=%s uncertain=%s cause_type=%s request_id=%s',
                                request.endpoint,error.status,error.uncertain,type(error.__cause__).__name__ if error.__cause__ else 'none',getattr(g,'request_id',''))
     message = str(error)

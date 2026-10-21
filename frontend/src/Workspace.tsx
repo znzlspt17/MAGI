@@ -97,7 +97,7 @@ export default function Workspace() {
     selectedId = useRef(id),
     navigation = useRef(location.key),
     mutating = useRef(false);
-  const draftKey = `magi:draft:${auth.user?.id || "local"}`;
+  const draftKey = `draft:${auth.user?.id || "local"}`;
   const [request, setRequest] = useState(
     () => sessionStorage.getItem(draftKey) || "",
   );
@@ -165,7 +165,7 @@ export default function Workspace() {
           for (const deletedId of value.ids || []) {
             views.current.delete(deletedId);
             const prefix =
-              "magi:draft:" +
+              "draft:" +
               (auth.user?.id || "local") +
               ":" +
               deletedId +
@@ -175,12 +175,12 @@ export default function Workspace() {
               .forEach((key) => sessionStorage.removeItem(key));
           }
           if ((value.ids || []).includes(selectedId.current)) navigate("/");
-          window.dispatchEvent(new Event("magi:cleanup"));
+          window.dispatchEvent(new Event("cleanup"));
           void load();
           refresh();
         } else if (value.event === "service.status")
           window.dispatchEvent(
-            new CustomEvent("magi:service-status", { detail: value.status }),
+            new CustomEvent("service-status", { detail: value.status }),
           );
         else if (value.event === "server_error") socket?.close();
       };
@@ -401,7 +401,7 @@ export default function Workspace() {
   const currentDocument = actualJob && [...graphNodes(actualJob)].reverse().find((node) => node.has_document && (!actualJob.execution_id || !node.execution_id || node.execution_id === actualJob.execution_id));
   const showConversation = () => setTab("conversation");
   return (
-    <SidebarProvider className="magi-shell">
+    <SidebarProvider className="shell">
       <AppSidebar>
         <Button
           className="primary new-job"
@@ -412,7 +412,7 @@ export default function Workspace() {
         >
           <PlusIcon size={18} aria-hidden />새 작업
         </Button>
-        <SidebarGroup className="magi-main-group"><SidebarGroupLabel>작업 공간</SidebarGroupLabel><nav className="primary-nav"><SidebarMenu>
+        <SidebarGroup className="main-group"><SidebarGroupLabel>작업 공간</SidebarGroupLabel><nav className="primary-nav"><SidebarMenu>
           <SidebarMenuItem><SidebarMenuButton asChild isActive={surface === "workspace"}><Button
             aria-current={surface === "workspace" ? "page" : undefined}
             onClick={() => setSurface("workspace")}

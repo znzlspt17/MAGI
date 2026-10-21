@@ -1,5 +1,5 @@
-"""MAGI Spec Engine public API."""
+"""MAGI public API."""
 
-from backend.engine import MagiSpecEngine
+from backend.engine import Engine
 
-__all__ = ["MagiSpecEngine"]
+__all__ = ["Engine"]

@@ -90,7 +90,7 @@ class Cleanup:
                 with self.store.transaction(mode="read") as conn:
                     # JSON에 남은 이전 소유자 대신 DB의 현재 소유권을 표시한다.
                     jobs = {row["id"]: {**row["data"], "id": row["id"], "owner_id": row["owner_id"]}
-                            for row in conn.execute("SELECT id,data,owner_id FROM magi_jobs ORDER BY id").fetchall()}
+                            for row in conn.execute("SELECT id,data,owner_id FROM jobs ORDER BY id").fetchall()}
             for ident in self.file_jobs():
                 if ident not in jobs:
                     path = self.manager.data_dir / ident / "job.json"
@@ -216,7 +216,7 @@ class Cleanup:
             if op["state"] == "prepared":
                 if self.store:
                     with self.store.transaction() as conn:
-                        committed = conn.execute("SELECT id FROM magi_cleanup_commits WHERE id=%s", (op["id"],)).fetchone()
+                        committed = conn.execute("SELECT id FROM cleanup_commits WHERE id=%s", (op["id"],)).fetchone()
                     if not committed:
                         self.restore(op)
                         continue
@@ -248,7 +248,7 @@ class Cleanup:
                     self.quarantine(op)
                     if self.store:
                         self.store.cleanup_delete(conn, current["db"])
-                        conn.execute("INSERT INTO magi_cleanup_commits(id) VALUES (%s)", (op["id"],))
+                        conn.execute("INSERT INTO cleanup_commits(id) VALUES (%s)", (op["id"],))
             except Exception:
                 # commit 응답이 불확실한 경우도 DB 실재 여부로 복구한다.
                 if op["state"] == "prepared":

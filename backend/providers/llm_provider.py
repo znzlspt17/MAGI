@@ -9,7 +9,7 @@ from pydantic import BaseModel, ValidationError
 from typing import Any
 
 from backend.infrastructure.cache_diagnostics import safe_response_id, safe_diagnostics
-from backend.errors import MagiError, MissingCredentialError, ConversationUnavailableError
+from backend.errors import Error, MissingCredentialError, ConversationUnavailableError
 from backend.models import CompletionResult
 from backend.model_policy import require_model, MAX_OUTPUT_TOKENS, SERVICE_TIER
 
@@ -49,10 +49,10 @@ class OpenAIProvider:
             with OpenAI(api_key=self._require_key(), timeout=120, max_retries=0) as client:
                 identifier = client.conversations.create().id
         except OpenAIError:
-            raise MagiError("OpenAI conversation creation failed.") from None
+            raise Error("OpenAI conversation creation failed.") from None
         from backend.infrastructure.conversation_state import valid_conversation_id
         if not valid_conversation_id(identifier):
-            raise MagiError("OpenAI conversation ID is invalid.")
+            raise Error("OpenAI conversation ID is invalid.")
         return identifier
 
     def complete(
@@ -148,12 +148,12 @@ class OpenAIProvider:
                 meter.settle(reservation,model,None)
             if conversation_id and exc.status_code == 404 and exc.param == "conversation":
                 raise ConversationUnavailableError("OpenAI conversation is unavailable.") from None
-            raise MagiError("OpenAI request failed.") from None
+            raise Error("OpenAI request failed.") from None
         except (OpenAIError, ValidationError, ValueError):
             if meter is not None:
                 meter.settle(reservation,model,None)
             # SDK 예외에는 요청과 응답 원문이 포함될 수 있어 전파하지 않는다.
-            raise MagiError("OpenAI request failed.") from None
+            raise Error("OpenAI request failed.") from None
         data = response.model_dump()
         text = response.output_text
         parsed = None
@@ -172,7 +172,7 @@ class OpenAIProvider:
                 meter.record_usage(reservation,model,_usage_count(data,"input_tokens"),
                                    _usage_count(data,"output_tokens"),_cached_tokens(data))
                 meter.settle(reservation,model,None)
-            raise MagiError(failure)
+            raise Error(failure)
 
         result = CompletionResult(
             text=text.strip(),

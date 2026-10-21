@@ -52,7 +52,7 @@ async function findPackage(id) {
 
 export function resourcesAndNotices() {
   return {
-    name: "magi-resources-and-notices",
+    name: "resources-and-notices",
     async writeBundle(_options, bundle) {
       const packageDirectories = new Set();
       for (const chunk of Object.values(bundle)) {

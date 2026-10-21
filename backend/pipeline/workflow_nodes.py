@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from backend.config import MagiConfig
+from backend.config import Config
 from backend.infrastructure.artifact_writer import ArtifactWriter
 from backend.infrastructure.evidence_registry import EvidenceRegistry
 from backend.pipeline.context import PipelineContext
@@ -32,7 +32,7 @@ class WorkflowNodes:
         self,
         *,
         writer: ArtifactWriter,
-        config: MagiConfig,
+        config: Config,
         provider: OpenAIProvider,
         skills: SkillRegistry,
         evidence: EvidenceRegistry,

@@ -12,7 +12,7 @@ BASE = """WITH ledger AS (
         (called_at IS NOT NULL) AS is_call,
         CASE WHEN state='settled' THEN actual ELSE 0 END AS spent,
         CASE WHEN state<>'settled' THEN reserved ELSE 0 END AS outstanding
- FROM magi_cost_calls c
+ FROM cost_calls c
 ), filtered AS (
  SELECT * FROM ledger WHERE usage_day >= %s AND usage_day <= %s
  AND (%s::text IS NULL OR user_id=%s) AND (%s::text IS NULL OR job_id=%s)
@@ -76,9 +76,9 @@ def usage(service, method, params):
             summary = c.execute(BASE+'SELECT '+STATS+' FROM filtered',values).fetchone()
             daily = c.execute(BASE+'SELECT usage_day AS day,'+STATS+' FROM filtered GROUP BY usage_day ORDER BY usage_day',values).fetchall()
             today = day_at(service.access.clock())
-            budget = c.execute('SELECT COALESCE(sum(spent),0) AS spent,COALESCE(sum(reserved),0) AS outstanding FROM magi_daily_usage WHERE day=%s',(today,)).fetchone()
-            budget.update(day=today,limit=c.execute('SELECT daily_usd FROM magi_service_settings WHERE singleton=1').fetchone()['daily_usd'])
-            users = c.execute('SELECT id FROM magi_users UNION SELECT user_id AS id FROM magi_cost_calls ORDER BY id').fetchall()
+            budget = c.execute('SELECT COALESCE(sum(spent),0) AS spent,COALESCE(sum(reserved),0) AS outstanding FROM daily_usage WHERE day=%s',(today,)).fetchone()
+            budget.update(day=today,limit=c.execute('SELECT daily_usd FROM service_settings WHERE singleton=1').fetchone()['daily_usd'])
+            users = c.execute('SELECT id FROM users UNION SELECT user_id AS id FROM cost_calls ORDER BY id').fetchall()
             return wire({'start':values[0],'end':values[1],'summary':summary,'daily':daily,'today':budget,'users':users})
         group = params.get('group_by','job')
         sort = params.get('sort','cost')
@@ -88,12 +88,12 @@ def usage(service, method, params):
         if type(limit) is not int or not 1<=limit<=100 or type(offset) is not int or not 0<=offset<=10000000:
             raise AccessError('페이지 범위를 확인하세요.', 'invalid')
         if group=='call':
-            selection = "SELECT f.*,j.data->>'request' AS request FROM filtered f LEFT JOIN magi_jobs j ON j.id=f.job_id"
+            selection = "SELECT f.*,j.data->>'request' AS request FROM filtered f LEFT JOIN jobs j ON j.id=f.job_id"
             order = 'spent DESC,outstanding DESC,usage_day DESC,id' if sort=='cost' else 'usage_day DESC,called_at DESC NULLS LAST,reserved_at DESC NULLS LAST,id'
         else:
             keys = 'user_id' if group=='user' else 'job_id,user_id'
             grouped = 'SELECT '+keys+','+STATS+' FROM filtered GROUP BY '+keys
-            selection = 'SELECT g.* FROM ('+grouped+') g' if group=='user' else "SELECT g.*,j.data->>'request' AS request FROM ("+grouped+") g LEFT JOIN magi_jobs j ON j.id=g.job_id"
+            selection = 'SELECT g.* FROM ('+grouped+') g' if group=='user' else "SELECT g.*,j.data->>'request' AS request FROM ("+grouped+") g LEFT JOIN jobs j ON j.id=g.job_id"
             tie = 'user_id' if group=='user' else 'job_id,user_id'
             order = 'spent DESC,outstanding DESC,latest_day DESC,'+tie if sort=='cost' else 'latest_day DESC,latest_at DESC NULLS LAST,'+tie
         total = c.execute(BASE+'SELECT count(*) AS total FROM ('+selection+') results',values).fetchone()['total']

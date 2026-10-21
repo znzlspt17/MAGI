@@ -9,6 +9,7 @@ import {
 } from "react";
 import { api, post, configureAuth, clearRequests } from "./api";
 import type { ServiceStatus, Usage, User } from "./types";
+import { clearAccountDrafts } from "./storage-migration";
 interface AuthState {
   publicMode: boolean;
   user: User | null;
@@ -46,10 +47,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signedOut = () => {
     generation.current++;
     if (currentUser.current) {
-      const prefix = `magi:draft:${currentUser.current.id}`;
-      Object.keys(sessionStorage)
-        .filter((key) => key === prefix || key.startsWith(prefix + ":"))
-        .forEach((key) => sessionStorage.removeItem(key));
+      try {
+        clearAccountDrafts(sessionStorage, currentUser.current.id);
+      } catch {
+        // 저장소 접근이 막혀도 인증과 화면 정리는 계속한다.
+      }
     }
     configureAuth({ publicMode: true });
     clearRequests();
@@ -57,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUsage(null);
     setStatus({});
     if (/^\/jobs\/[0-9a-f]{32}$/.test(location.pathname))
-      sessionStorage.setItem("magi:return-path", location.pathname);
+      sessionStorage.setItem("return-path", location.pathname);
   };
   const refreshStatus = async () => {
     if (!publicMode) return;
@@ -83,13 +85,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           configureAuth({ publicMode: true, csrf: actor.csrf });
           const { csrf: _, ...safe } = actor;
           setUser(safe);
-          const path = sessionStorage.getItem("magi:return-path");
+          const path = sessionStorage.getItem("return-path");
           if (
             location.pathname === "/" &&
             /^\/jobs\/[0-9a-f]{32}$/.test(path || "")
           )
             location.replace(path!);
-          sessionStorage.removeItem("magi:return-path");
+          sessionStorage.removeItem("return-path");
         } catch (e) {
           if (live) setNotice((e as Error).message);
         }
@@ -99,11 +101,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (live) setReady(true);
       }
     })();
-    window.addEventListener("magi:signed-out", signedOut);
+    window.addEventListener("signed-out", signedOut);
     return () => {
       live = false;
       generation.current++;
-      window.removeEventListener("magi:signed-out", signedOut);
+      window.removeEventListener("signed-out", signedOut);
     };
   }, []);
   useEffect(() => {
@@ -131,13 +133,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ),
       usageTimer = setInterval(() => void load(), 30000);
     const update = (event: Event) => setStatus((event as CustomEvent).detail);
-    window.addEventListener("magi:service-status", update);
+    window.addEventListener("service-status", update);
     const stop = () => {
       live = false;
       generation.current++;
       clearInterval(statusTimer);
       clearInterval(usageTimer);
-      window.removeEventListener("magi:service-status", update);
+      window.removeEventListener("service-status", update);
     };
     window.addEventListener("pagehide", stop);
     return () => {

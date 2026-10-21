@@ -55,9 +55,12 @@ private*.pem
 request.md
 answer.json
 answers.json
-/magi_output/
-/magi_web_data/
 /output/
+/web_data/
+# 전환 전 사용자 자료도 계속 제외한다.
+/magi_web_data/
+/magi_output/
+/prefix-transition.json
 /logs/
 *.log
 *.log.*

@@ -238,8 +238,8 @@ def prepare_context(writer, payload, stage):
     from backend.knowledge.runtime import CURRENT
     runtime = CURRENT.get()
     state = {}
-    if writer is not None and writer.path("state/magi_state.json").exists():
-        state = writer.read_json("state/magi_state.json")
+    if writer is not None and writer.path("state/state.json").exists():
+        state = writer.read_json("state/state.json")
     sources = dict(state.get("confirmed_user_sources", {}))
     if runtime is not None:
         sources.update(runtime.confirmed_sources(state))

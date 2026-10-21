@@ -23,7 +23,7 @@ from backend.errors import RequirementNormalizationError, ReviewValidationError,
 
 LOGGER = logging.getLogger("backend.server")
 _USAGE_PATH = "state/provider_usage.json"
-_CACHE_KEY_VERSION = "magi-v2"
+_CACHE_KEY_VERSION = "v2"
 
 
 def complete_with_usage(writer, provider, messages, *, model, stage, temperature=0):
@@ -99,8 +99,8 @@ def _complete_once(
         "cached_tokens": None,
     }
     attempts = usage.setdefault("attempts", [])
-    state_path = writer.path("state/magi_state.json")
-    attempt["run_id"] = writer.read_json("state/magi_state.json").get("run_id") if state_path.exists() else None
+    state_path = writer.path("state/state.json")
+    attempt["run_id"] = writer.read_json("state/state.json").get("run_id") if state_path.exists() else None
     if not isinstance(attempts, list):
         attempts = []
         usage["attempts"] = attempts

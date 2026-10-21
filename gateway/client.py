@@ -12,7 +12,7 @@ from websockets.sync.client import connect
 from protocol.messages import MAX_MESSAGE_BYTES
 
 
-class MagiClientError(RuntimeError):
+class ClientError(RuntimeError):
     """A safe, user-facing server connection or request error."""
 
     def __init__(self, message: str, *, status: int = 503, uncertain: bool = False, response_received: bool = False) -> None:
@@ -22,14 +22,14 @@ class MagiClientError(RuntimeError):
         self.response_received = response_received
 
 
-class MagiClient:
+class Client:
     def __init__(self, url: str) -> None:
         self.url = _loopback_url(url)
         self.context = {}
-        self.internal_key = os.environ.get('MAGI_INTERNAL_KEY','')
+        self.internal_key = os.environ.get('INTERNAL_KEY','')
 
     def _headers(self):
-        return {'X-Magi-Internal':self.internal_key} if self.internal_key else {}
+        return {'X-Internal':self.internal_key} if self.internal_key else {}
 
     def call(self, method: str, params: dict | None = None) -> object:
         request_id = uuid4().hex
@@ -40,14 +40,14 @@ class MagiClient:
                 socket.send(json.dumps(request, ensure_ascii=False))
                 raw = socket.recv(timeout=520 if method == "document" else 120 if method == "knowledge.search" or method.startswith('cleanup.') else 30 if method.startswith(("projects.", "knowledge.")) else 10)
         except Exception as exc:
-            raise MagiClientError(
+            raise ClientError(
                 "작업 서버에 연결할 수 없습니다. 서버 상태를 확인하세요.",
                 uncertain=method in {"generate", "answer", "revise", "approve", "continue", "cleanup.execute"},
             ) from exc
         try:
             response = _response(raw, request_id)
-        except MagiClientError as exc:
-            raise MagiClientError(
+        except ClientError as exc:
+            raise ClientError(
                 str(exc),
                 status=exc.status,
                 uncertain=method in {"generate", "answer", "revise", "approve", "continue", "cleanup.execute"},
@@ -55,10 +55,10 @@ class MagiClient:
         if "error" in response:
             error = response["error"]
             if not isinstance(error, dict):
-                raise MagiClientError("작업 서버 응답을 확인할 수 없습니다.")
+                raise ClientError("작업 서버 응답을 확인할 수 없습니다.")
             statuses = {"not_found": 404, "invalid": 400, "conflict": 409, "busy":409, 'quota':429, 'unauthorized':401,'forbidden':403,'configuration':503,"unavailable": 503, "translation_invalid": 502}
             code = error.get("code")
-            raise MagiClientError(
+            raise ClientError(
                 error.get("message", "요청을 처리하지 못했습니다."),
                 status=statuses.get(code, 503),
                 response_received=True,
@@ -80,7 +80,7 @@ class MagiClient:
                 if "error" in response:
                     error = response["error"]
                     message = error.get("message") if isinstance(error, dict) else None
-                    raise MagiClientError(message or "구독을 시작할 수 없습니다.")
+                    raise ClientError(message or "구독을 시작할 수 없습니다.")
                 yield {"event": "ready"}
                 while True:
                     try:
@@ -91,30 +91,30 @@ class MagiClient:
                     event = _event(raw)
                     if event is not None:
                         yield event
-        except MagiClientError:
+        except ClientError:
             raise
         except Exception as exc:
-            raise MagiClientError("작업 서버 연결이 끊어졌습니다.") from exc
+            raise ClientError("작업 서버 연결이 끊어졌습니다.") from exc
 
 
 def _loopback_url(url: str) -> str:
     parsed = urlsplit(url)
     if parsed.scheme not in {"ws", "wss"} or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
-        raise MagiClientError("작업 서버 주소가 올바르지 않습니다.")
+        raise ClientError("작업 서버 주소가 올바르지 않습니다.")
     if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
-        raise MagiClientError("작업 서버 주소가 올바르지 않습니다.")
+        raise ClientError("작업 서버 주소가 올바르지 않습니다.")
     return url
 
 
 def _response(raw: object, request_id: str) -> dict:
     if not isinstance(raw, str) or len(raw.encode("utf-8")) > 4 * 1024 * 1024:
-        raise MagiClientError("작업 서버 응답을 확인할 수 없습니다.")
+        raise ClientError("작업 서버 응답을 확인할 수 없습니다.")
     try:
         response = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise MagiClientError("작업 서버 응답을 확인할 수 없습니다.") from exc
+        raise ClientError("작업 서버 응답을 확인할 수 없습니다.") from exc
     if not isinstance(response, dict) or response.get("request_id") != request_id:
-        raise MagiClientError("작업 서버 응답을 확인할 수 없습니다.")
+        raise ClientError("작업 서버 응답을 확인할 수 없습니다.")
     return response
 
 

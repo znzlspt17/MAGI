@@ -16,34 +16,42 @@ class KnowledgeConfig:
     device: str = "cpu"
 
     @classmethod
-    def from_env(cls):
+    def from_env(cls, *, allow_legacy_model=False):
+        from protocol.environment import require_current_environment
+        require_current_environment()
         names = {"host": "HOST", "dbname": "NAME", "user": "USER", "password": "PASSWORD"}
-        values = {key: os.environ.get("MAGI_DB_" + suffix, "") for key, suffix in names.items()}
-        configured = any("MAGI_DB_" + suffix in os.environ for suffix in (*names.values(), "PORT", "SSLMODE"))
+        values = {key: os.environ.get("DB_" + suffix, "") for key, suffix in names.items()}
+        configured = any("DB_" + suffix in os.environ for suffix in (*names.values(), "PORT", "SSLMODE"))
         if not configured:
             return None  # 기존 파일 전용 설치와 Python API의 호환 경로
         if not all(values.values()):
             raise KnowledgeError("DB 필수 설정이 누락되었습니다.")
         try:
-            port = int(os.environ.get("MAGI_DB_PORT", "5432"))
+            port = int(os.environ.get("DB_PORT", "5432"))
             if not 1 <= port <= 65535:
                 raise ValueError
         except ValueError:
             raise KnowledgeError("DB 포트 설정이 올바르지 않습니다.") from None
-        sslmode = os.environ.get("MAGI_DB_SSLMODE", "prefer")
+        sslmode = os.environ.get("DB_SSLMODE", "prefer")
         if sslmode not in {"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}:
             raise KnowledgeError("DB TLS 설정이 올바르지 않습니다.")
-        device = os.environ.get("MAGI_EMBEDDING_DEVICE", "cpu")
+        device = os.environ.get("EMBEDDING_DEVICE", "cpu")
         if device != "cpu":
             raise KnowledgeError("BGE-M3 임베딩 장치는 cpu여야 합니다.")
-        model = os.environ.get("MAGI_EMBEDDING_MODEL_PATH")
+        model = os.environ.get("EMBEDDING_MODEL_PATH")
+        from backend.knowledge.format_guard import require_current_model
+        if not allow_legacy_model:
+            require_current_model(model)
         return cls({**values, "port": port, "sslmode": sslmode, "connect_timeout": 5},
                    Path(model) if model else None, device)
 
 
 def load_environment():
+    from protocol.environment import require_current_environment
+    require_current_environment()
     # 실행 프로그램만 호출한다. 테스트와 모듈 import는 보호 파일을 읽지 않는다.
-    if os.environ.get("MAGI_CONTAINER") == "1":
+    if os.environ.get("CONTAINER") == "1":
         return  # 컨테이너는 운영자가 주입한 환경만 사용한다.
     from dotenv import load_dotenv
     load_dotenv(Path.cwd() / ".env", override=False)
+    require_current_environment()

@@ -12,7 +12,7 @@ test("npm 저장소 shorthand와 Git URL을 공식 소스 링크로 정규화한
 });
 
 test("원문 또는 라이선스 종류를 알 수 없는 패키지는 배포 고지 생성을 중단한다", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "magi-notices-"));
+  const directory = await mkdtemp(join(tmpdir(), "notices-"));
   try {
     await writeFile(join(directory, "package.json"), JSON.stringify({ name: "fixture", version: "1", license: "UNKNOWN" }));
     await assert.rejects(packageNotice(directory), /종류 누락/);

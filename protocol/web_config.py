@@ -17,5 +17,5 @@ def login_origin(origin, local_login=False):
     else:
         valid = valid and parsed.scheme == 'https'
     if not valid:
-        raise ValueError('MAGI_PUBLIC_ORIGIN에는 공개 HTTPS 주소 또는 로컬 로그인 모드의 http://localhost 주소가 필요합니다.')
+        raise ValueError('PUBLIC_ORIGIN에는 공개 HTTPS 주소 또는 로컬 로그인 모드의 http://localhost 주소가 필요합니다.')
     return origin

@@ -65,7 +65,7 @@ class PublicService:
         if method == 'auth.info':
             return {'public':True, 'login_available':bool(self.google and self.google.available and self.pepper)}
         if method in {'auth.start','auth.callback'} and not self.pepper:
-            raise AccessError('백엔드에 MAGI_SUBJECT_PEPPER 설정이 필요합니다.', 'unavailable')
+            raise AccessError('백엔드에 SUBJECT_PEPPER 설정이 필요합니다.', 'unavailable')
         if method == 'auth.start':
             if not self.google or not self.google.available:
                 raise AccessError('Google OAuth 클라이언트 설정을 확인하세요.', 'unavailable')
@@ -103,7 +103,7 @@ class PublicService:
                 lease = self.access.lease(c)
                 if lease['owner_id'] != actor['id'] or lease['phase'] != 'waiting':
                     raise AccessError('유지할 사용권이 없습니다.', 'busy')
-                c.execute('UPDATE magi_service_lease SET deadline=%s WHERE singleton=1', (self.access.clock()+180,))
+                c.execute('UPDATE service_lease SET deadline=%s WHERE singleton=1', (self.access.clock()+180,))
             return self.access.status(actor['id'])
         if method.startswith('admin.'):
             self.require_admin(actor)
@@ -123,7 +123,7 @@ class PublicService:
                     try:
                         ok=self.manager.knowledge.reindex()
                         with self.store.transaction() as c:
-                            c.execute('INSERT INTO magi_admin_audit(id,actor_id,action) VALUES (%s,%s,%s)',(uuid4().hex,actor['id'],'knowledge.retry'))
+                            c.execute('INSERT INTO admin_audit(id,actor_id,action) VALUES (%s,%s,%s)',(uuid4().hex,actor['id'],'knowledge.retry'))
                         return {'status':'completed' if ok else 'failed'}
                     finally:
                         ACTOR.reset(mark)
@@ -173,7 +173,7 @@ class PublicService:
                 if row['phase'] == 'waiting':
                     self.access.clear(c)
                 else:
-                    c.execute('UPDATE magi_service_lease SET stopping=true WHERE singleton=1')
+                    c.execute('UPDATE service_lease SET stopping=true WHERE singleton=1')
 
     def cached_document(self, params):
         from backend.services.spec_translation import source_key
@@ -201,7 +201,7 @@ class PublicService:
             try:
                 with self.store.transaction() as c:
                     self.access.lease(c)
-                    previous = c.execute('SELECT fingerprint,result FROM magi_admissions WHERE user_id=%s AND key=%s', (actor['id'],key)).fetchone()
+                    previous = c.execute('SELECT fingerprint,result FROM admissions WHERE user_id=%s AND key=%s', (actor['id'],key)).fetchone()
                     if previous:
                         if previous['fingerprint'] != fingerprint:
                             raise AccessError('같은 요청 키에 다른 입력을 사용할 수 없습니다.', 'busy')
@@ -214,21 +214,21 @@ class PublicService:
                         if job['status'] not in WAITING:
                             raise AccessError('현재 작업은 응답 대기 상태가 아닙니다.', 'busy')
                         self.access.acquire(c,actor['id'],job['id'])
-                        c.execute("UPDATE magi_service_lease SET phase='waiting',deadline=%s WHERE singleton=1", (self.access.clock()+180,))
+                        c.execute("UPDATE service_lease SET phase='waiting',deadline=%s WHERE singleton=1", (self.access.clock()+180,))
                         result = self.manager.summary(job['id'])
                     else:
                         # 생성 ID는 기존 엔진에서 만든 뒤 같은 DB 트랜잭션 안에서 사용권에 연결한다.
                         jid = params.get('id') or 'pending'
                         generation = self.access.acquire(c,actor['id'],jid,count=method in {'generate','continue'})
                         meter = Meter(self.access,actor['id'],jid,generation,self.prices)
-                        from backend.config import MagiConfig
-                        model = MagiConfig.default().model_routing['interviewer'].model
+                        from backend.config import Config
+                        model = Config.default().model_routing['interviewer'].model
                         if method != 'approve':
                             maximum = meter.maximum(model)
                             self.access.check_money(c,actor['id'],maximum, day_at(self.access.clock()))
                         result = self.result(dispatch(request))
                         jid = result['id']
-                        c.execute('UPDATE magi_service_lease SET job_id=%s WHERE singleton=1', (jid,))
+                        c.execute('UPDATE service_lease SET job_id=%s WHERE singleton=1', (jid,))
                         job = self.manager.jobs[jid]
                         job['lease_generation'] = generation
                         self.store._save_job(c,job)
@@ -236,7 +236,7 @@ class PublicService:
                             ident = self.access.reserve(actor['id'],jid,generation,model,maximum)
                             job['_initial_reservation'] = (ident,model)
                     result = user_payload(result)
-                    c.execute('INSERT INTO magi_admissions VALUES (%s,%s,%s,%s)', (actor['id'],key,fingerprint,self.store._json(result)))
+                    c.execute('INSERT INTO admissions VALUES (%s,%s,%s,%s)', (actor['id'],key,fingerprint,self.store._json(result)))
             except Exception:
                 self.manager.jobs = old_jobs
                 raise
@@ -260,7 +260,7 @@ class PublicService:
                 if jid not in {'read-operation',lease['job_id']}:
                     raise AccessError('현재 작업의 처리만 진행할 수 있습니다.', 'busy')
                 generation = lease['generation']
-                c.execute("UPDATE magi_service_lease SET phase='running',deadline=NULL WHERE singleton=1")
+                c.execute("UPDATE service_lease SET phase='running',deadline=NULL WHERE singleton=1")
                 owned = True
             else:
                 generation = self.access.acquire(c,actor['id'],jid)
@@ -321,7 +321,7 @@ class PublicService:
         if method=='cleanup.execute':
             op=self.manager.cleanup.load(params.get('id'))
             with self.store.transaction() as c:
-                allowed=c.execute("SELECT 1 FROM magi_admin_audit WHERE actor_id=%s AND action='cleanup.preview' AND target_id=%s",(actor['id'],op['id'])).fetchone()
+                allowed=c.execute("SELECT 1 FROM admin_audit WHERE actor_id=%s AND action='cleanup.preview' AND target_id=%s",(actor['id'],op['id'])).fetchone()
             if not allowed:
                 raise AccessError('본인이 확인한 삭제 요청만 실행할 수 있습니다.')
         elif method!='cleanup.preview':
@@ -338,7 +338,7 @@ class PublicService:
                         self.manager.on_change({'event':'records.deleted','ids':[jid for jid,uid in owners.items() if uid==owner],
                                                 '_owner_id':owner})
                 with self.store.transaction() as c:
-                    c.execute('INSERT INTO magi_admin_audit(id,actor_id,action,target_id) VALUES (%s,%s,%s,%s)',
+                    c.execute('INSERT INTO admin_audit(id,actor_id,action,target_id) VALUES (%s,%s,%s,%s)',
                               (uuid4().hex,actor['id'],method,result['id']))
                 return result
             finally:
@@ -353,39 +353,39 @@ class PublicService:
             return self.admin_knowledge(actor, method, params)
         with self.manager.lock, self.store.transaction() as c:
             if method=='admin.overview':
-                return {'users':c.execute('SELECT id,role,suspended,daily_runs,daily_usd FROM magi_users ORDER BY id').fetchall(),
-                        'costs':c.execute('SELECT id,day,user_id,job_id,model,reserved,actual,state FROM magi_cost_calls ORDER BY day DESC LIMIT 200').fetchall(),
+                return {'users':c.execute('SELECT id,role,suspended,daily_runs,daily_usd FROM users ORDER BY id').fetchall(),
+                        'costs':c.execute('SELECT id,day,user_id,job_id,model,reserved,actual,state FROM cost_calls ORDER BY day DESC LIMIT 200').fetchall(),
                         'lease':self.access.lease(c),'embedding_status':self.manager.knowledge.last_error,
-                        'daily_usd':c.execute('SELECT daily_usd FROM magi_service_settings WHERE singleton=1').fetchone()['daily_usd'],
-                        'unowned':c.execute('SELECT id FROM magi_jobs WHERE owner_id IS NULL ORDER BY id').fetchall()}
+                        'daily_usd':c.execute('SELECT daily_usd FROM service_settings WHERE singleton=1').fetchone()['daily_usd'],
+                        'unowned':c.execute('SELECT id FROM jobs WHERE owner_id IS NULL ORDER BY id').fetchall()}
             if method=='admin.user_jobs':
                 owner=params.get('owner_id')
                 if not isinstance(owner,str) or not owner.strip():
                     raise AccessError('사용자 ID를 선택하세요.')
-                if not c.execute('SELECT id FROM magi_users WHERE id=%s',(owner,)).fetchone():
+                if not c.execute('SELECT id FROM users WHERE id=%s',(owner,)).fetchone():
                     raise AccessError('사용자를 찾을 수 없습니다.')
-                return c.execute("SELECT id,owner_id,data->>'request' AS request,data->>'status' AS status,data->>'created_at' AS created_at FROM magi_jobs WHERE owner_id=%s ORDER BY data->>'created_at' DESC NULLS LAST,id",(owner,)).fetchall()
+                return c.execute("SELECT id,owner_id,data->>'request' AS request,data->>'status' AS status,data->>'created_at' AS created_at FROM jobs WHERE owner_id=%s ORDER BY data->>'created_at' DESC NULLS LAST,id",(owner,)).fetchall()
             if method=='admin.job':
                 result=self.manager.public(params.get('id'))
                 result['owner_id']=self.manager.jobs[params['id']].get('owner_id')
-                c.execute('INSERT INTO magi_admin_audit(id,actor_id,action,target_id) VALUES (%s,%s,%s,%s)',(uuid4().hex,actor['id'],method,params.get('id')))
+                c.execute('INSERT INTO admin_audit(id,actor_id,action,target_id) VALUES (%s,%s,%s,%s)',(uuid4().hex,actor['id'],method,params.get('id')))
                 return result
             if method=='admin.user':
                 role, runs, usd=params.get('role'),params.get('daily_runs'),Decimal(str(params.get('daily_usd')))
                 if role not in {'user','admin'} or type(runs) is not int or not 0<=runs<=10000 or not usd.is_finite() or not 0<=usd<=10000 or type(params.get('suspended')) is not bool:
                     self._deny()
                 # 동시 권한 변경에서도 마지막 활성 관리자를 보존한다.
-                c.execute('LOCK TABLE magi_users IN SHARE ROW EXCLUSIVE MODE')
-                target=c.execute('SELECT role,suspended FROM magi_users WHERE id=%s',(params.get('id'),)).fetchone()
+                c.execute('LOCK TABLE users IN SHARE ROW EXCLUSIVE MODE')
+                target=c.execute('SELECT role,suspended FROM users WHERE id=%s',(params.get('id'),)).fetchone()
                 if not target:
                     raise AccessError('사용자를 찾을 수 없습니다.')
                 if target['role']=='admin' and not target['suspended'] and (role!='admin' or params['suspended']):
-                    remaining=c.execute("SELECT count(*) AS total FROM magi_users WHERE role='admin' AND NOT suspended").fetchone()['total']
+                    remaining=c.execute("SELECT count(*) AS total FROM users WHERE role='admin' AND NOT suspended").fetchone()['total']
                     if remaining<=1:
                         raise AccessError('마지막 활성 관리자는 권한을 내리거나 정지할 수 없습니다.')
-                c.execute('UPDATE magi_users SET role=%s,daily_runs=%s,daily_usd=%s,suspended=%s WHERE id=%s',
+                c.execute('UPDATE users SET role=%s,daily_runs=%s,daily_usd=%s,suspended=%s WHERE id=%s',
                           (role,runs,usd,params['suspended'],params.get('id')))
-                c.execute('UPDATE magi_sessions SET revoked=true WHERE user_id=%s',(params.get('id'),))
+                c.execute('UPDATE sessions SET revoked=true WHERE user_id=%s',(params.get('id'),))
             elif method=='admin.claim':
                 if self.access.lease(c)['phase']!='idle':
                     raise AccessError('사용 중에는 이관할 수 없습니다.', 'busy')
@@ -394,21 +394,21 @@ class PublicService:
                 if not job or job.get('owner_id'):
                     raise KeyError(jid)
                 owner=params.get('owner_id')
-                if not c.execute('SELECT id FROM magi_users WHERE id=%s',(owner,)).fetchone():
+                if not c.execute('SELECT id FROM users WHERE id=%s',(owner,)).fetchone():
                     raise KeyError(owner)
-                c.execute("UPDATE magi_jobs SET owner_id=%s,data=jsonb_set(data,'{owner_id}',to_jsonb(%s::text)) WHERE id=%s AND owner_id IS NULL",(owner,owner,jid))
+                c.execute("UPDATE jobs SET owner_id=%s,data=jsonb_set(data,'{owner_id}',to_jsonb(%s::text)) WHERE id=%s AND owner_id IS NULL",(owner,owner,jid))
                 job['owner_id']=owner
             elif method=='admin.stop':
                 lease=self.access.lease(c)
                 if lease['phase']=='waiting':
                     self.access.clear(c)
                 else:
-                    c.execute('UPDATE magi_service_lease SET stopping=true WHERE singleton=1')
+                    c.execute('UPDATE service_lease SET stopping=true WHERE singleton=1')
             elif method=='admin.settings':
                 cap=Decimal(str(params.get('daily_usd')))
                 if not cap.is_finite() or not 0<=cap<=10000:
                     self._deny()
-                c.execute('UPDATE magi_service_settings SET daily_usd=%s WHERE singleton=1',(cap,))
+                c.execute('UPDATE service_settings SET daily_usd=%s WHERE singleton=1',(cap,))
             elif method=='admin.settle':
                 actual=Decimal(str(params.get('actual')))
                 if not actual.is_finite() or actual<0:
@@ -416,7 +416,7 @@ class PublicService:
                 self.access.settle(params.get('id'),actual,source='manual')
             else:
                 self._deny()
-            c.execute('INSERT INTO magi_admin_audit(id,actor_id,action,target_id) VALUES (%s,%s,%s,%s)',(uuid4().hex,actor['id'],method,params.get('id')))
+            c.execute('INSERT INTO admin_audit(id,actor_id,action,target_id) VALUES (%s,%s,%s,%s)',(uuid4().hex,actor['id'],method,params.get('id')))
             return {'ok':True}
 
     def admin_knowledge(self, actor, method, params):
@@ -426,17 +426,17 @@ class PublicService:
         try:
             with self.store.transaction() as c:
                 if method=='admin.projects':
-                    return c.execute('SELECT id,name FROM magi_projects ORDER BY created_at,id').fetchall()
+                    return c.execute('SELECT id,name FROM projects ORDER BY created_at,id').fetchall()
                 project=params.get('project_id')
-                if not project or not c.execute('SELECT 1 FROM magi_projects WHERE id=%s',(project,)).fetchone():
+                if not project or not c.execute('SELECT 1 FROM projects WHERE id=%s',(project,)).fetchone():
                     raise KeyError('project')
                 if method=='admin.jobs':
-                    return c.execute("SELECT id,data->>'request' AS request FROM magi_jobs WHERE project_id=%s ORDER BY id",(project,)).fetchall()
+                    return c.execute("SELECT id,data->>'request' AS request FROM jobs WHERE project_id=%s ORDER BY id",(project,)).fetchall()
                 job=params.get('job_id')
-                if job and not c.execute('SELECT 1 FROM magi_jobs WHERE id=%s AND project_id=%s',(job,project)).fetchone():
+                if job and not c.execute('SELECT 1 FROM jobs WHERE id=%s AND project_id=%s',(job,project)).fetchone():
                     raise KeyError('job')
                 node=params.get('node_id')
-                if node and not c.execute('SELECT 1 FROM magi_nodes n JOIN magi_jobs j ON j.id=n.job_id WHERE n.id=%s AND j.project_id=%s AND (%s::text IS NULL OR j.id=%s)',(node,project,job,job)).fetchone():
+                if node and not c.execute('SELECT 1 FROM nodes n JOIN jobs j ON j.id=n.job_id WHERE n.id=%s AND j.project_id=%s AND (%s::text IS NULL OR j.id=%s)',(node,project,job,job)).fetchone():
                     raise KeyError('node')
                 if method=='admin.node' and not node:
                     raise KeyError('node')
@@ -449,7 +449,7 @@ class PublicService:
                 # 프로젝트 밖으로 이어지는 관계는 상세 패널에서도 노출하지 않는다.
                 with self.store.transaction() as c:
                     connected=list({ident for edge in result.get('edges',[]) for ident in (edge['source'],edge['target'])})
-                    allowed={r['id'] for r in c.execute('SELECT n.id FROM magi_nodes n JOIN magi_jobs j ON j.id=n.job_id WHERE j.project_id=%s AND n.id=ANY(%s)',(project,connected)).fetchall()}
+                    allowed={r['id'] for r in c.execute('SELECT n.id FROM nodes n JOIN jobs j ON j.id=n.job_id WHERE j.project_id=%s AND n.id=ANY(%s)',(project,connected)).fetchall()}
                 result['edges']=[e for e in result.get('edges',[]) if e['source'] in allowed and e['target'] in allowed]
             return user_payload(result)
         finally:

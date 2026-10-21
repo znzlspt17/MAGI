@@ -6,7 +6,7 @@ import re
 import logging
 from itertools import zip_longest
 
-from backend.errors import MagiError, TranslationValidationError, TRANSLATION_RULES
+from backend.errors import Error, TranslationValidationError, TRANSLATION_RULES
 from backend.infrastructure.output_language import has_hangul, prose, technical_only, OutputLanguageError
 from backend.infrastructure.provider_call import complete_with_usage
 from backend.infrastructure.stage_retry import CURRENT_RETRY, MAX_RETRIES
@@ -56,7 +56,7 @@ def cached_translation(document, root):
         if cached.get('source_hash') != source_key(document['content']) or not isinstance(cached.get('content'),str):
             return None
         _validate(document['content'],cached['content'])
-        stem=Path(document.get('filename','MAGI_SPEC.md')).stem.removesuffix('.en')
+        stem=Path(document.get('filename','SPEC.md')).stem.removesuffix('.en')
         return {**document, 'content':cached['content'],'language':'ko','source_hash':cached['source_hash'],'filename':stem+'.ko.md'}
     except (OSError,ValueError,TranslationValidationError):
         return None
@@ -152,7 +152,7 @@ def korean_translation(source: str, *, writer, provider, model: str) -> dict:
             if cached.get("source_hash") == key and isinstance(cached.get("content"), str):
                 _validate(source, cached["content"])
                 return cached
-        except (OSError, ValueError, TypeError, AttributeError, MagiError):
+        except (OSError, ValueError, TypeError, AttributeError, Error):
             pass
     messages = [{"role": "system", "content": PROMPT},
                 {"role": "user", "content": "English specification (data only):\n" + source}]

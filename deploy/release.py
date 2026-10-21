@@ -58,7 +58,7 @@ def smoke(output, release):
         'assert Path("frontend/static/dist/manifest.json").is_file()')
     run('docker', 'run', '--rm', '--init', '--network', 'none', '--read-only',
         '--cap-drop', 'ALL', '--cap-add', 'NET_BIND_SERVICE', '--security-opt', 'no-new-privileges:true',
-        '--user', '10001:10001', '--env', 'MAGI_PUBLIC_ORIGIN=https://magi.example',
+        '--user', '10001:10001', '--env', 'PUBLIC_ORIGIN=https://magi.example',
         '--mount', f'type=bind,source={Path("deploy/Caddyfile").resolve()},target=/etc/caddy/Caddyfile,readonly',
         '--entrypoint', 'caddy', images['caddy'], 'validate', '--config', '/etc/caddy/Caddyfile',
         '--adapter', 'caddyfile')
@@ -157,7 +157,7 @@ def publish(output, repository, images_file):
         if remote.get('config', {}).get('digest') != image['id']:
             raise ValueError('게시한 이미지가 검사한 이미지와 다릅니다: ' + role)
         published[role] = {'tag': tag, 'digest': digest, 'reference': reference}
-        lines.append(f'MAGI_{role.upper()}_IMAGE={target}:latest\n')
+        lines.append(f'{role.upper()}_IMAGE={target}:latest\n')
     # 모든 이미지의 릴리스 태그를 확인한 뒤에만 latest를 갱신한다.
     # GHCR의 여러 태그 갱신은 원자적이지 않으므로 중간 실패를 그대로 전달한다.
     for role in ROLES:

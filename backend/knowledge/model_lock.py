@@ -18,7 +18,7 @@ def acquire(owner, path=None):
             return
         if _owner is not None:
             raise KnowledgeError("다른 임베딩 실행이 모델을 사용 중입니다.")
-        path = Path(path) if path else Path(tempfile.gettempdir()) / "magi-local-embedding.lock"
+        path = Path(path) if path else Path(tempfile.gettempdir()) / "local-embedding.lock"
         stream = path.open("a+b")
         try:
             if os.name == "nt":

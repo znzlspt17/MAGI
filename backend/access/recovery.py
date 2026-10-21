@@ -49,7 +49,7 @@ class WorkerRecovery:
         self.retry()
         with self.lock:
             if self.pending and not self.stopped.is_set() and self.thread is None:
-                self.thread = threading.Thread(target=self._loop, name='magi-recovery', daemon=True)
+                self.thread = threading.Thread(target=self._loop, name='recovery', daemon=True)
                 self.thread.start()
 
     def _loop(self):
@@ -97,7 +97,7 @@ class WorkerRecovery:
                 return
             with service.store.transaction() as c:
                 lease = service.access.lease(c)
-                row = c.execute('SELECT data FROM magi_jobs WHERE id=%s', (execution.ident,)).fetchone()
+                row = c.execute('SELECT data FROM jobs WHERE id=%s', (execution.ident,)).fetchone()
                 if (not row or row['data'].get('execution_id') != execution.execution_id
                     or row['data'].get('lease_generation') != execution.generation):
                     return
@@ -116,13 +116,13 @@ class WorkerRecovery:
                         updated['recoverable_status'] = resume
                     # 메모리 상태는 COMMIT이 성공한 뒤에만 바꾼다.
                     service.store._save_job(c, updated)
-                    c.execute('UPDATE magi_executions SET data=data || %s WHERE id=%s AND job_id=%s',
+                    c.execute('UPDATE executions SET data=data || %s WHERE id=%s AND job_id=%s',
                               (service.store._json({'status': 'error', 'message': updated['message']}),
                                execution.execution_id, execution.ident))
                     if failure.unused:
                         service.access.settle(failure.unused[0], Decimal(0))
                     if failure.entered:
-                        c.execute("UPDATE magi_service_lease SET phase='recovery',deadline=NULL WHERE singleton=1")
+                        c.execute("UPDATE service_lease SET phase='recovery',deadline=NULL WHERE singleton=1")
                     else:
                         service.access.finish(execution.ident, execution.generation)
             if job is None:

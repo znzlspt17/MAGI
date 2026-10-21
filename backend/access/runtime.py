@@ -25,7 +25,7 @@ class PublicRuntime:
             c.commit()
             self.connection=c
             with self.store.transaction() as tx:
-                tx.execute("UPDATE magi_service_lease SET phase='recovery',deadline=NULL WHERE singleton=1 AND phase IN ('running','recovery')")
+                tx.execute("UPDATE service_lease SET phase='recovery',deadline=NULL WHERE singleton=1 AND phase IN ('running','recovery')")
         except Exception:
             c.close()
             raise
@@ -37,14 +37,10 @@ class PublicRuntime:
 
 def service_factory(manager):
     from protocol.web_config import login_origin
-    local_login=os.environ.get('MAGI_LOCAL_LOGIN','0')=='1'
-    origin=login_origin(os.environ.get('MAGI_PUBLIC_ORIGIN',''),local_login)
-    if 'GOOGLE_OAUTH_ID' in os.environ or 'GOOGLE_OAUTH_SECRET' in os.environ:
-        client_id=os.environ.get('GOOGLE_OAUTH_ID','')
-        client_secret=os.environ.get('GOOGLE_OAUTH_SECRET','')
-    else:
-        client_id=os.environ.get('MAGI_GOOGLE_CLIENT_ID','')
-        client_secret=os.environ.get('MAGI_GOOGLE_CLIENT_SECRET','')
+    local_login=os.environ.get('LOCAL_LOGIN','0')=='1'
+    origin=login_origin(os.environ.get('PUBLIC_ORIGIN',''),local_login)
+    client_id=os.environ.get('GOOGLE_OAUTH_ID','')
+    client_secret=os.environ.get('GOOGLE_OAUTH_SECRET','')
     google=GoogleLogin(client_id,client_secret,origin+'/auth/google/callback',local_login=local_login)
     manager.knowledge.public_mode=True
-    return PublicService(manager,google=google,pepper=os.environ.get('MAGI_SUBJECT_PEPPER',''))
+    return PublicService(manager,google=google,pepper=os.environ.get('SUBJECT_PEPPER',''))

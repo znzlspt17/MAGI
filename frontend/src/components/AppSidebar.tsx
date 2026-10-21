@@ -7,15 +7,15 @@ import { ScalesIcon, ShieldCheckIcon, CopyrightIcon } from "@phosphor-icons/reac
 export function AppSidebar({ children }: { children: ReactNode }) {
   const { setOpenMobile } = useSidebar();
   return (
-    <Sidebar variant="inset" className="magi-sidebar">
-      <SidebarHeader className="magi-sidebar-brand">
+    <Sidebar variant="inset" className="sidebar">
+      <SidebarHeader className="sidebar-brand">
         <a href="/" className="brand"><span className="brand-mark"><ScalesIcon weight="duotone" size={25} aria-hidden /></span><span>MAGI<small>생각을 명세로 연결하는 공간</small></span></a>
       </SidebarHeader>
-      <SidebarContent className="magi-navigation" onClick={(event) => {
+      <SidebarContent className="navigation" onClick={(event) => {
         const target = event.target as HTMLElement;
         if (target.closest("a, .primary-nav button, .new-job")) setOpenMobile(false);
       }}>{children}</SidebarContent>
-      <SidebarFooter className="magi-sidebar-footer">
+      <SidebarFooter className="sidebar-footer">
         <NavUser />
         <p>요청과 답변은 AI 제공자에게 전송됩니다. 민감한 정보는 입력하지 마세요.</p>
         <a href="/privacy"><ShieldCheckIcon size={16} aria-hidden />정보 처리 안내</a>

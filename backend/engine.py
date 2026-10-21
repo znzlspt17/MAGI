@@ -1,4 +1,4 @@
-"""Public engine API for MAGI Spec Engine."""
+"""Public engine API for MAGI."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Callable
 from uuid import uuid4
 
-from backend.config import MagiConfig, VALID_WEB_SEARCH_MODES
-from backend.errors import InvalidStateError, MagiError
+from backend.config import Config, VALID_WEB_SEARCH_MODES
+from backend.errors import InvalidStateError, Error
 from backend.infrastructure.artifact_writer import ArtifactWriter
 from backend.infrastructure.evidence_registry import EvidenceRegistry
 from backend.infrastructure.heartbeat import HEARTBEAT_PATH, RunHeartbeat
@@ -18,9 +18,9 @@ from backend.models import (
     STATUS_NEEDS_USER_INPUT,
     STATUS_PASS_PENDING_USER_APPROVAL,
     STATUS_REJECTED_BY_USER,
-    MagiState,
+    State,
 )
-from backend.models import MagiResult
+from backend.models import Result
 from backend.pipeline.workflow_nodes import WorkflowNodes
 from backend.pipeline.builder import build_v2_workflow
 from backend.providers.llm_provider import OpenAIProvider
@@ -31,14 +31,14 @@ from backend.services.skill_registry import build_default_skill_registry
 SUPPORTED_INPUT_EXTENSIONS = {".md", ".txt"}
 
 
-class MagiSpecEngine:
+class Engine:
     def __init__(
         self,
         *,
-        config: MagiConfig | None = None,
+        config: Config | None = None,
         provider: OpenAIProvider | None = None,
     ) -> None:
-        self.config = config or MagiConfig.default()
+        self.config = config or Config.default()
         self.provider = provider or OpenAIProvider()
 
     def generate_from_file(
@@ -50,12 +50,12 @@ class MagiSpecEngine:
         web_search_mode: str | None = None,
         overwrite: bool = False,
         on_progress: Callable[[dict[str, str]], None] | None = None,
-    ) -> MagiResult:
+    ) -> Result:
         path = Path(input_path)
         if not path.exists():
             raise FileNotFoundError(f"Input file does not exist: {input_path}")
         if path.suffix.lower() not in SUPPORTED_INPUT_EXTENSIONS:
-            raise MagiError(
+            raise Error(
                 f"Unsupported input extension '{path.suffix}'. Supported: .md, .txt"
             )
         return self.generate_from_text(
@@ -78,10 +78,12 @@ class MagiSpecEngine:
         input_source: str = "direct_text",
         overwrite: bool = False,
         on_progress: Callable[[dict[str, str]], None] | None = None,
-    ) -> MagiResult:
+    ) -> Result:
         self.config.validate()
         self._validate_web_search_mode(web_search_mode)
         self._validate_provider_credentials()
+        from backend.knowledge.format_guard import require_current
+        require_current(output_dir)
         writer = ArtifactWriter(output_dir, allow_overwrite=overwrite)
         writer.prepare()
         evidence = EvidenceRegistry()
@@ -107,8 +109,8 @@ class MagiSpecEngine:
             ]
         )
 
-        state = MagiState(
-            run_id=f"magi_{uuid4().hex[:12]}",
+        state = State(
+            run_id=uuid4().hex[:12],
             status="DRAFT",
             user_request=text,
             original_user_request=text,
@@ -131,7 +133,7 @@ class MagiSpecEngine:
         output_dir: str,
         *,
         on_progress: Callable[[dict[str, str]], None] | None = None,
-    ) -> MagiResult:
+    ) -> Result:
         _notify_progress(on_progress, "approve", "started")
         writer = ArtifactWriter(output_dir, allow_overwrite=False)
         state = self._load_state(writer)
@@ -151,7 +153,7 @@ class MagiSpecEngine:
         if final_path.exists() and not state.latest_completed:
             raise InvalidStateError("이전 완료본의 확정 자료가 보존되지 않았습니다.")
         previous = final_path.read_bytes() if final_path.exists() else None
-        previous_state = writer.read_text("state/magi_state.json")
+        previous_state = writer.read_text("state/state.json")
         content = candidate.read_text(encoding="utf-8")
         completed = archive_completed(writer, state, content)
         final_path.parent.mkdir(parents=True, exist_ok=True)
@@ -174,7 +176,7 @@ class MagiSpecEngine:
             else:
                 temporary.write_bytes(previous)
                 os.replace(temporary, final_path)
-            writer.write_text("state/magi_state.json", previous_state, overwrite=True)
+            writer.write_text("state/state.json", previous_state, overwrite=True)
             raise
         _notify_progress(on_progress, "approve", "completed")
         return self._result_from_state(state)
@@ -185,7 +187,7 @@ class MagiSpecEngine:
         output_dir: str,
         feedback_path: str,
         on_progress: Callable[[dict[str, str]], None] | None = None,
-    ) -> MagiResult:
+    ) -> Result:
         writer = ArtifactWriter(output_dir, allow_overwrite=True)
         state = self._load_state(writer)
         from backend.services.completed_specs import require_conversation, archive_completed, restore_completed_cache
@@ -225,7 +227,7 @@ class MagiSpecEngine:
         *,
         answers: list[dict],
         on_progress: Callable[[dict[str, str]], None] | None = None,
-    ) -> MagiResult:
+    ) -> Result:
         """Inject user answers to blocking questions and resume the pipeline."""
         writer = ArtifactWriter(output_dir, allow_overwrite=True)
         state = self._load_state(writer)
@@ -340,19 +342,19 @@ class MagiSpecEngine:
             workflow_state, writer, evidence, on_progress=on_progress
         )
 
-    def status(self, output_dir: str) -> MagiResult:
+    def status(self, output_dir: str) -> Result:
         writer = ArtifactWriter(output_dir, allow_overwrite=False)
         state = self._load_state(writer)
         return self._result_from_state(state)
 
     def _run_workflow(
         self,
-        state: MagiState,
+        state: State,
         writer: ArtifactWriter,
         evidence: EvidenceRegistry,
         *,
         on_progress: Callable[[dict[str, str]], None] | None = None,
-    ) -> MagiResult:
+    ) -> Result:
         skills = build_default_skill_registry()
         nodes = WorkflowNodes(
             writer=writer,
@@ -374,7 +376,7 @@ class MagiSpecEngine:
         heartbeat = RunHeartbeat(writer=writer, state=state)
         heartbeat.start()
         try:
-            final_state = MagiState.from_workflow_state(
+            final_state = State.from_workflow_state(
                 workflow.invoke(state.to_workflow_state())
             )
             heartbeat.stop(final_status=final_state.status)
@@ -386,14 +388,14 @@ class MagiSpecEngine:
                 from backend.knowledge.runtime import CURRENT
                 from backend.services.review_resolution import text_hash
                 runtime = CURRENT.get()
-                records = writer.read_json("state/magi_state.json").get("resolution_history", [])
+                records = writer.read_json("state/state.json").get("resolution_history", [])
                 saved_hash = runtime.resolved_draft_hash if runtime is not None else records[-1]["draft_hash"] if records else None
                 committed_draft = saved_hash == text_hash(writer.read_text(draft_path))
                 if not committed_draft and saved_hash:
                     resolved_draft = writer.read_text("review/resolved_draft.en.md")
                     if text_hash(resolved_draft) == saved_hash:
                         recovery_draft = resolved_draft
-            except (MagiError, OSError, ValueError, KeyError, TypeError):
+            except (Error, OSError, ValueError, KeyError, TypeError):
                 pass
             if recovery_draft is not None and not committed_draft:
                 try:
@@ -416,22 +418,24 @@ class MagiSpecEngine:
         _notify_progress(on_progress, "workflow", "completed")
         return self._result_from_state(final_state)
 
-    def _persist_state(self, writer: ArtifactWriter, state: MagiState) -> None:
-        if "state/magi_state.json" not in state.created_artifacts:
-            state.created_artifacts.append("state/magi_state.json")
+    def _persist_state(self, writer: ArtifactWriter, state: State) -> None:
+        if "state/state.json" not in state.created_artifacts:
+            state.created_artifacts.append("state/state.json")
         from backend.knowledge.runtime import CURRENT
         runtime = CURRENT.get()
         if runtime is not None:
             runtime.commit("state", state.to_dict())
-        writer.write_json("state/magi_state.json", state.to_dict(), overwrite=True)
+        writer.write_json("state/state.json", state.to_dict(), overwrite=True)
 
-    def _load_state(self, writer: ArtifactWriter) -> MagiState:
+    def _load_state(self, writer: ArtifactWriter) -> State:
         from backend.models import RequirementLockSheet
-        path = writer.path("state/magi_state.json")
+        from backend.knowledge.format_guard import require_current
+        require_current(writer.output_dir)
+        path = writer.path("state/state.json")
         if not path.exists():
             raise InvalidStateError(f"MAGI state file does not exist: {path}")
         try:
-            state = MagiState.from_dict(writer.read_json("state/magi_state.json"))
+            state = State.from_dict(writer.read_json("state/state.json"))
             if any(not all(key in record for key in ("decision_key", "feedback_hash", "question_id", "question")) for record in state.review_questions):
                 raise InvalidStateError("Review contract is invalid. Start a new generation.")
             for issue in state.structured_issues:
@@ -451,8 +455,8 @@ class MagiSpecEngine:
 
     @staticmethod
     def _hydrate_original_user_request(
-        writer: ArtifactWriter, state: MagiState
-    ) -> MagiState:
+        writer: ArtifactWriter, state: State
+    ) -> State:
         """이전 실행 기록도 원문 산출물을 우선해 불변 요청 문맥을 복구한다."""
         try:
             raw_request = writer.read_text("raw/user_request.md")
@@ -485,25 +489,25 @@ class MagiSpecEngine:
             return data
         return None
 
-    def _result_from_state(self, state: MagiState) -> MagiResult:
+    def _result_from_state(self, state: State) -> Result:
         questions_path = None
         if state.status == STATUS_NEEDS_USER_INPUT:
             p = Path(state.output_dir) / "analysis" / "05_blocking_questions.ko.md"
             if p.exists():
                 questions_path = str(p)
-        return MagiResult(
+        return Result(
             status=state.status,
             output_dir=state.output_dir,
             approval_candidate_path=state.approval_candidate_spec,
             final_spec_path=state.final_agent_spec,
             critical_report_path=state.critical_report,
-            state_path=str(Path(state.output_dir) / "state" / "magi_state.json"),
+            state_path=str(Path(state.output_dir) / "state" / "state.json"),
             heartbeat_path=str(Path(state.output_dir) / HEARTBEAT_PATH),
             questions_path=questions_path,
         )
 
     def _validate_candidate_for_approval(
-        self, candidate: Path, state: MagiState
+        self, candidate: Path, state: State
     ) -> None:
         """Reject externally modified candidates that no longer meet blocking checks."""
         from backend.models import (
@@ -547,7 +551,7 @@ class MagiSpecEngine:
         if mode is None:
             return
         if mode not in VALID_WEB_SEARCH_MODES:
-            raise MagiError(
+            raise Error(
                 f"Invalid web_search_mode '{mode}'. Allowed values are: auto, on, off."
             )
 

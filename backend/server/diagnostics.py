@@ -8,7 +8,7 @@ from protocol.diagnostics import traceback_frames as _traceback_frames
 from backend.errors import (
     ArtifactError,
     InvalidStateError,
-    MagiError,
+    Error,
     MissingCredentialError,
     RequirementNormalizationError,
     ReviewValidationError,
@@ -18,7 +18,7 @@ from backend.errors import (
 
 
 _KNOWN_REASONS = {
-    "공개 서비스 DB 계정은 superuser/BYPASSRLS 권한을 가질 수 없습니다.": "접속한 PostgreSQL 계정에 superuser 또는 BYPASSRLS 권한이 있습니다. MAGI_DB_USER를 일반 서비스 계정으로 설정하세요. localhost 로그인도 사용자 격리를 위해 같은 조건을 적용합니다.",
+    "공개 서비스 DB 계정은 superuser/BYPASSRLS 권한을 가질 수 없습니다.": "접속한 PostgreSQL 계정에 superuser 또는 BYPASSRLS 권한이 있습니다. DB_USER를 일반 서비스 계정으로 설정하세요. localhost 로그인도 사용자 격리를 위해 같은 조건을 적용합니다.",
     "다른 공개 백엔드 프로세스가 실행 중입니다.": "다른 공개 백엔드 프로세스가 실행 중입니다. 기존 프로세스를 확인하세요.",
     "공개 모드에는 PostgreSQL 설정이 필요합니다.": "공개 모드에는 PostgreSQL 설정이 필요합니다.",
     "Conversation state is missing. Start a new generation.": "대화 연결이 누락되어 이어갈 수 없습니다. 기록을 보존하고 새 작업을 생성하세요.",
@@ -141,7 +141,7 @@ def safe_user_error(exc: BaseException) -> str:
     if reason != "작업 처리 중 오류가 발생했습니다.":
         return reason
     if any(
-        isinstance(item, (InvalidStateError, ArtifactError, MagiError))
+        isinstance(item, (InvalidStateError, ArtifactError, Error))
         for item in _exception_chain(exc)
     ):
         return "저장된 작업 상태 또는 입력을 확인한 뒤 다시 시도하세요."
@@ -152,7 +152,7 @@ def _known_reason(chain: list[BaseException]) -> str | None:
     for item in chain:
         if isinstance(item, MissingCredentialError):
             return "선택한 제공자 설정을 확인하거나 데모 모드로 실행하세요."
-        if not isinstance(item, (InvalidStateError, ArtifactError, MagiError)):
+        if not isinstance(item, (InvalidStateError, ArtifactError, Error)):
             continue
         args = item.args
         if len(args) != 1 or not isinstance(args[0], str):

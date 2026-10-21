@@ -95,7 +95,7 @@ export function DocumentView({
     );
     const a = window.document.createElement("a");
     a.href = url;
-    a.download = active.filename || `MAGI_SPEC.${language}.md`;
+    a.download = active.filename || `SPEC.${language}.md`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 0);
   }

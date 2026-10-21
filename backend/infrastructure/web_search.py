@@ -83,7 +83,7 @@ def web_search(query: str, *, max_results: int = 5) -> list[dict[str, Any]]:
     url = f"https://duckduckgo.com/html/?{encoded}"
     request = urllib.request.Request(
         url,
-        headers={"User-Agent": "MAGI-Spec-Engine/0.1"},
+        headers={"User-Agent": "Mozilla/5.0"},
     )
     with urllib.request.urlopen(request, timeout=20) as response:
         html = response.read().decode("utf-8", errors="replace")

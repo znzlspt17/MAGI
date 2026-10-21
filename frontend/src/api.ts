@@ -41,7 +41,7 @@ export async function api<T = any>(
   if (generation === authGeneration && (response.ok || response.status < 500))
     pending.delete(signature);
   if (publicMode && generation === authGeneration && response.status === 401)
-    window.dispatchEvent(new Event("magi:signed-out"));
+    window.dispatchEvent(new Event("signed-out"));
   const data = await response.json().catch(() => ({}));
   if (!response.ok)
     throw new ApiError(

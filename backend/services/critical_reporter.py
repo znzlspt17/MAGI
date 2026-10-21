@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from backend.config import MagiConfig
+from backend.config import Config
 from backend.infrastructure.artifact_writer import ArtifactWriter
 from backend.infrastructure.evidence_registry import EvidenceRegistry
 from backend.models import WorkflowState
@@ -18,7 +18,7 @@ class CriticalReporter:
     def __init__(
         self,
         *,
-        config: MagiConfig,
+        config: Config,
         provider: OpenAIProvider,
         skills: SkillRegistry,
         evidence: EvidenceRegistry,

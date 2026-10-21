@@ -12,10 +12,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from backend.engine import MagiSpecEngine
+from backend.engine import Engine
 from backend.errors import ReviewValidationError
 from backend.infrastructure.usage import provider_usage_summary
-from backend.models import MagiState
+from backend.models import State
 from backend.server.diagnostics import diagnose_exception, safe_user_error
 from backend.server.execution_history import ExecutionHistory
 from backend.services.saved_answers import saved_answer_dicts
@@ -89,10 +89,12 @@ class JobManager:
     def __init__(
         self,
         data_dir: str | Path,
-        engine_factory=MagiSpecEngine,
+        engine_factory=Engine,
         on_change=None,
         knowledge=None,
     ) -> None:
+        from backend.knowledge.format_guard import require_current
+        require_current(data_dir)
         self.data_dir = Path(data_dir).resolve()
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.engine_factory = engine_factory
@@ -100,7 +102,7 @@ class JobManager:
         self.lock = threading.RLock()
         self._document_locks: dict[tuple[str, str], threading.Lock] = {}
         self.jobs: dict[str, dict] = {}
-        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="magi-web")
+        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="web")
         self._futures = {}
         self.closed = False
         self.knowledge = knowledge
@@ -112,10 +114,10 @@ class JobManager:
         if self.knowledge is None:
             from backend.services.completed_specs import restore_completed_cache
             for ident in self.jobs:
-                data = self._read_json(self._job_root(ident) / "state/magi_state.json") or {}
+                data = self._read_json(self._job_root(ident) / "state/state.json") or {}
                 if data.get("latest_completed"):
                     try:
-                        restore_completed_cache(ArtifactWriter(self._job_root(ident)), MagiState.from_dict(data))
+                        restore_completed_cache(ArtifactWriter(self._job_root(ident)), State.from_dict(data))
                     except Exception:
                         LOGGER.warning("completed cache recovery unavailable id=%s", ident)
 
@@ -205,7 +207,7 @@ class JobManager:
         writer = ArtifactWriter(self._job_root(ident), allow_overwrite=True)
         from backend.services.completed_specs import require_conversation, archive_completed, restore_completed_cache
         require_conversation(writer)
-        state = MagiSpecEngine()._load_state(writer)
+        state = Engine()._load_state(writer)
         if state.status != "FINALIZED":
             raise CleanupConflict("완료된 명세가 있는 세션만 이어갈 수 있습니다.")
         from backend.models import RequirementLockSheet
@@ -214,7 +216,7 @@ class JobManager:
         state.latest_completed = archive_completed(writer, state)
         if state.latest_completed["path"] not in state.created_artifacts:
             state.created_artifacts.append(state.latest_completed["path"])
-        writer.write_json("state/magi_state.json", state.to_dict(), overwrite=True)
+        writer.write_json("state/state.json", state.to_dict(), overwrite=True)
         if self.knowledge:
             from backend.knowledge.runtime import read_artifacts
             self.knowledge.store.commit_stage(job, job["execution_id"], "completion_archive", state.to_dict(), read_artifacts(writer.output_dir))
@@ -230,7 +232,7 @@ class JobManager:
             effective = self._effective_status_locked(job)
             self._validate_payload(
                 action, payload, self._pending_questions_locked(ident),
-                (self._read_json(self.artifact(ident, "state/magi_state.json")) or {}).get("question_forms", {})
+                (self._read_json(self.artifact(ident, "state/state.json")) or {}).get("question_forms", {})
             )
             if job["status"] in _ACTIVE or self._activities.get(ident):
                 raise CleanupConflict("이미 실행·번역·저장 중인 세션입니다.")
@@ -244,7 +246,7 @@ class JobManager:
             from backend.services.completed_specs import require_conversation
             writer = ArtifactWriter(self._job_root(ident))
             require_conversation(writer)
-            MagiSpecEngine()._load_state(writer)
+            Engine()._load_state(writer)
             now = _utc_now()
             job.update(
                 status="queued",
@@ -338,7 +340,7 @@ class JobManager:
             result["can_continue"] = False
             result["read_only"] = False
             result["latest_completed"] = None
-            state = self._read_json(self._job_root(ident) / "state/magi_state.json") or {}
+            state = self._read_json(self._job_root(ident) / "state/state.json") or {}
             if isinstance(state.get("latest_completed"), dict):
                 result["latest_completed"] = {key: state["latest_completed"].get(key) for key in ("id", "source_hash")}
                 result["latest_completed"]["step_id"] = state["latest_completed"].get("id")
@@ -347,7 +349,7 @@ class JobManager:
                     from backend.services.completed_specs import require_conversation
                     writer = ArtifactWriter(self._job_root(ident))
                     require_conversation(writer)
-                    MagiSpecEngine()._load_state(writer)
+                    Engine()._load_state(writer)
                     from backend.models import RequirementLockSheet
                     if source["status"] in {"FINALIZED", "PASS_PENDING_USER_APPROVAL"}:
                         RequirementLockSheet.from_dict(state.get("requirement_lock_sheet")).require_validated()
@@ -368,7 +370,7 @@ class JobManager:
         with self.lock:
             source = self._get_locked(ident)
             job = self.summary(ident)
-            state = self._read_json(self.artifact(ident, "state/magi_state.json"))
+            state = self._read_json(self.artifact(ident, "state/state.json"))
             if state:
                 public_state = {
                     key: state[key]
@@ -448,7 +450,7 @@ class JobManager:
             history = ExecutionHistory(self._job_root(ident))
             if re.fullmatch(r"[0-9a-f]{64}", step_id):
                 from backend.services.completed_specs import completed_references, load_completed
-                state = self._read_json(self._job_root(ident) / "state/magi_state.json") or {}
+                state = self._read_json(self._job_root(ident) / "state/state.json") or {}
                 if f"completed/{step_id}.json" not in completed_references(state):
                     raise KeyError(step_id)
                 content = load_completed(ArtifactWriter(self._job_root(ident)), step_id)["content"]
@@ -495,7 +497,7 @@ class JobManager:
                                  for path in paths if writer.path(path).is_file()}
                     if artifacts:
                         self.knowledge.store.save_translation(ident, artifacts)
-        stem = Path(document.get("filename", "MAGI_SPEC.md")).stem.removesuffix(".en")
+        stem = Path(document.get("filename", "SPEC.md")).stem.removesuffix(".en")
         return {**document, **translated, "filename": stem + ".ko.md"}
 
     def _restore_jobs(self) -> None:
@@ -632,7 +634,7 @@ class JobManager:
             queued_at = datetime.fromisoformat(job["queued_at"])
             if queued_at.tzinfo is None:
                 return False
-            state_path = self.artifact(job["id"], "state/magi_state.json")
+            state_path = self.artifact(job["id"], "state/state.json")
             return state_path.stat().st_mtime_ns >= int(
                 queued_at.timestamp() * 1_000_000_000
             )
@@ -653,7 +655,7 @@ class JobManager:
         return status in _GUARDS.get(action, set())
 
     def _pending_questions_locked(self, ident: str) -> list[str]:
-        state = self._read_json(self.artifact(ident, "state/magi_state.json"))
+        state = self._read_json(self.artifact(ident, "state/state.json"))
         questions = state.get("blocking_questions") if state else []
         return (
             questions
@@ -663,7 +665,7 @@ class JobManager:
         )
 
     def _persisted_state_status_locked(self, ident: str) -> str | None:
-        state = self._read_json(self.artifact(ident, "state/magi_state.json"))
+        state = self._read_json(self.artifact(ident, "state/state.json"))
         status = state.get("status") if state else None
         return status if isinstance(status, str) and status in _ENGINE else None
 
@@ -681,7 +683,7 @@ class JobManager:
 
     def _has_recoverable_normalization_state_locked(self, ident: str) -> bool:
         """초기 생성 실패도 실제 저장 상태가 있을 때만 수정 재처리를 허용한다."""
-        state_data = self._read_json(self.artifact(ident, "state/magi_state.json"))
+        state_data = self._read_json(self.artifact(ident, "state/state.json"))
         if not isinstance(state_data, dict):
             return False
         required = ("run_id", "status", "user_request", "input_source", "output_dir")
@@ -691,7 +693,7 @@ class JobManager:
         ):
             return False
         try:
-            state = MagiState.from_dict(state_data)
+            state = State.from_dict(state_data)
             output_dir = Path(state.output_dir).resolve()
         except (OSError, TypeError, ValueError):
             return False
@@ -976,7 +978,7 @@ class JobManager:
         result = {"status": status}
         if status != "NEEDS_USER_INPUT":
             return result
-        state = self._read_json(self.artifact(ident, "state/magi_state.json"))
+        state = self._read_json(self.artifact(ident, "state/state.json"))
         questions = state.get("blocking_questions") if isinstance(state, dict) else None
         if isinstance(questions, list) and all(isinstance(item, str) for item in questions):
             result["blocking_questions"] = questions

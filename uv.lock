@@ -848,7 +848,7 @@ wheels = [
 ]
 
 [[package]]
-name = "magi-spec-engine"
+name = "magi"
 version = "0.3.1"
 source = { virtual = "." }
 dependencies = [

@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from backend.errors import MagiError
+from backend.errors import Error
 from backend.models import ModelRoute
 from backend.model_policy import MODEL, require_model
 
@@ -26,7 +26,7 @@ DEFAULT_PIPELINE_VERSION = "v2"
 
 
 @dataclass(slots=True)
-class MagiConfig:
+class Config:
     model_routing: dict[str, ModelRoute] = field(default_factory=dict)
     analysis_language: str = "ko"
     final_spec_language: str = "en"
@@ -36,7 +36,7 @@ class MagiConfig:
     pipeline_version: str = DEFAULT_PIPELINE_VERSION
 
     @classmethod
-    def default(cls) -> "MagiConfig":
+    def default(cls) -> "Config":
         """Production default: OpenAI provider."""
         return cls(
             model_routing={
@@ -46,7 +46,7 @@ class MagiConfig:
         )
 
     @classmethod
-    def from_file(cls, path: str | Path) -> "MagiConfig":
+    def from_file(cls, path: str | Path) -> "Config":
         config_path = Path(path)
         raw = config_path.read_text(encoding="utf-8")
         if config_path.suffix.lower() == ".json":
@@ -56,7 +56,7 @@ class MagiConfig:
         return cls.from_dict(data)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "MagiConfig":
+    def from_dict(cls, data: dict[str, Any]) -> "Config":
         base = cls.default()
         routing_data = data.get("model_routing") or data.get("models") or {}
         if routing_data:
@@ -90,23 +90,23 @@ class MagiConfig:
 
     def validate(self) -> None:
         if self.analysis_language != "ko" or self.final_spec_language != "en":
-            raise MagiError("Only analysis_language=ko and final_spec_language=en are supported.")
+            raise Error("Only analysis_language=ko and final_spec_language=en are supported.")
         for route in self.model_routing.values():
             if route.provider != "openai":
-                raise MagiError("Only the OpenAI provider is supported.")
+                raise Error("Only the OpenAI provider is supported.")
             require_model(route.model)
         if self.web_search not in VALID_WEB_SEARCH_MODES:
-            raise MagiError(
+            raise Error(
                 f"Invalid web_search mode '{self.web_search}'. "
                 "Allowed values are: auto, on, off."
             )
         if self.pipeline_version not in VALID_PIPELINE_VERSIONS:
-            raise MagiError(
+            raise Error(
                 f"Invalid pipeline_version '{self.pipeline_version}'. "
                 "Only 'v2' is supported by the current runtime."
             )
         if not (1 <= self.max_critic_passes <= 3):
-            raise MagiError(
+            raise Error(
                 f"max_critic_passes must be between 1 and 3, got {self.max_critic_passes}."
             )
 

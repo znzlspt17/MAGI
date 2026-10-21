@@ -88,7 +88,7 @@ describe('대화 입력과 승인',()=>{
   fireEvent.change(input,{target:{value:'실패해도 보존'}});
   await act(async()=>fireEvent.click(screen.getByRole('button',{name:'이어서 요청하기'})));
   expect((input as HTMLTextAreaElement).value).toBe('실패해도 보존');
-  expect(sessionStorage.getItem('magi:draft:owner:continue:feedback')).toBe('실패해도 보존');
+  expect(sessionStorage.getItem('draft:owner:continue:feedback')).toBe('실패해도 보존');
   await act(async()=>fireEvent.click(screen.getByRole('button',{name:'이어서 요청하기'})));
   expect((input as HTMLTextAreaElement).value).toBe('');
  });

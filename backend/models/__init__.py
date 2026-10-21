@@ -313,7 +313,7 @@ class LockResponse(ResponseModel):
 
 
 @dataclass(slots=True)
-class MagiResult:
+class Result:
     status: str
     output_dir: str
     approval_candidate_path: str | None = None
@@ -325,7 +325,7 @@ class MagiResult:
 
 
 @dataclass(slots=True)
-class MagiState:
+class State:
     run_id: str
     status: str
     user_request: str
@@ -373,7 +373,7 @@ class MagiState:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "MagiState":
+    def from_dict(cls, data: dict[str, Any]) -> "State":
         valid_fields = {f.name for f in dataclasses.fields(cls)}
         filtered = {k: v for k, v in data.items() if k in valid_fields}
         return cls(**filtered)
@@ -382,7 +382,7 @@ class MagiState:
         return self.to_dict()  # type: ignore[return-value]
 
     @classmethod
-    def from_workflow_state(cls, data: WorkflowState) -> "MagiState":
+    def from_workflow_state(cls, data: WorkflowState) -> "State":
         return cls.from_dict(dict(data))
 
 

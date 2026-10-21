@@ -76,8 +76,8 @@ class ReviewResolutionStage:
 
         from backend.knowledge.runtime import CURRENT
         if CURRENT.get() is None and state.get("run_id"):
-            from backend.models import MagiState
-            checkpoint = MagiState.from_workflow_state({**state, **result})
+            from backend.models import State
+            checkpoint = State.from_workflow_state({**state, **result})
             checkpoint.resume_stage = "spec_compile" if record["action"] == "repair" else None
-            self.context.writer.write_json("state/magi_state.json", checkpoint.to_dict(), overwrite=True)
+            self.context.writer.write_json("state/state.json", checkpoint.to_dict(), overwrite=True)
         return result

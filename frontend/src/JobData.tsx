@@ -96,7 +96,7 @@ export default function JobData({ users, unowned, version, busy, save, refresh }
       if (deleted.includes(linkedId)) close();
       setNotice(result.state === "completed" ? "정리를 완료했습니다." : "파일 정리가 남았습니다. 재시도하세요.");
       refresh();
-      window.dispatchEvent(new CustomEvent("magi:cleanup", { detail: { ids: deleted } }));
+      window.dispatchEvent(new CustomEvent("cleanup", { detail: { ids: deleted } }));
     } catch (e) {
       if (alive.current) { if (operation) setCleanupError((e as Error).message); else setError((e as Error).message); }
     } finally { if (alive.current) setWorking(false); }

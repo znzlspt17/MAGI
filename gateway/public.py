@@ -6,34 +6,34 @@ import threading
 import time
 from urllib.parse import urlsplit
 from flask import abort, g, jsonify, redirect, request
-from gateway.magi_client import MagiClientError
+from gateway.client import ClientError
 from protocol.web_config import login_origin
 from ipaddress import ip_address
 from gateway.frontend import render_frontend
 
-COOKIE='__Host-magi_session'
-LOGIN_COOKIE='__Host-magi_login'
+COOKIE='__Host-session'
+LOGIN_COOKIE='__Host-login'
 
 
 def install(app, client):
-    public=app.config['MAGI_PUBLIC_MODE']
-    origin=app.config['MAGI_PUBLIC_ORIGIN']
-    local_login=app.config['MAGI_LOCAL_LOGIN']
+    public=app.config['PUBLIC_MODE']
+    origin=app.config['PUBLIC_ORIGIN']
+    local_login=app.config['LOCAL_LOGIN']
     secure=not local_login
-    cookie='magi_local_session' if local_login else COOKIE
-    login_cookie='magi_local_login' if local_login else LOGIN_COOKIE
-    app.config['MAGI_SESSION_COOKIE']=cookie
+    cookie='local_session' if local_login else COOKIE
+    login_cookie='local_login' if local_login else LOGIN_COOKIE
+    app.config['SESSION_COOKIE']=cookie
     windows={}
     rate_lock=threading.Lock()
     salt=secrets.token_bytes(32)
     if public and (origin or local_login):
         origin=login_origin(origin,local_login)
-        app.config['MAGI_PUBLIC_ORIGIN']=origin
+        app.config['PUBLIC_ORIGIN']=origin
         parsed=urlsplit(origin)
         app.config['TRUSTED_HOSTS']=[parsed.hostname]
         if local_login:
             app.config['TRUSTED_HOSTS']=['localhost','127.0.0.1','[::1]']
-    if local_login and app.config['MAGI_PROXY_HOPS']:
+    if local_login and app.config['PROXY_HOPS']:
         raise ValueError('로컬 로그인은 프록시 없이 loopback에서만 사용하세요.')
 
     @app.before_request
@@ -67,7 +67,7 @@ def install(app, client):
         if request.path.startswith(('/api/','/ws/')):
             try:
                 g.actor=client().call('auth.me')
-            except MagiClientError as exc:
+            except ClientError as exc:
                 return jsonify(error=str(exc),request_id=g.request_id),exc.status
             if request.path.startswith(('/api/admin/','/api/cleanup/')) and g.actor['role']!='admin':
                 abort(403)
@@ -99,10 +99,10 @@ def install(app, client):
         if not public:
             return jsonify(public=False,login_available=False)
         if not origin:
-            return jsonify(error='게이트웨이에 MAGI_PUBLIC_ORIGIN(공개 HTTPS 주소)이 설정되지 않았습니다.',request_id=g.request_id),503
+            return jsonify(error='게이트웨이에 PUBLIC_ORIGIN(공개 HTTPS 주소)이 설정되지 않았습니다.',request_id=g.request_id),503
         try:
             return jsonify(client().call('auth.info'))
-        except MagiClientError as exc:
+        except ClientError as exc:
             return jsonify(error=str(exc),request_id=g.request_id),exc.status
 
     @app.get('/auth/google/start')
@@ -114,7 +114,7 @@ def install(app, client):
             response=redirect(payload['url'])
             response.set_cookie(login_cookie,payload['browser'],max_age=300,secure=secure,httponly=True,samesite='Lax',path='/')
             return response
-        except MagiClientError as exc:
+        except ClientError as exc:
             return jsonify(error=str(exc),request_id=g.request_id),exc.status
 
     @app.get('/auth/google/callback')
@@ -126,7 +126,7 @@ def install(app, client):
                                                   'browser':request.cookies.get(login_cookie)})
             response=redirect('/')
             response.set_cookie(cookie,payload['session'],max_age=86400,secure=secure,httponly=True,samesite='Lax',path='/')
-        except MagiClientError as exc:
+        except ClientError as exc:
             response=jsonify(error=str(exc),request_id=g.request_id)
             response.status_code=exc.status
         response.delete_cookie(login_cookie,secure=secure,httponly=True,samesite='Lax',path='/')
@@ -135,7 +135,7 @@ def install(app, client):
     def relay(method,params=None):
         try:
             return jsonify(client().call(method,params or {}))
-        except MagiClientError as exc:
+        except ClientError as exc:
             return jsonify(error=str(exc),request_id=g.request_id),exc.status
 
     @app.get('/admin')
@@ -147,7 +147,7 @@ def install(app, client):
             abort(404)
         try:
             actor=client().call('auth.me')
-        except MagiClientError as exc:
+        except ClientError as exc:
             if exc.status==401:
                 page = app.make_response(render_frontend())
                 page.status_code = 401

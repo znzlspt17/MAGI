@@ -25,7 +25,12 @@ def file_digest(path):
 def verify_prepared_model(root):
     """고정 공개 파일명만 검증해 manifest로 임의 경로를 읽지 못하게 한다."""
     root = Path(root)
-    metadata = root / 'magi_model_revision.json'
+    from backend.knowledge.format_guard import PENDING_FILE
+    if (root / PENDING_FILE).exists():
+        raise ValueError('모델 파일 전환이 완료되지 않았습니다. 전환 명령을 재실행하세요.')
+    if (root / 'magi_model_revision.json').exists():
+        raise ValueError('이전 모델 revision 파일이 있습니다. 먼저 접두사 전환 명령을 실행하세요.')
+    metadata = root / 'model_revision.json'
     if metadata.is_symlink():
         raise ValueError('모델 revision 기록은 일반 파일이어야 합니다.')
     try:
@@ -73,7 +78,7 @@ def prepare(destination, revision=None):
             if path.is_symlink():
                 raise RuntimeError("모델 준비 결과는 일반 파일이어야 합니다.")
             files[path.relative_to(root).as_posix()] = file_digest(path)
-    (root / "magi_model_revision.json").write_text(json.dumps({"model": "BAAI/bge-m3", "revision": revision,
+    (root / "model_revision.json").write_text(json.dumps({"model": "BAAI/bge-m3", "revision": revision,
                                                             "sha256": files}, indent=2), encoding="utf-8")
     return root
 

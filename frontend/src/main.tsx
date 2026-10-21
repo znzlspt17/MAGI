@@ -1,3 +1,4 @@
+import { migrateSessionKeys } from "./storage-migration";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
@@ -9,6 +10,8 @@ import "./styles.css";
 import "./workspace-design.css";
 import "./chat-design.css";
 import { Licenses } from "./Licenses";
+try { migrateSessionKeys(window.sessionStorage); } catch { /* 저장소 사용 불가 시 이전 초안 보존 */ }
+
 export function Privacy() {
   return (
     <main className="privacy">

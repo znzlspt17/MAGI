@@ -29,13 +29,13 @@ class AccessStore:
         hashed = hmac.new(pepper.encode(), ('google\0' + subject).encode(), hashlib.sha256).hexdigest()
         sid, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
         with self.store.transaction() as c:
-            c.execute('INSERT INTO magi_users(id,subject_hash) VALUES (%s,%s) ON CONFLICT(subject_hash) DO NOTHING', (uuid4().hex, hashed))
-            user = c.execute('SELECT * FROM magi_users WHERE subject_hash=%s', (hashed,)).fetchone()
+            c.execute('INSERT INTO users(id,subject_hash) VALUES (%s,%s) ON CONFLICT(subject_hash) DO NOTHING', (uuid4().hex, hashed))
+            user = c.execute('SELECT * FROM users WHERE subject_hash=%s', (hashed,)).fetchone()
             if user['suspended']:
                 raise AccessError('이 계정은 이용할 수 없습니다.')
             if previous:
-                c.execute('UPDATE magi_sessions SET revoked=true WHERE hash=%s', (digest(previous),))
-            c.execute('INSERT INTO magi_sessions(hash,user_id,csrf,expires_at) VALUES (%s,%s,%s,%s)',
+                c.execute('UPDATE sessions SET revoked=true WHERE hash=%s', (digest(previous),))
+            c.execute('INSERT INTO sessions(hash,user_id,csrf,expires_at) VALUES (%s,%s,%s,%s)',
                       (digest(sid), user['id'], csrf, self.clock() + 86400))
         return sid
 
@@ -43,7 +43,7 @@ class AccessStore:
         if not isinstance(sid, str) or not 20 <= len(sid) <= 200:
             raise AccessError('로그인이 필요합니다.', 'unauthorized')
         with self.store.transaction(mode='read') as c:
-            row = c.execute('SELECT u.*,s.csrf,s.expires_at FROM magi_sessions s JOIN magi_users u ON u.id=s.user_id '
+            row = c.execute('SELECT u.*,s.csrf,s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id '
                             'WHERE s.hash=%s AND NOT s.revoked AND NOT u.suspended AND s.expires_at>%s',
                             (digest(sid), self.clock())).fetchone()
         if not row:
@@ -52,11 +52,11 @@ class AccessStore:
 
     def logout(self, sid):
         with self.store.transaction() as c:
-            c.execute('UPDATE magi_sessions SET revoked=true WHERE hash=%s', (digest(sid),))
+            c.execute('UPDATE sessions SET revoked=true WHERE hash=%s', (digest(sid),))
 
     def session_for_worker(self, uid):
         with self.store.transaction(mode='read') as c:
-            row = c.execute('SELECT id,role,suspended FROM magi_users WHERE id=%s',(uid,)).fetchone()
+            row = c.execute('SELECT id,role,suspended FROM users WHERE id=%s',(uid,)).fetchone()
         if not row:
             raise AccessError('작업 소유자를 확인할 수 없습니다.', 'unauthorized')
         return dict(row)
@@ -64,9 +64,9 @@ class AccessStore:
     def throttle(self, uid):
         with self.store.transaction() as c:
             minute=int(self.clock()//60)
-            c.execute('DELETE FROM magi_request_windows WHERE minute<%s',(minute-1,))
-            row=c.execute('INSERT INTO magi_request_windows(identity,minute,calls) VALUES (%s,%s,1) '
-                          'ON CONFLICT(identity) DO UPDATE SET minute=EXCLUDED.minute,calls=CASE WHEN magi_request_windows.minute=EXCLUDED.minute THEN magi_request_windows.calls+1 ELSE 1 END RETURNING calls',
+            c.execute('DELETE FROM request_windows WHERE minute<%s',(minute-1,))
+            row=c.execute('INSERT INTO request_windows(identity,minute,calls) VALUES (%s,%s,1) '
+                          'ON CONFLICT(identity) DO UPDATE SET minute=EXCLUDED.minute,calls=CASE WHEN request_windows.minute=EXCLUDED.minute THEN request_windows.calls+1 ELSE 1 END RETURNING calls',
                           (uid,minute)).fetchone()
             calls=row['calls']
         if calls>180:
@@ -75,8 +75,8 @@ class AccessStore:
     def begin_login(self):
         state, browser, nonce, verifier = (secrets.token_urlsafe(32) for _ in range(4))
         with self.store.transaction() as c:
-            c.execute('DELETE FROM magi_login_states WHERE expires_at<%s', (self.clock(),))
-            c.execute('INSERT INTO magi_login_states VALUES (%s,%s,%s,%s,%s)',
+            c.execute('DELETE FROM login_states WHERE expires_at<%s', (self.clock(),))
+            c.execute('INSERT INTO login_states VALUES (%s,%s,%s,%s,%s)',
                       (digest(state), digest(browser), nonce, verifier, self.clock() + 300))
         return state, browser, nonce, verifier
 
@@ -84,14 +84,14 @@ class AccessStore:
         if not state or not browser:
             raise AccessError('로그인 요청이 만료되었습니다.', 'unauthorized')
         with self.store.transaction() as c:
-            row = c.execute('DELETE FROM magi_login_states WHERE hash=%s AND browser_hash=%s AND expires_at>%s RETURNING nonce,verifier',
+            row = c.execute('DELETE FROM login_states WHERE hash=%s AND browser_hash=%s AND expires_at>%s RETURNING nonce,verifier',
                             (digest(state), digest(browser), self.clock())).fetchone()
         if not row:
             raise AccessError('로그인 요청이 만료되었습니다.', 'unauthorized')
         return row
 
     def lease(self, c):
-        row = dict(c.execute('SELECT * FROM magi_service_lease WHERE singleton=1 FOR UPDATE').fetchone())
+        row = dict(c.execute('SELECT * FROM service_lease WHERE singleton=1 FOR UPDATE').fetchone())
         if row['phase'] == 'waiting' and row['deadline'] <= self.clock():
             self.clear(c)
             row.update(owner_id=None, job_id=None, phase='idle', deadline=None)
@@ -99,13 +99,13 @@ class AccessStore:
 
     @staticmethod
     def clear(c):
-        c.execute("UPDATE magi_service_lease SET owner_id=NULL,job_id=NULL,phase='idle',deadline=NULL,stopping=false WHERE singleton=1")
+        c.execute("UPDATE service_lease SET owner_id=NULL,job_id=NULL,phase='idle',deadline=NULL,stopping=false WHERE singleton=1")
 
     def acquire(self, c, uid, jid, *, count=False, initial=Decimal('0')):
         lease = self.lease(c)
         if lease['phase'] != 'idle' and (lease['owner_id'] != uid or lease['job_id'] != jid or lease['phase'] != 'waiting'):
             raise AccessError('다른 작업이 사용 중입니다. 잠시 후 다시 시도하세요.', 'busy')
-        user = c.execute('SELECT * FROM magi_users WHERE id=%s AND NOT suspended', (uid,)).fetchone()
+        user = c.execute('SELECT * FROM users WHERE id=%s AND NOT suspended', (uid,)).fetchone()
         if not user:
             raise AccessError('이 계정은 이용할 수 없습니다.', 'unauthorized')
         day = day_at(self.clock())
@@ -114,20 +114,20 @@ class AccessStore:
             raise AccessError('오늘 실행 횟수를 모두 사용했습니다.', 'quota')
         self.check_money(c, uid, initial, day)
         if count:
-            c.execute('UPDATE magi_daily_usage SET runs=runs+1 WHERE day=%s AND user_id=%s', (day, uid))
-        c.execute("UPDATE magi_service_lease SET owner_id=%s,job_id=%s,phase='running',deadline=NULL,stopping=false,generation=generation+1 WHERE singleton=1",
+            c.execute('UPDATE daily_usage SET runs=runs+1 WHERE day=%s AND user_id=%s', (day, uid))
+        c.execute("UPDATE service_lease SET owner_id=%s,job_id=%s,phase='running',deadline=NULL,stopping=false,generation=generation+1 WHERE singleton=1",
                   (uid, jid))
-        return c.execute('SELECT generation FROM magi_service_lease WHERE singleton=1').fetchone()['generation']
+        return c.execute('SELECT generation FROM service_lease WHERE singleton=1').fetchone()['generation']
 
     def _usage(self, c, day, uid):
-        c.execute('INSERT INTO magi_daily_usage(day,user_id) VALUES (%s,%s) ON CONFLICT DO NOTHING', (day, uid))
-        return c.execute('SELECT * FROM magi_daily_usage WHERE day=%s AND user_id=%s FOR UPDATE', (day, uid)).fetchone()
+        c.execute('INSERT INTO daily_usage(day,user_id) VALUES (%s,%s) ON CONFLICT DO NOTHING', (day, uid))
+        return c.execute('SELECT * FROM daily_usage WHERE day=%s AND user_id=%s FOR UPDATE', (day, uid)).fetchone()
 
     def check_money(self, c, uid, amount, day):
-        user = c.execute('SELECT daily_usd FROM magi_users WHERE id=%s', (uid,)).fetchone()
+        user = c.execute('SELECT daily_usd FROM users WHERE id=%s', (uid,)).fetchone()
         usage = self._usage(c, day, uid)
-        total = c.execute('SELECT COALESCE(sum(spent+reserved),0) AS amount FROM magi_daily_usage WHERE day=%s', (day,)).fetchone()['amount']
-        cap = c.execute('SELECT daily_usd FROM magi_service_settings WHERE singleton=1').fetchone()['daily_usd']
+        total = c.execute('SELECT COALESCE(sum(spent+reserved),0) AS amount FROM daily_usage WHERE day=%s', (day,)).fetchone()['amount']
+        cap = c.execute('SELECT daily_usd FROM service_settings WHERE singleton=1').fetchone()['daily_usd']
         if Decimal(str(usage['spent'])) + Decimal(str(usage['reserved'])) + amount > Decimal(str(user['daily_usd'])) or Decimal(str(total)) + amount > Decimal(str(cap)):
             raise AccessError('오늘 API 비용 한도에 도달했습니다.', 'quota')
 
@@ -136,13 +136,13 @@ class AccessStore:
             lease = self.lease(c)
             if lease['owner_id'] != uid or lease['job_id'] != jid or lease['generation'] != generation or lease['phase'] != 'running' or lease['stopping']:
                 raise AccessError('작업 사용권이 종료되었습니다.', 'busy')
-            if not c.execute('SELECT id FROM magi_users WHERE id=%s AND NOT suspended',(uid,)).fetchone():
+            if not c.execute('SELECT id FROM users WHERE id=%s AND NOT suspended',(uid,)).fetchone():
                 raise AccessError('이 계정은 이용할 수 없습니다.')
             day = day_at(self.clock())
             self.check_money(c, uid, amount, day)
             ident = uuid4().hex
-            c.execute('UPDATE magi_daily_usage SET reserved=reserved+%s WHERE day=%s AND user_id=%s', (amount, day, uid))
-            c.execute('INSERT INTO magi_cost_calls(id,day,user_id,job_id,model,reserved,reserved_at) VALUES (%s,%s,%s,%s,%s,%s,to_timestamp(%s))',
+            c.execute('UPDATE daily_usage SET reserved=reserved+%s WHERE day=%s AND user_id=%s', (amount, day, uid))
+            c.execute('INSERT INTO cost_calls(id,day,user_id,job_id,model,reserved,reserved_at) VALUES (%s,%s,%s,%s,%s,%s,to_timestamp(%s))',
                       (ident, day, uid, jid, model, amount, self.clock()))
         return ident
 
@@ -151,12 +151,12 @@ class AccessStore:
             lease=self.lease(c)
             if lease['owner_id']!=uid or lease['job_id']!=jid or lease['generation']!=generation or lease['phase']!='running' or lease['stopping']:
                 raise AccessError('작업 사용권이 종료되었습니다.', 'busy')
-            if not c.execute('SELECT id FROM magi_users WHERE id=%s AND NOT suspended',(uid,)).fetchone():
+            if not c.execute('SELECT id FROM users WHERE id=%s AND NOT suspended',(uid,)).fetchone():
                 raise AccessError('이 계정은 이용할 수 없습니다.')
 
     def mark_called(self, ident):
         with self.store.transaction() as c:
-            c.execute('UPDATE magi_cost_calls SET called_at=COALESCE(called_at,to_timestamp(%s)) WHERE id=%s',
+            c.execute('UPDATE cost_calls SET called_at=COALESCE(called_at,to_timestamp(%s)) WHERE id=%s',
                       (self.clock(),ident))
 
     def record_tokens(self, ident, incoming, outgoing, cached):
@@ -165,23 +165,23 @@ class AccessStore:
         outgoing = outgoing if type(outgoing) is int and outgoing >= 0 else None
         cached = cached if type(cached) is int and incoming is not None and 0 <= cached <= incoming else None
         with self.store.transaction() as c:
-            c.execute('UPDATE magi_cost_calls SET input_tokens=%s,output_tokens=%s,cached_tokens=%s WHERE id=%s',
+            c.execute('UPDATE cost_calls SET input_tokens=%s,output_tokens=%s,cached_tokens=%s WHERE id=%s',
                       (incoming,outgoing,cached,ident))
 
     def settle(self, ident, actual=None, *, source='calculated'):
         with self.store.transaction() as c:
-            row = c.execute('SELECT * FROM magi_cost_calls WHERE id=%s FOR UPDATE', (ident,)).fetchone()
+            row = c.execute('SELECT * FROM cost_calls WHERE id=%s FOR UPDATE', (ident,)).fetchone()
             if not row or row['state'] == 'settled':
                 return
             if actual is None:
-                c.execute("UPDATE magi_cost_calls SET state='uncertain' WHERE id=%s", (ident,))
+                c.execute("UPDATE cost_calls SET state='uncertain' WHERE id=%s", (ident,))
                 return
             if actual < 0 or actual > Decimal(str(row['reserved'])):
-                c.execute("UPDATE magi_cost_calls SET state='uncertain' WHERE id=%s", (ident,))
+                c.execute("UPDATE cost_calls SET state='uncertain' WHERE id=%s", (ident,))
                 raise AccessError('비용 산정을 확인해야 합니다.', 'unavailable')
-            c.execute('UPDATE magi_daily_usage SET reserved=reserved-%s,spent=spent+%s WHERE day=%s AND user_id=%s',
+            c.execute('UPDATE daily_usage SET reserved=reserved-%s,spent=spent+%s WHERE day=%s AND user_id=%s',
                       (row['reserved'], actual, row['day'], row['user_id']))
-            c.execute("UPDATE magi_cost_calls SET actual=%s,state='settled',settled_at=to_timestamp(%s),settlement_source=%s WHERE id=%s",
+            c.execute("UPDATE cost_calls SET actual=%s,state='settled',settled_at=to_timestamp(%s),settlement_source=%s WHERE id=%s",
                       (actual,self.clock(),source,ident))
 
     def finish(self, jid, generation, waiting=False):
@@ -189,12 +189,12 @@ class AccessStore:
             row = self.lease(c)
             if row['job_id'] != jid or row['generation'] != generation:
                 return
-            uncertain=c.execute("SELECT 1 FROM magi_cost_calls WHERE job_id=%s AND state='uncertain' LIMIT 1",(jid,)).fetchone()
+            uncertain=c.execute("SELECT 1 FROM cost_calls WHERE job_id=%s AND state='uncertain' LIMIT 1",(jid,)).fetchone()
             if uncertain:
-                c.execute("UPDATE magi_service_lease SET phase='recovery',deadline=NULL WHERE singleton=1")
+                c.execute("UPDATE service_lease SET phase='recovery',deadline=NULL WHERE singleton=1")
                 return
             if waiting and not row['stopping']:
-                c.execute("UPDATE magi_service_lease SET phase='waiting',deadline=%s WHERE singleton=1", (self.clock()+180,))
+                c.execute("UPDATE service_lease SET phase='waiting',deadline=%s WHERE singleton=1", (self.clock()+180,))
             else:
                 self.clear(c)
 
@@ -208,7 +208,7 @@ class AccessStore:
     def usage(self, uid):
         with self.store.transaction() as c:
             row = self._usage(c, day_at(self.clock()), uid)
-            user = c.execute('SELECT daily_runs,daily_usd FROM magi_users WHERE id=%s', (uid,)).fetchone()
+            user = c.execute('SELECT daily_runs,daily_usd FROM users WHERE id=%s', (uid,)).fetchone()
             return {'runs': row['runs'], 'remaining_runs': max(0,user['daily_runs']-row['runs']),
                     'limit_reached': Decimal(str(row['spent']))+Decimal(str(row['reserved'])) >= Decimal(str(user['daily_usd'])),
                     'resets_at': (datetime.fromtimestamp(self.clock(), timezone(timedelta(hours=9))).replace(hour=0,minute=0,second=0,microsecond=0)+timedelta(days=1)).isoformat()}

@@ -32,3 +32,5 @@ it("통합 목록의 사용자 필터와 작업 ID 직접 조회를 연결한다
   await screen.findByText("조회된 작업이 없습니다");
   expect(vi.mocked(api).mock.calls.some(([path]) => path.includes("user_jobs"))).toBe(false);
 }, 15000);
+// 이 검사는 관리자 동작을 검증하므로 lazy 모듈 변환은 수집 단계에 끝낸다.
+import './JobData';

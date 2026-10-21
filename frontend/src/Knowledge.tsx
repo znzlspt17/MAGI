@@ -178,8 +178,8 @@ export default function Knowledge({
       invalidate();
       setRefresh((r) => r + 1);
     };
-    window.addEventListener("magi:cleanup", cleanup);
-    return () => window.removeEventListener("magi:cleanup", cleanup);
+    window.addEventListener("cleanup", cleanup);
+    return () => window.removeEventListener("cleanup", cleanup);
   }, []);
   useEffect(() => {
     const ticket = ++generation.current;

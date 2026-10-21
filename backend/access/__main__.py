@@ -23,20 +23,20 @@ def main():
         runtime.acquire()
         with store.transaction() as c:
             if args.action=='users':
-                for row in c.execute('SELECT id,role,suspended FROM magi_users ORDER BY id').fetchall():
+                for row in c.execute('SELECT id,role,suspended FROM users ORDER BY id').fetchall():
                     print(row['id'],row['role'],row['suspended'])
             elif args.action=='make-admin':
-                if not args.user_id or not c.execute('SELECT id FROM magi_users WHERE id=%s',(args.user_id,)).fetchone():
+                if not args.user_id or not c.execute('SELECT id FROM users WHERE id=%s',(args.user_id,)).fetchone():
                     parser.error('기존 사용자 ID를 지정하세요.')
-                c.execute("UPDATE magi_users SET role='admin' WHERE id=%s",(args.user_id,))
-                c.execute('UPDATE magi_sessions SET revoked=true WHERE user_id=%s',(args.user_id,))
-                c.execute("INSERT INTO magi_admin_audit(id,actor_id,action,target_id) VALUES (%s,'operator','make-admin',%s)",(uuid4().hex,args.user_id))
+                c.execute("UPDATE users SET role='admin' WHERE id=%s",(args.user_id,))
+                c.execute('UPDATE sessions SET revoked=true WHERE user_id=%s',(args.user_id,))
+                c.execute("INSERT INTO admin_audit(id,actor_id,action,target_id) VALUES (%s,'operator','make-admin',%s)",(uuid4().hex,args.user_id))
             else:
                 if not args.confirm_stopped:
                     parser.error('이전 실행과 외부 호출의 종료를 확인한 뒤 --confirm-stopped를 지정하세요.')
-                c.execute("UPDATE magi_cost_calls SET state='uncertain' WHERE state='reserved'")
+                c.execute("UPDATE cost_calls SET state='uncertain' WHERE state='reserved'")
                 AccessStore.clear(c)
-                c.execute("INSERT INTO magi_admin_audit(id,actor_id,action) VALUES (%s,'operator','recover')",(uuid4().hex,))
+                c.execute("INSERT INTO admin_audit(id,actor_id,action) VALUES (%s,'operator','recover')",(uuid4().hex,))
     finally:
         runtime.close()
 

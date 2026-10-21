@@ -6,7 +6,7 @@ import json
 import re
 from typing import Any
 
-from backend.config import MagiConfig
+from backend.config import Config
 from backend.errors import SpecCompilationError
 from backend.infrastructure.stage_retry import CURRENT_RETRY, attempt_limit
 from backend.infrastructure.output_language import OutputLanguageError
@@ -64,7 +64,7 @@ class SpecCompiler:
     def __init__(
         self,
         *,
-        config: MagiConfig,
+        config: Config,
         provider: OpenAIProvider,
         skills: SkillRegistry,
         evidence: EvidenceRegistry,

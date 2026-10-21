@@ -4,7 +4,7 @@
     https_port 443
 }
 
-{$MAGI_PUBLIC_ORIGIN} {
+{$PUBLIC_ORIGIN} {
     # 접근 로그를 켜지 않는다. OAuth code·state·쿠키를 기록하지 않는다.
     @internal path /health /health/*
     respond @internal 404

@@ -12,9 +12,9 @@ from backend.knowledge.config import KnowledgeError
 from backend.knowledge.embedding import LocalEmbedding
 
 
-CURRENT = ContextVar("magi_knowledge_runtime", default=None)
+CURRENT = ContextVar("knowledge_runtime", default=None)
 ARTIFACT_PATHS = (
-    "raw/user_request.md", "raw/web_feedback.md", "raw/revision_feedback.md", "state/magi_state.json",
+    "raw/user_request.md", "raw/web_feedback.md", "raw/revision_feedback.md", "state/state.json",
     "state/execution_history.json", "state/provider_usage.json",
     "state/conversation_state.json", "state/prompt_references.json",
     "state/private_model_assignments.json",
@@ -86,8 +86,8 @@ def restore_artifacts(root, artifacts, *, reconcile=False):
                 pass
 
     artifacts = dict(artifacts)
-    if "state/magi_state.json" in artifacts:
-        state = json.loads(artifacts["state/magi_state.json"])
+    if "state/state.json" in artifacts:
+        state = json.loads(artifacts["state/state.json"])
         if state.get("run_id") or "output_dir" in state:
             state["output_dir"] = str(writer.output_dir)
         internal = {"approval_candidate_spec": "draft/approval_candidate_spec.en.md", "final_agent_spec": "final/FINAL_AGENT_SPEC.md",
@@ -96,7 +96,7 @@ def restore_artifacts(root, artifacts, *, reconcile=False):
         for field, relative in internal.items():
             if state.get(field):
                 state[field] = str(writer.path(relative))
-        artifacts["state/magi_state.json"] = json.dumps(state, ensure_ascii=False)
+        artifacts["state/state.json"] = json.dumps(state, ensure_ascii=False)
     if reconcile:
         from backend.knowledge.projection import digest
         # 커밋되지 않은 내보내기는 별도로 보존한 뒤 캐시에서 분리한다.
@@ -122,7 +122,7 @@ class KnowledgeService:
     def __init__(self, store, embedder=None):
         self.store = store
         self.embedder = embedder or LocalEmbedding(store.config.model_path, store.config.device)
-        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="magi-embedding")
+        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="embedding")
         self.lock = threading.Lock()
         self.future = None
         self.running = False
@@ -266,7 +266,7 @@ class RunKnowledge:
         self.root = root
         self.retrieved = {"nodes": [], "edges": [], "mode": "text"}
         artifacts = read_artifacts(root)
-        state = json.loads(artifacts.get("state/magi_state.json", "{}"))
+        state = json.loads(artifacts.get("state/state.json", "{}"))
         self.initial_sources = dict(state.get("confirmed_user_sources", {}))
         if state.get("revision_feedback"):
             self.initial_sources["user_feedback"] = state["revision_feedback"]
@@ -310,12 +310,12 @@ class RunKnowledge:
         artifacts = read_artifacts(self.root)
         # 파일 이력이 누락되어도 접수 트랜잭션의 사용자 원문을 기준으로 판별한다.
         merged["confirmed_user_sources"] = self.confirmed_sources(merged)
-        if "state/magi_state.json" in artifacts:
-            disk_state = json.loads(artifacts["state/magi_state.json"])
+        if "state/state.json" in artifacts:
+            disk_state = json.loads(artifacts["state/state.json"])
             merged = {**disk_state, **merged}
         # 복원 시 파일과 DB가 서로 다른 단계의 상태를 가리키지 않게 한다.
         if merged.get("run_id"):
-            artifacts["state/magi_state.json"] = json.dumps(merged, ensure_ascii=False)
+            artifacts["state/state.json"] = json.dumps(merged, ensure_ascii=False)
         if stage == "state" and merged.get("status") == "FINALIZED" and self.job.get("action") == "approve":
             stage = "approve"
         buffered = None

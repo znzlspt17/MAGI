@@ -30,7 +30,7 @@ FROM ${PYTHON_IMAGE} AS runtime
 RUN apt-get update && apt-get install --yes --no-install-recommends ca-certificates libgomp1 && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
-    MAGI_CONTAINER=1 FLASK_SKIP_DOTENV=1 HOME=/tmp \
+    CONTAINER=1 FLASK_SKIP_DOTENV=1 HOME=/tmp \
     HF_HOME=/tmp/huggingface HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HF_HUB_DISABLE_TELEMETRY=1 \
     TOKENIZERS_PARALLELISM=false OMP_NUM_THREADS=2 MKL_NUM_THREADS=2
 USER 10001:10001

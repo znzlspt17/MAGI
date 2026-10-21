@@ -1,162 +1,192 @@
 # MAGI 공개 서비스 운영
 
-Google 로그인, PostgreSQL, HTTPS 게이트웨이를 사용하는 공개 서비스의 설정·배포·관리 절차입니다. 개인 개발용 실행 방법과 기본 사용법은 [README](../README.md)를 참고하세요.
+Google 로그인과 PostgreSQL을 사용하는 MAGI 서비스의 설정, 배포, 관리자 기능과 데이터 관리 방법을 설명합니다. 개인용 로컬 실행은 [README](../README.md#설치와-빠른-시작), 화면 사용법은 [사용자 가이드](USER_GUIDE.ko.md)를 참고하세요.
 
 ## 서비스 구성
 
 ```text
-브라우저 → HTTPS 리버스 프록시 → Flask 게이트웨이 → 단일 백엔드 → PostgreSQL
+브라우저 → HTTPS 리버스 프록시 → Flask 게이트웨이 → 백엔드 → PostgreSQL
 ```
 
-게이트웨이와 백엔드는 같은 호스트에서 실행합니다. 게이트웨이는 `127.0.0.1:5000`, 백엔드는 `127.0.0.1:8765`를 사용하며, 외부 요청은 HTTPS 리버스 프록시를 통해서만 받습니다. 백엔드는 하나만 실행합니다.
+게이트웨이는 `127.0.0.1:5000`, 백엔드는 `127.0.0.1:8765`를 사용합니다. 게이트웨이는 loopback WebSocket으로 백엔드와 통신하며, 모델 호출과 작업 저장은 백엔드가 담당합니다. 공개 백엔드는 하나만 실행합니다.
 
-## 실행 환경 설정
+소스에서 직접 설치할 때는 화면을 미리 빌드해야 합니다. 제공되는 컨테이너 이미지에는 빌드된 화면이 포함됩니다.
 
-설정은 해당 프로세스의 실행 환경에 주입합니다. 실제 인증값은 저장소나 명령 예제에 넣지 않습니다.
+## 환경 변수
 
-| 설정 | 적용 대상 | 용도 |
+| 변수 | 적용 대상 | 값과 용도 |
 |---|---|---|
 | `OPENAI_API_KEY` | 백엔드 | 명세 생성·검토·번역에 사용할 API 키 |
-| `MAGI_PUBLIC_MODE` | 양쪽 | 공개 모드. 기본 `1` |
-| `MAGI_PUBLIC_ORIGIN` | 양쪽 | 경로·끝 슬래시 없는 공개 HTTPS origin |
-| `MAGI_PROXY_HOPS` | 게이트웨이 | 신뢰할 프록시 수. 프록시가 1개면 `1`, 직접 연결이면 `0` |
+| `PUBLIC_MODE` | 양쪽 | 기본 `1`. 인증 없는 개인용 로컬 모드는 `0` |
+| `LOCAL_LOGIN` | 양쪽 | 기본 `0`. localhost Google 로그인은 `1` |
+| `PUBLIC_ORIGIN` | 양쪽 | 경로·끝 슬래시 없는 공개 HTTPS origin |
+| `PROXY_HOPS` | 게이트웨이 | 기본 `0`. 신뢰할 프록시 수 |
+| `SERVER_URL` | 게이트웨이 | 기본 `ws://127.0.0.1:8765` |
 | `GOOGLE_OAUTH_ID`, `GOOGLE_OAUTH_SECRET` | 백엔드 | Google OAuth 웹 클라이언트 설정 |
-| `MAGI_SUBJECT_PEPPER` | 백엔드 | 계정 식별자 처리용 비밀값. 기존 계정 연결을 유지하려면 변경하지 않음 |
-| `MAGI_INTERNAL_KEY` | 양쪽 | 선택 설정. 사용할 경우 양쪽에 같은 값을 지정 |
-| `MAGI_DB_HOST`, `MAGI_DB_NAME`, `MAGI_DB_USER`, `MAGI_DB_PASSWORD` | 백엔드 | PostgreSQL 접속 정보 |
-| `MAGI_DB_PORT`, `MAGI_DB_SSLMODE` | 백엔드 | 기본값은 각각 `5432`, `prefer`. TLS 없는 로컬 DB는 `disable` |
-| `MAGI_DATA_DIR` | 백엔드 | 작업 파일 저장 위치. 기본값은 실행 폴더의 `magi_web_data` |
-| `MAGI_EMBEDDING_MODEL_PATH` | 백엔드 | 로컬 BGE-M3 모델 폴더. 모델 준비 방법은 README 참고 |
-| `MAGI_EMBEDDING_DEVICE` | 백엔드 | 로컬 임베딩 장치. `cpu` 사용 |
+| `SUBJECT_PEPPER` | 백엔드 | 계정 식별자 처리용 비밀값. 기존 계정 연결을 위해 같은 값을 유지 |
+| `INTERNAL_KEY` | 양쪽 | 내부 통신 인증 키. 사용할 경우 양쪽에 같은 값 지정. 제공 컨테이너 구성에서는 필수 |
+| `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | 백엔드 | PostgreSQL 접속 설정 |
+| `DB_PORT` | 백엔드 | 기본 `5432` |
+| `DB_SSLMODE` | 백엔드 | 기본 `prefer`. TLS 없는 DB는 `disable` |
+| `DATA_DIR` | 백엔드 | 기본값은 현재 작업 폴더의 `web_data` |
+| `EMBEDDING_MODEL_PATH` | 백엔드 | 준비된 로컬 BGE-M3 모델 폴더 |
+| `EMBEDDING_DEVICE` | 백엔드 | `cpu` |
+| `CONTAINER` | 양쪽 | 제공 이미지가 `1`로 설정하는 컨테이너 실행 표시 |
 
-### PostgreSQL 준비
+### 설정 적용 방식
 
-MAGI 전용 DB에 `vector` 확장을 활성화하고 전용 서비스 계정을 사용합니다. 서비스 계정에는 DB 접속, 스키마 사용·생성, MAGI 테이블·시퀀스 접근과 스키마 변경에 필요한 권한이 있어야 합니다. 마이그레이션은 백엔드 시작 시 적용됩니다.
+- **PC·서버 직접 실행:** 백엔드 실행 프로그램은 현재 작업 폴더의 `.env`를 읽습니다. 기존 프로세스 환경변수가 파일보다 우선합니다.
+- **게이트웨이:** 앱에서 `.env`를 직접 읽지 않습니다. 게이트웨이 프로세스에도 필요한 환경변수를 주입합니다. 이 문서의 Flask 실행 예시는 CLI의 별도 dotenv 로딩을 끕니다.
+- **컨테이너:** 앱에서 `.env`를 읽지 않으며, Compose·Portainer가 주입한 환경을 사용합니다.
+- **관리 명령:** `backend.access`는 `.env`를 직접 읽지 않습니다. 해당 명령을 실행하는 프로세스에 DB 설정을 주입합니다.
 
-`SUPERUSER` 또는 `BYPASSRLS` 권한이 있는 계정으로는 공개 서비스를 시작할 수 없습니다. DB 권한 오류가 나면 공용 관리자 계정의 권한을 바꾸지 말고, `MAGI_DB_USER`에 지정한 전용 계정의 권한과 기존 MAGI 객체 소유권을 확인합니다.
+실제 인증값은 실행 환경에서 관리합니다. 모델은 `gpt-6-luna`로 고정되며 모델·가격을 선택하는 환경변수는 없습니다.
 
-### Google 로그인 설정
+## PostgreSQL과 모델 준비
 
-Google Cloud에서 웹 애플리케이션용 OAuth 클라이언트를 만들고, 승인된 리디렉션 URI에 다음 주소를 등록합니다.
+공개 모드에는 PostgreSQL과 pgvector가 필요합니다. 전용 DB에서 `vector` 확장을 활성화하고, DB 접속·스키마 사용·생성과 앱 객체의 조회·변경 권한이 있는 서비스 계정을 사용합니다. 서비스 계정은 `SUPERUSER`나 `BYPASSRLS` 권한을 가질 수 없습니다.
 
-```text
-<공개 origin>/auth/google/callback
-```
+신규 DB 스키마는 백엔드 시작 시 생성됩니다. 이미 DB 설정이 있으면 연결 오류 시 파일 저장소로 전환하지 않습니다.
 
-동의 화면과 앱 게시 상태를 설정합니다. 테스트 상태라면 로그인할 계정을 테스트 사용자로 등록합니다. 설정 후 백엔드를 재시작합니다.
-
-기존 `MAGI_GOOGLE_CLIENT_ID`·`MAGI_GOOGLE_CLIENT_SECRET` 설정은 새 OAuth 변수 둘 다 없을 때만 사용합니다. 새 변수와 기존 변수의 값을 섞지 않습니다.
-
-MAGI는 이름·이메일·사진을 계정 정보로 저장하지 않습니다. 사용자 확인과 관리자 지정에는 화면에 표시되는 내부 사용자 ID를 사용합니다.
-
-## ARM64 컨테이너와 Portainer
-
-기본 브랜치에서 GitHub Actions의 **Build Raspberry Pi release**를 수동 실행하면 ARM64 이미지가 GHCR에 게시됩니다. 모델 SHA 입력 없이 실행하며, 외부 모델은 이미지에 포함하지 않습니다. ARM64 smoke 검사와 수정 가능한 CRITICAL 취약점 검사를 통과한 이미지에 `latest`와 릴리스별 태그를 게시합니다.
-
-`deploy/compose.portainer.yaml`을 사용하는 Stack의 이미지 변수는 다음 주소로 한 번 설정합니다.
-
-```text
-MAGI_BACKEND_IMAGE=ghcr.io/znzlspt17/magi-backend:latest
-MAGI_GATEWAY_IMAGE=ghcr.io/znzlspt17/magi-gateway:latest
-MAGI_CADDY_IMAGE=ghcr.io/znzlspt17/magi-caddy:latest
-```
-
-모델 준비 도구는 기본적으로 최신 BGE-M3 revision을 확인해 다운로드하고 파일 해시와 실제 revision을 기록합니다. 재현이 필요할 때만 `--revision`을 지정합니다. 모델 폴더는 읽기 전용으로 마운트하며 시작 시 구성·파일 해시를 검증합니다. 모델 교체 때문에 이미지를 다시 빌드할 필요는 없지만, 서비스 재시작과 기존 모델 전환·색인 절차는 필요합니다.
-
-게시 성공 후 Portainer에서 Stack 전체를 **Update the stack → Re-pull image and redeploy → Update**로 갱신합니다. 실행 중인 작업을 마치고 DB·작업 파일을 백업한 유지보수 시점에 수행합니다. Caddy와 앱이 네트워크 공간을 공유하므로 개별 컨테이너 대신 Stack 전체를 갱신합니다. 이미 실행 중인 컨테이너는 `latest` 게시만으로 자동 갱신되지 않습니다.
-
-실행 요약에는 롤백용 릴리스 태그·digest가 표시됩니다. 롤백할 때는 세 이미지 변수를 같은 이전 릴리스의 주소로 변경합니다. 이미지 롤백은 DB 마이그레이션을 되돌리지 않으므로 이전 스키마와의 호환성을 확인해야 합니다. 여러 이미지의 `latest` 갱신은 원자적이지 않으므로 실패한 실행의 이미지는 배포하지 않습니다. tar 묶음은 제공하지 않으며, 비공개 GHCR 패키지는 Portainer에 레지스트리 읽기 권한을 설정해야 합니다.
-
-## 실행과 배포
-
-Linux 운영 환경에서 의존성을 설치하고 백엔드를 실행합니다.
+로컬 임베딩 모델은 다음 명령으로 준비합니다.
 
 ```sh
-uv sync --extra production
+uv sync --extra embedding
+uv run python -m backend.knowledge.prepare_model --output ./models/bge-m3
+```
+
+기본적으로 최신 BGE-M3 revision을 내려받고 실제 revision과 파일 해시를 `model_revision.json`에 기록합니다. 특정 버전을 재현하려면 `--revision <40자리-commit-SHA>`를 지정할 수 있습니다.
+
+준비된 폴더를 `EMBEDDING_MODEL_PATH`에 지정합니다. 서비스 시작 시 모델을 자동 다운로드하지 않습니다. 제공 컨테이너에서는 모델을 외부 폴더에서 읽기 전용으로 마운트합니다.
+
+## Google 로그인
+
+Google Cloud의 웹 애플리케이션용 OAuth 클라이언트에서 다음 리디렉션 URI를 등록합니다.
+
+```text
+https://<공개-도메인>/auth/google/callback
+```
+
+`PUBLIC_ORIGIN`은 `https://<공개-도메인>`으로 지정하고 `GOOGLE_OAUTH_ID`·`GOOGLE_OAUTH_SECRET`을 백엔드에 주입합니다. OAuth 동의 화면이 테스트 상태라면 로그인할 계정을 테스트 사용자로 등록해야 합니다.
+
+계정 연결에는 검증된 Google 식별자를 사용합니다. 이름·이메일·사진을 사용자 데이터로 저장하지 않으며, 관리자 지정에도 이메일 대신 MAGI의 내부 사용자 ID를 사용합니다.
+
+### localhost 로그인
+
+개인 PC에서 Google 로그인을 사용할 때는 `http://localhost:5000/auth/google/callback`을 OAuth 리디렉션 URI로 등록합니다. 양쪽 프로세스에 다음 설정을 적용합니다.
+
+```powershell
+$env:PUBLIC_MODE = '1'
+$env:LOCAL_LOGIN = '1'
+$env:PUBLIC_ORIGIN = 'http://localhost:5000'
+$env:PROXY_HOPS = '0'
+```
+
+이 구성에도 DB·OAuth·계정 식별자 설정이 필요합니다. 저장소 루트에서 백엔드를 실행합니다.
+
+```powershell
 uv run python -m backend.server
 ```
 
-로컬 임베딩을 사용하면 설치 시 `--extra embedding`도 지정하고 모델을 미리 준비합니다. 서비스 시작 시 모델을 자동 다운로드하지 않습니다.
-
-게이트웨이는 별도 프로세스로 실행합니다.
-
-```sh
-uv run gunicorn --workers 1 --threads 16 --bind 127.0.0.1:5000 "gateway.app:create_app()"
-```
-
-리버스 프록시는 TLS를 종료하고 원래 Host와 Origin을 유지해야 합니다. 실제 프록시 수와 `MAGI_PROXY_HOPS`를 일치시키고, 백엔드·게이트웨이 포트는 외부에서 직접 접근할 수 없게 합니다.
-
-WebSocket 연결과 문서 요청의 대기 시간도 프록시 설정에 반영합니다. 게이트웨이는 문서 응답을 최대 520초 기다릴 수 있습니다. OAuth 콜백의 쿼리, 쿠키와 인증 헤더는 액세스 로그에 남기지 않습니다.
-
-업데이트 전에는 DB와 작업 파일을 백업합니다. 백엔드를 종료한 뒤 새 코드를 적용하고, 백엔드와 게이트웨이를 모두 재시작합니다. 이전 백엔드와 새 백엔드를 함께 실행하지 않습니다.
-
-### localhost에서 로그인 설정 확인
-
-로컬에서 Google 로그인을 확인할 때는 OAuth 리디렉션 URI에 `http://localhost:5000/auth/google/callback`을 등록합니다. 양쪽 프로세스에 다음 설정을 적용합니다.
-
-```powershell
-$env:MAGI_LOCAL_LOGIN = '1'
-$env:MAGI_PUBLIC_MODE = '1'
-$env:MAGI_PUBLIC_ORIGIN = 'http://localhost:5000'
-$env:MAGI_PROXY_HOPS = '0'
-```
-
-백엔드를 실행한 뒤 다른 터미널에서 게이트웨이를 시작합니다.
+같은 설정을 주입한 다른 터미널에서 게이트웨이를 실행합니다.
 
 ```powershell
 $env:FLASK_SKIP_DOTENV = '1'
 uv run python -m flask --app gateway.app:create_app run --host 127.0.0.1 --port 5000 --no-reload
 ```
 
-브라우저 주소는 `http://localhost:5000`으로 통일합니다. 이 구성에도 PostgreSQL·OAuth·계정 식별자 설정이 필요합니다. 공개 배포 시에는 `MAGI_LOCAL_LOGIN`을 해제하고 HTTPS origin으로 되돌립니다. Flask 개발 서버와 인증 없는 `MAGI_PUBLIC_MODE=0` 구성은 외부에 공개하지 않습니다.
+브라우저 주소는 `http://localhost:5000`을 사용합니다. 공개 배포는 `LOCAL_LOGIN=0`과 HTTPS origin을 사용합니다.
 
-## 관리자 설정과 운영
+## Linux에서 직접 실행
 
-첫 가입자에게 관리자 권한을 자동으로 부여하지 않습니다.
+화면 빌드가 완료된 소스에서 운영용 의존성을 설치합니다. 로컬 임베딩을 사용하면 `--extra embedding`도 함께 지정합니다.
 
-1. 본인 Google 계정으로 로그인하고, 내 계정 메뉴에서 내부 사용자 ID를 복사합니다.
-2. 백엔드를 종료합니다.
-3. DB 설정이 주입된 운영 터미널에서 관리자 지정 명령을 실행합니다.
-4. 백엔드를 다시 시작하고 재로그인합니다.
+```sh
+uv sync --extra production
+uv run python -m backend.server
+```
+
+환경변수를 주입한 별도 프로세스에서 게이트웨이를 실행합니다.
+
+```sh
+uv run gunicorn --workers 1 --threads 16 --bind 127.0.0.1:5000 "gateway.app:create_app()"
+```
+
+HTTPS 리버스 프록시는 원래 Host와 Origin을 유지하고, 게이트웨이의 `PROXY_HOPS`를 실제 프록시 수에 맞춥니다. 게이트웨이·백엔드 포트는 외부에 직접 공개하지 않습니다. 긴 문서 요청과 WebSocket 연결을 처리할 수 있도록 프록시 대기 시간을 설정합니다.
+
+## Raspberry Pi와 Portainer
+
+제공되는 `deploy/compose.portainer.yaml`은 ARM64용 Caddy·백엔드·게이트웨이 구성입니다. 기존 PostgreSQL에 외부 네트워크 `magi-db`로 연결하며, Caddy와 앱이 네트워크 공간을 공유합니다.
+
+GitHub Actions의 **Build Raspberry Pi release** 워크플로로 기본 브랜치의 이미지를 GHCR에 게시할 수 있습니다. Portainer Stack에 다음 이미지 변수를 설정합니다.
+
+```dotenv
+BACKEND_IMAGE=ghcr.io/znzlspt17/magi-backend:latest
+GATEWAY_IMAGE=ghcr.io/znzlspt17/magi-gateway:latest
+CADDY_IMAGE=ghcr.io/znzlspt17/magi-caddy:latest
+```
+
+Stack에서 입력받는 나머지 변수는 다음과 같습니다.
+
+| 변수 | 값과 용도 |
+|---|---|
+| `PUBLIC_ORIGIN` | 공개 HTTPS origin |
+| `OPENAI_API_KEY`, `GOOGLE_OAUTH_ID`, `GOOGLE_OAUTH_SECRET` | 모델·로그인 인증 설정 |
+| `SUBJECT_PEPPER`, `INTERNAL_KEY` | 기존 계정 식별·내부 인증 설정 |
+| `DB_NAME`, `DB_USER`, `DB_PASSWORD` | 기존 전용 DB와 서비스 계정 |
+| `DB_SSLMODE` | Compose 기본값 `disable` |
+| `DEPLOY_ROOT` | Pi의 배포 폴더 절대 경로 |
+| `MODEL_ROOT` | 준비된 BGE-M3 모델 폴더 절대 경로 |
+| `HTTP_PORT`, `HTTPS_PORT` | 호스트 포트. 기본 `8080`·`443` |
+
+`DEPLOY_ROOT` 아래에는 `Caddyfile`, `data/`, `caddy-data/`, `caddy-config/`가 있어야 합니다. 앱의 작업 폴더는 UID·GID `10001:10001`이 읽고 쓸 수 있어야 합니다. DB 호스트는 같은 외부 네트워크에서 `magi-postgres`라는 이름으로 접근할 수 있어야 합니다.
+
+다음 항목은 현재 Compose의 고정값입니다. Stack 환경변수에 같은 이름을 입력해도 이 값이 바뀌지는 않으며, 변경하려면 Compose 설정을 수정해야 합니다.
+
+| 대상 | 고정 설정 |
+|---|---|
+| 양쪽 앱 | `PUBLIC_MODE=1`, `LOCAL_LOGIN=0` |
+| 게이트웨이 | `PROXY_HOPS=1`, `SERVER_URL=ws://127.0.0.1:8765` |
+| 백엔드 DB | `DB_HOST=magi-postgres`, `DB_PORT=5432` |
+| 백엔드 저장·모델 | `DATA_DIR=/data`, `EMBEDDING_MODEL_PATH=/models/bge-m3`, `EMBEDDING_DEVICE=cpu` |
+| 모든 서비스 | `TZ=Asia/Seoul` |
+
+이미지는 컨테이너 실행 표시, Python 실행 설정과 모델 오프라인 설정을 포함합니다. 모델 파일은 이미지에 포함되지 않습니다.
+
+이미지를 갱신할 때는 실행 중인 작업을 마치고 DB·작업 폴더를 백업한 뒤 Stack 전체를 갱신합니다. `latest` 이미지 게시만으로 기존 컨테이너가 자동 갱신되지는 않습니다.
+
+## 관리자와 비용 관리
+
+첫 가입자에게 관리자 권한이 자동으로 부여되지 않습니다. Google 로그인 후 내 계정 메뉴에서 내부 사용자 ID를 복사하고, 백엔드를 중지한 상태에서 DB 설정이 주입된 운영 터미널로 관리자 지정 명령을 실행합니다.
 
 ```sh
 uv run python -m backend.access make-admin --user-id <내부사용자ID>
 ```
 
-사용자 목록은 `uv run python -m backend.access users`로 확인할 수 있습니다. 이메일 대신 내부 ID를 사용하므로 사용자 목록에서 본인 ID를 추측해 지정하지 않습니다.
+사용자 목록은 `uv run python -m backend.access users`로 확인할 수 있습니다. 권한 변경 후에는 다시 로그인해야 합니다.
 
-관리자 화면은 `/admin`입니다. 계정·권한, 데이터 삭제, 지식 조회·색인, 비용을 관리합니다. 마지막 활성 관리자는 강등하거나 정지할 수 없습니다. 권한 변경 시 기존 세션이 폐기되므로 해당 사용자는 재로그인해야 합니다.
+관리자 화면은 `/admin`입니다. 계정·권한·사용 한도, 기록 삭제, 지식 조회·색인과 비용을 관리합니다. 마지막 활성 관리자는 강등하거나 정지할 수 없습니다. 공개 모드의 영구 기록 삭제는 관리자만 수행하며, 삭제 전 대상과 영향을 미리 확인할 수 있습니다.
 
-공개 모드의 기록 삭제는 관리자만 수행할 수 있습니다. 삭제 미리보기를 확인한 뒤 실행하고, 전체 삭제에는 확인 문구를 입력합니다. 소유자 없는 기존 기록은 사용자 ID를 지정해 이관할 수 있습니다.
+계정별 일일 실행 횟수·비용 한도와 서비스 전체 비용 한도가 적용됩니다. 관리자에게도 실행 독점과 비용 상한이 적용됩니다. 실행 횟수는 접수 기준이며 시작 실패 시 자동으로 돌려주지 않습니다.
 
-공개 모드에서는 자동 임베딩 색인을 실행하지 않습니다. 다른 작업이 사용 중이지 않을 때 관리자 화면에서 색인을 실행합니다.
+질문·승인 대기의 사용권은 3분 뒤 만료됩니다. 모델 실행·번역·저장 중에는 이 대기 만료를 적용하지 않습니다. 호출 전 비용을 예약하며, 화면의 산정 비용은 제공자 청구서와 다를 수 있습니다.
 
-### 실행·비용 제한
+## 지식 색인
 
-관리자 화면에서 계정별 일일 실행 횟수와 비용 한도, 서비스 전체 비용 한도를 관리합니다. 관리자에게도 실행 독점과 비용 상한이 적용됩니다.
+공개 모드의 임베딩 재색인은 다른 작업이 실행 중이지 않을 때 관리자 화면에서 수행합니다. 독립 명령은 백엔드를 중지한 상태에서 같은 OS 계정으로 실행합니다.
 
-질문·승인 대기의 사용권은 3분 뒤 만료됩니다. 모델 실행·번역·저장 중에는 이 대기 만료를 적용하지 않습니다. 실행 횟수는 접수 기준이며 시작 실패 시 자동으로 돌려주지 않습니다.
+```sh
+uv run python -m backend.knowledge reindex
+```
 
-호출 전 비용을 예약하며, 잔여 예산이 예약액보다 작으면 실행을 거절합니다. 화면의 산정 비용은 제공자 청구서와 다를 수 있습니다. 생성·검토·번역 모델은 `gpt-6-luna`로 고정되며 이전 모델·가격 환경변수는 사용하지 않습니다.
+## 백업과 복구
 
-## 관리자와 장애 복구
+DB와 작업 폴더를 함께 백업하고, 모델 revision 기록과 사용 중인 이미지·설정을 보관합니다.
 
-작업 시작 실패와 일시적 DB 장애의 정리는 자동으로 재시도합니다. 이 정리 과정에서 모델 호출을 다시 보내지는 않습니다. 외부 호출 결과나 비용이 불확실하거나 프로세스가 강제 종료된 경우에는 운영자가 복구해야 할 수 있습니다.
-
-1. 이전 백엔드 프로세스와 외부 호출이 종료됐는지 확인합니다.
-2. DB 설정이 주입된 운영 터미널에서 복구 명령을 실행합니다.
-3. 백엔드를 다시 시작합니다.
-4. 관리자 화면에서 미정산 예약을 확인하고, 제공자 사용량에 따라 정산합니다.
+프로세스가 중단되거나 외부 호출 결과가 불확실해지면 운영자 복구가 필요할 수 있습니다. 이전 백엔드와 외부 호출이 종료된 상태에서 DB 환경변수를 주입해 다음 명령을 실행합니다.
 
 ```sh
 uv run python -m backend.access recover --confirm-stopped
 ```
 
-강제 종료만으로 외부 호출이 취소됐다고 판단하지 않습니다. 복구 명령은 미정산 예약을 자동 환불하지 않습니다. 실제 비용이 예약액을 초과하면 자동 정산하지 않으므로 가격 정책을 확인해야 합니다.
-
-## 배포 후 확인
-
-- 공개 주소에서 Google 로그인과 로그아웃이 동작하는지 확인합니다.
-- WebSocket 연결, 질문 응답, 명세 승인과 다운로드를 확인합니다.
-- 서로 다른 계정에서 타인의 기록이 보이지 않는지 확인합니다.
-- `/privacy`에 운영자 연락처와 실제 기록·백업의 보존 및 삭제 정책을 반영합니다.
+복구 명령은 모델 호출을 다시 보내거나 미정산 예약을 자동 환불하지 않습니다. 관리자 화면에서 미정산 예약을 확인하고 제공자의 실제 사용량에 맞춰 정산할 수 있습니다.
