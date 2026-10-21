@@ -1,4 +1,5 @@
 import { ExecutionTimeline, ResearchResult } from "./ExecutionTimeline";
+import { ChangeReview } from "./ChangeReview";
 import { ServiceStatusNotice, serviceState } from "./ServiceStatus";
 import { Conversation } from "./Conversation";
 import { PromptInput } from "./components/PromptInput";
@@ -525,6 +526,7 @@ export default function Workspace() {
                   ) : (
                     <div className="document-action-layout">
                       <section className="document-panel">
+                        <ChangeReview review={detail?.change_review} />
                         {tab === "history" && actualJob.usage && <p className="subtle">{usageLabel(actualJob.usage)}</p>}
                         {tab === "history" && (
                           <>

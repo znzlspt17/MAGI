@@ -54,6 +54,7 @@ export interface Job extends RecordData {
   status: string;
   execution_id?: string;
   state?: RecordData;
+  change_review?: ChangeReviewData;
   session_events?: SessionEvent[];
   execution_graph?: {
     nodes: Step[];
@@ -61,6 +62,27 @@ export interface Job extends RecordData {
     recording_incomplete?: boolean;
     unresolved_issue_counts?: Record<string, number>;
   };
+}
+
+export interface ChangeLocation {
+  item_id: string; section: string; text: string; start: number; end: number; line: number;
+  requirement_ids: string[]; decision_ids: string[];
+}
+export interface SpecChange {
+  id: string; change: "added" | "removed" | "modified" | "moved";
+  before: ChangeLocation | null; after: ChangeLocation | null;
+  status: "analysed" | "unanalysed"; reason: string;
+  meaning?: "wording" | "semantic" | "uncertain";
+  relation?: "direct" | "related" | "unverified";
+  summary?: string; rationale?: string; question?: string; diff?: string;
+  evidence?: { source_id: string; quote: string }[];
+}
+export interface ChangeReviewData {
+  status: "no_baseline" | "unchanged" | "complete" | "partial" | "failed" | "running";
+  before_id?: string | null; after_id?: string; before_hash?: string | null; after_hash: string;
+  legacy?: boolean; analysed: number; remaining: number | null;
+  sources: { source_id: string; text: string; question?: string }[];
+  changes: SpecChange[];
 }
 
 export interface SessionEvent {

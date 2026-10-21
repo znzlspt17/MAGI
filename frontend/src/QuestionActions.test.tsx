@@ -14,6 +14,16 @@ const forms={
 const job=(id='first'):Job=>({id,status:'NEEDS_USER_INPUT',state:{blocking_questions:['[S] 운영체제','[M] 기능','[T] 추가 설명'],question_forms:forms,saved_answers:[]}});
 const group=(name:string)=>within(screen.getByRole('group',{name:new RegExp(name)}));
 describe('질문 답변',()=>{
+ it('변경 검토 실패에도 승인을 허용하며 확인 질문을 기존 수정 의견에 추가한다',()=>{
+  const action=vi.fn();
+  const value:Job={id:'review',status:'PASS_PENDING_USER_APPROVAL',change_review:{status:'failed',after_hash:'hash',analysed:0,remaining:1,sources:[],changes:[{
+   id:'C',change:'modified',before:null,after:null,status:'unanalysed',reason:'analysis_failed',question:'다른 기기에서도 이어서 볼까요?'}]}};
+  render(<QuestionActions job={value} onAction={action} busy={false}/>);
+  expect((screen.getByRole('button',{name:'이 명세 승인'}) as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(screen.getByRole('button',{name:'수정 의견에 추가'}));
+  expect((screen.getByRole('textbox',{name:'수정 의견 보내기'}) as HTMLTextAreaElement).value).toBe('다른 기기에서도 이어서 볼까요?');
+  expect(action).not.toHaveBeenCalled();
+ });
  it('선택과 직접 입력을 검증하고 답변한 질문만 전송한다',async()=>{
   const action=vi.fn().mockResolvedValue(undefined);
   render(<QuestionActions job={job()} onAction={action} busy={false}/>);

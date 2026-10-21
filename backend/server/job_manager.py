@@ -439,6 +439,10 @@ class JobManager:
                 text = self._read_text(self.artifact(ident, relative))
                 if text is not None:
                     job[key] = text
+            from backend.services.change_review import CURRENT_REVIEW, digest, normalize
+            change_review = self._read_json(self.artifact(ident, CURRENT_REVIEW))
+            if isinstance(change_review, dict) and change_review.get("after_hash") == digest(normalize(job.get("candidate", ""))):
+                job["change_review"] = change_review
             return job
 
     def step(self, ident: str, step_id: str) -> dict:

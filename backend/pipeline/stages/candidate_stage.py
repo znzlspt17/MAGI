@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 from typing import Any
+import logging
 from backend.errors import InvalidStateError
 from backend.models import STATUS_CRITICAL_BLOCKED, STATUS_PASS_PENDING_USER_APPROVAL
 from backend.models import RequirementLockSheet
@@ -30,6 +31,19 @@ class CandidateStage:
             raise InvalidStateError("Reviewed candidate is missing or invalid.")
         if path not in created:
             created.append(path)
+        # 변경 검토는 안내 기능이며 승인 후보 검증 결과를 바꾸지 않는다.
+        from backend.services.change_review import review_candidate, CURRENT_REVIEW, digest, normalize
+        try:
+            review_candidate(self.context, state, spec)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("change review unavailable exception_type=%s", type(exc).__name__)
+            try:
+                self.context.writer.write_json_atomic(CURRENT_REVIEW, {
+                    "status": "failed", "reason": "analysis_failed", "changes": [], "sources": [],
+                    "after_hash": digest(normalize(spec)), "analysed": 0, "remaining": None,
+                })
+            except Exception:
+                logging.getLogger(__name__).warning("change review failure could not be saved")
         return {
             "status": STATUS_PASS_PENDING_USER_APPROVAL,
             "approval_candidate_spec": str(self.context.writer.path(path)),

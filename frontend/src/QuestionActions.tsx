@@ -1,4 +1,5 @@
 import { ServiceStatusNotice, serviceState } from "./ServiceStatus";
+import { ChangeReview } from "./ChangeReview";
 import { PromptInput, isSubmitShortcut } from "./components/PromptInput";
 import { InputGroup, InputGroupTextarea } from "./components/ui/input-group";
 import { Item, ItemContent, ItemTitle, ItemDescription, ItemActions } from "./components/ui/item";
@@ -328,6 +329,11 @@ export function QuestionActions({
           의견을 유지해 다시 정리할 수 있습니다.
         </Notice>
       )}
+      {approval && <ChangeReview review={job.change_review} onQuestion={question => {
+        const value = feedback.trim() ? `${feedback.trim()}\n\n${question}` : question;
+        setFeedback(value); sessionStorage.setItem(prefix + "feedback", value);
+        document.getElementById(`feedback-${job.id}`)?.focus();
+      }} />}
       <label htmlFor={`feedback-${job.id}`}>{job.can_continue ? "추가 요청 내용" : "수정 의견 보내기"}</label>
       <PromptInput
         id={`feedback-${job.id}`}

@@ -157,6 +157,9 @@ class SpecCompiler:
                 stage="spec_compile",
                 temperature=0,
             )
+        draft_blocks = ([{"section": name, **block.model_dump()} for name in type(raw_output).model_fields
+                         if name != "decisions" for block in getattr(raw_output, name)]
+                        if isinstance(raw_output, SpecDraftResponse) else [])
         if isinstance(raw_output, SpecDraftResponse):
             raw_output = assemble_spec_draft(raw_output, sheet)
         if not isinstance(raw_output, SpecResponse):
@@ -196,6 +199,9 @@ class SpecCompiler:
                 _validate_trace(validate_links, links, sheet.decisions + decisions, sheet.to_dict(), rendered)
                 if writer is not None:
                     writer.write_json("analysis/spec_trace.json", {"decisions": decisions, "links": links}, overwrite=True)
+                    from backend.services.change_review import BLOCKS, digest, normalize
+                    writer.write_json(BLOCKS, {"source_hash": digest(normalize(assembled)),
+                        "blocks": draft_blocks or [{**link, "text": link["quote"]} for link in links]}, overwrite=True)
                 return assembled
         raise SpecCompilationError(["Return all required English section bodies in the supplied schema."])
 

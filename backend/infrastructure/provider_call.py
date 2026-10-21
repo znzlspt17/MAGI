@@ -84,9 +84,13 @@ def _complete_once(
     model: str,
     stage: str,
     temperature: float | None = 0,
+    isolated_schema: type | None = None,
 ) -> Any:
     """사용량과 대화 연결을 저장하고 단계별 구조화 결과를 전달한다."""
-    messages, references = prepare_context(writer, messages, stage)
+    # 변경 검토는 생성 대화와 검색 문맥을 공유하지 않는 단발 호출이다.
+    references = None
+    if isolated_schema is None:
+        messages, references = prepare_context(writer, messages, stage)
     usage = _load_usage(writer)
     attempt = {
         "stage": _safe_stage(stage),
@@ -132,9 +136,9 @@ def _complete_once(
 
     started = perf_counter()
     try:
-        schema = STAGE_SCHEMAS.get(stage)
-        conversation = ConversationState(writer) if schema else None
-        extra = {}
+        schema = isolated_schema or STAGE_SCHEMAS.get(stage)
+        conversation = ConversationState(writer) if schema and isolated_schema is None else None
+        extra = {"text_format": isolated_schema} if isolated_schema else {}
         if conversation:
             is_new = not conversation.conversation_id
             if is_new and any(item.get("run_id") == attempt["run_id"] and item.get("conversation_event") in {"started", "continued"} for item in attempts[:-1]):
@@ -198,6 +202,8 @@ def _complete_once(
         attempt["stage"], attempt["model"], diagnostic.get("type", "unknown"),
         diagnostic.get("reason", "unknown"), _logged_count(attempt["cached_tokens"]),
     )
+    if isolated_schema is not None:
+        return result.parsed
     return references.restore(result.parsed) if schema else result.text
 
 

@@ -214,6 +214,17 @@ class ExecutionHistory:
                 }
         elif stage == "compose_candidate":
             self._copy_document(root / "draft/approval_candidate_spec.en.md", detail, node, "candidate")
+            review = _read_json(root / "analysis/change_review.json")
+            from backend.services.change_review import digest, normalize
+            content = self._read_document(detail.get("document", {}))
+            # DB 일괄 커밋 경로에서는 이력 사본이 아직 디스크에 없을 수 있다.
+            if content is None:
+                try:
+                    content = (root / "draft/approval_candidate_spec.en.md").read_text(encoding="utf-8")
+                except (OSError, UnicodeError):
+                    content = ""
+            if isinstance(review, dict) and review.get("after_hash") == digest(normalize(content)):
+                detail["change_review"] = copy.deepcopy(review)
             node["status"] = "waiting_approval"
             node["summary"] = "사용자 승인을 기다리고 있습니다."
         elif stage == "critical_report":
@@ -294,6 +305,8 @@ class ExecutionHistory:
             result.update(copy.deepcopy(detail["result"]))
         payload = _summary_node(node)
         payload["result"] = result
+        if isinstance(detail.get("change_review"), dict):
+            payload["change_review"] = copy.deepcopy(detail["change_review"])
         if isinstance(result.get("research"), dict):
             payload["research"] = copy.deepcopy(result["research"])
         if isinstance(node.get("usage"), dict):

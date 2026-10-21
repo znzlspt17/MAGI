@@ -21,6 +21,7 @@ ARTIFACT_PATHS = (
     "context/project_manifest.json", "context/project_summary.ko.md",
     "analysis/requirement_lock_sheet.json", "analysis/requirement_lock_sheet.ko.md",
     "analysis/spec_trace.json", "review/checklist_issues.json", "review/resolution.json", "review/resolved_draft.en.md",
+    "analysis/spec_blocks.json", "analysis/change_review.json", "state/candidate_snapshot.json",
     "analysis/01_intent_parse.ko.md", "analysis/02_requirement_lock.ko.md",
     "analysis/03_scope_classification.ko.md", "analysis/04_initial_assumptions.ko.md",
     "analysis/05_blocking_questions.ko.md", "research/web_sources.json",
@@ -34,6 +35,7 @@ def is_artifact_path(relative):
     return (relative in ARTIFACT_PATHS
             or re.fullmatch(r"completed/[0-9a-f]{64}\.json", relative) is not None
             or re.fullmatch(r"history/[0-9a-f]{32}\.md", relative) is not None
+            or re.fullmatch(r"(?:candidate_snapshots|change_reviews)/[0-9a-f]{64}\.json", relative) is not None
             or re.fullmatch(r"translations/[0-9a-f]{64}/(?:translation\.ko\.json|validation\.json|state/(?:provider_usage|conversation_state)\.json)", relative) is not None)
 
 
@@ -41,6 +43,11 @@ def read_artifacts(root):
     root = Path(root).resolve()
     result = {}
     paths = list(ARTIFACT_PATHS)
+    for name in ("candidate_snapshots", "change_reviews"):
+        directory = root / name
+        if directory.is_dir() and not any(p.is_symlink() for p in (directory, *directory.parents)):
+            paths.extend(name + "/" + p.name for p in directory.iterdir()
+                         if not p.is_symlink() and re.fullmatch(r"[0-9a-f]{64}\.json", p.name))
     completed_dir = root / "completed"
     if completed_dir.is_dir() and not any(p.is_symlink() for p in (completed_dir, *completed_dir.parents)):
         paths.extend("completed/" + p.name for p in completed_dir.iterdir()
