@@ -2,12 +2,6 @@ name: Build Raspberry Pi release
 
 on:
   workflow_dispatch:
-    inputs:
-      model_revision:
-        description: "개발 BGE-M3의 40자리 commit SHA와 일치하는지 확인하세요"
-        required: true
-        default: "5617a9f61b028005a4858fdac845db406aefb181"
-        type: string
 
 permissions:
   contents: read
@@ -29,7 +23,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      MODEL_REVISION: ${{ inputs.model_revision }}
+      DOCKER_BUILD_RECORD_UPLOAD: "false"
+      DOCKER_BUILD_SUMMARY: "false"
       RELEASE_ID: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -46,36 +41,35 @@ jobs:
         with:
           version: v0.22.0
           driver-opts: image=moby/buildkit:v0.20.2
-      - name: Build, smoke-check and export local ARM64 images
+      - name: Build ARM64 gateway with cache
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          platforms: linux/arm64
+          target: gateway
+          tags: magi-gateway:${{ env.RELEASE_ID }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          load: true
+          push: false
+          provenance: false
+          cache-from: type=gha,version=2,scope=magi-gateway-arm64
+          cache-to: type=gha,version=2,scope=magi-gateway-arm64,mode=max
+      - name: Build ARM64 backend with cache
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          platforms: linux/arm64
+          target: backend
+          tags: magi-backend:${{ env.RELEASE_ID }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          load: true
+          push: false
+          provenance: false
+          cache-from: type=gha,version=2,scope=magi-backend-arm64
+          cache-to: type=gha,version=2,scope=magi-backend-arm64,mode=max
+      - name: Smoke-check local ARM64 images
         id: images
-        run: python deploy/release.py build --output output/release --release "$RELEASE_ID" --model-revision "$MODEL_REVISION"
-      - name: Backend SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
-        with:
-          image: magi-backend:${{ env.RELEASE_ID }}
-          syft-version: v1.55.0
-          format: spdx-json
-          output-file: output/release/backend.spdx.json
-          upload-artifact: false
-          upload-release-assets: false
-      - name: Gateway SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
-        with:
-          image: magi-gateway:${{ env.RELEASE_ID }}
-          syft-version: v1.55.0
-          format: spdx-json
-          output-file: output/release/gateway.spdx.json
-          upload-artifact: false
-          upload-release-assets: false
-      - name: Caddy SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
-        with:
-          image: magi-caddy:${{ env.RELEASE_ID }}
-          syft-version: v1.55.0
-          format: spdx-json
-          output-file: output/release/caddy.spdx.json
-          upload-artifact: false
-          upload-release-assets: false
+        run: python deploy/release.py smoke --output output/release --release "$RELEASE_ID"
       - name: Scan backend fixable critical vulnerabilities
         if: ${{ !cancelled() && steps.images.outcome == 'success' }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -115,26 +109,7 @@ jobs:
       - name: Show vulnerability IDs and fixed versions even on failure
         if: ${{ !cancelled() && steps.images.outcome == 'success' }}
         run: python deploy/release.py summarize-scans --output output/release
-      - name: Preserve security diagnostics even on failure
-        if: ${{ !cancelled() && steps.images.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: magi-security-reports-${{ env.RELEASE_ID }}
-          path: |
-            output/release/*.vulnerabilities.json
-            output/release/*.spdx.json
-            output/release/release.json
-          retention-days: 14
-          if-no-files-found: error
-      - name: Finalize checksums only after successful scans
-        run: python deploy/release.py finalize --output output/release
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: magi-arm64-${{ env.RELEASE_ID }}
-          path: output/release/
-          retention-days: 14
-          if-no-files-found: error
-      # 모든 검사와 체크섬 검증 뒤에만 로그인하며, 운영 환경의 PAT는 사용하지 않는다.
+      # 모든 smoke·취약점 검사가 성공한 뒤에만 게시 권한으로 로그인한다.
       - name: Authenticate to GHCR after successful release checks
         uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1 # v3
         with:
@@ -147,15 +122,21 @@ jobs:
         run: |
           {
             echo '### Portainer image variables'
-            echo '보안 검사를 통과한 동일 ARM64 이미지입니다. Stack 환경변수에 아래 3줄을 입력하세요.'
+            echo 'Stack 이미지 변수는 아래 latest 주소로 한 번 설정하세요. 이후 Stack 전체를 Re-pull image and redeploy로 갱신하세요.'
             echo '```dotenv'
             cat output/portainer-images.txt
             echo '```'
+            echo '### Release identities (rollback)'
+            python -c "import json; m=json.load(open('output/release/release.json')); print('Release: ' + m['release']); [print(r + ': ' + i['tag'] + ' (' + i['reference'] + ')') for r,i in m['published'].items()]"
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Preserve registry image references
+      - name: Preserve image identities and scan diagnostics
+        if: ${{ !cancelled() && steps.images.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: magi-portainer-images-${{ env.RELEASE_ID }}
-          path: output/portainer-images.txt
+          name: magi-image-reports-${{ env.RELEASE_ID }}
+          path: |
+            output/release/*.vulnerabilities.json
+            output/release/release.json
+            output/portainer-images.txt
           retention-days: 14
           if-no-files-found: error

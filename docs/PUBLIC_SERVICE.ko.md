@@ -49,6 +49,24 @@ Google Cloud에서 웹 애플리케이션용 OAuth 클라이언트를 만들고,
 
 MAGI는 이름·이메일·사진을 계정 정보로 저장하지 않습니다. 사용자 확인과 관리자 지정에는 화면에 표시되는 내부 사용자 ID를 사용합니다.
 
+## ARM64 컨테이너와 Portainer
+
+기본 브랜치에서 GitHub Actions의 **Build Raspberry Pi release**를 수동 실행하면 ARM64 이미지가 GHCR에 게시됩니다. 모델 SHA 입력 없이 실행하며, 외부 모델은 이미지에 포함하지 않습니다. ARM64 smoke 검사와 수정 가능한 CRITICAL 취약점 검사를 통과한 이미지에 `latest`와 릴리스별 태그를 게시합니다.
+
+`deploy/compose.portainer.yaml`을 사용하는 Stack의 이미지 변수는 다음 주소로 한 번 설정합니다.
+
+```text
+MAGI_BACKEND_IMAGE=ghcr.io/znzlspt17/magi-backend:latest
+MAGI_GATEWAY_IMAGE=ghcr.io/znzlspt17/magi-gateway:latest
+MAGI_CADDY_IMAGE=ghcr.io/znzlspt17/magi-caddy:latest
+```
+
+모델 준비 도구는 기본적으로 최신 BGE-M3 revision을 확인해 다운로드하고 파일 해시와 실제 revision을 기록합니다. 재현이 필요할 때만 `--revision`을 지정합니다. 모델 폴더는 읽기 전용으로 마운트하며 시작 시 구성·파일 해시를 검증합니다. 모델 교체 때문에 이미지를 다시 빌드할 필요는 없지만, 서비스 재시작과 기존 모델 전환·색인 절차는 필요합니다.
+
+게시 성공 후 Portainer에서 Stack 전체를 **Update the stack → Re-pull image and redeploy → Update**로 갱신합니다. 실행 중인 작업을 마치고 DB·작업 파일을 백업한 유지보수 시점에 수행합니다. Caddy와 앱이 네트워크 공간을 공유하므로 개별 컨테이너 대신 Stack 전체를 갱신합니다. 이미 실행 중인 컨테이너는 `latest` 게시만으로 자동 갱신되지 않습니다.
+
+실행 요약에는 롤백용 릴리스 태그·digest가 표시됩니다. 롤백할 때는 세 이미지 변수를 같은 이전 릴리스의 주소로 변경합니다. 이미지 롤백은 DB 마이그레이션을 되돌리지 않으므로 이전 스키마와의 호환성을 확인해야 합니다. 여러 이미지의 `latest` 갱신은 원자적이지 않으므로 실패한 실행의 이미지는 배포하지 않습니다. tar 묶음은 제공하지 않으며, 비공개 GHCR 패키지는 Portainer에 레지스트리 읽기 권한을 설정해야 합니다.
+
 ## 실행과 배포
 
 Linux 운영 환경에서 의존성을 설치하고 백엔드를 실행합니다.

@@ -22,7 +22,7 @@ def file_digest(path):
     return digest.hexdigest()
 
 
-def verify_prepared_model(root, revision):
+def verify_prepared_model(root):
     """고정 공개 파일명만 검증해 manifest로 임의 경로를 읽지 못하게 한다."""
     root = Path(root)
     metadata = root / 'magi_model_revision.json'
@@ -31,7 +31,7 @@ def verify_prepared_model(root, revision):
     try:
         record = json.loads(metadata.read_text(encoding='utf-8'))
         hashes = record['sha256']
-        if (record['model'] != 'BAAI/bge-m3' or record['revision'] != revision
+        if (record['model'] != 'BAAI/bge-m3' or not re.fullmatch(r'[0-9a-f]{40}', record['revision'])
                 or not isinstance(hashes, dict) or not set(hashes) <= set(MODEL_FILES)
                 or not {'config.json', 'modules.json', 'tokenizer.json'} <= set(hashes)
                 or not {'model.safetensors', 'pytorch_model.bin'} & set(hashes)):
@@ -43,7 +43,7 @@ def verify_prepared_model(root, revision):
                     or file_digest(path) != expected):
                 raise ValueError
     except (OSError, KeyError, TypeError, ValueError):
-        raise ValueError('모델 revision·파일 해시가 릴리스와 일치하지 않습니다. 빈 폴더에 고정 revision을 준비하세요.') from None
+        raise ValueError('준비된 모델의 구성·revision 기록 또는 파일 해시가 올바르지 않습니다. 빈 폴더에 모델을 다시 준비하세요.') from None
 
 
 def prepare(destination, revision=None):
@@ -56,6 +56,8 @@ def prepare(destination, revision=None):
     if revision is None:
         with urlopen("https://huggingface.co/api/models/BAAI/bge-m3", timeout=30) as response:
             revision = json.load(response)["sha"]
+    if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise ValueError("확인한 모델 revision은 40자리 commit SHA여야 합니다.")
     from huggingface_hub import snapshot_download
     snapshot_download("BAAI/bge-m3", revision=revision, local_dir=root, token=False, max_workers=1,
                       allow_patterns=["config.json", "modules.json", "config_sentence_transformers.json",
@@ -79,7 +81,7 @@ def prepare(destination, revision=None):
 def main():
     parser = argparse.ArgumentParser(description="공개 BGE-M3 모델을 명시적으로 준비합니다.")
     parser.add_argument("--output", required=True)
-    parser.add_argument("--revision", help="운영에 사용할 개발 모델의 40자리 commit SHA")
+    parser.add_argument("--revision", help="재현할 모델의 40자리 commit SHA (생략하면 최신 revision 자동 확인)")
     args = parser.parse_args()
     print(prepare(args.output, args.revision))
 

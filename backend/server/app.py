@@ -284,7 +284,7 @@ async def main() -> None:
     validate_container('backend')
     if os.environ.get('MAGI_CONTAINER') == '1':
         from backend.knowledge.prepare_model import verify_prepared_model
-        verify_prepared_model(os.environ['MAGI_EMBEDDING_MODEL_PATH'], os.environ['MAGI_EXPECTED_MODEL_REVISION'])
+        verify_prepared_model(os.environ['MAGI_EMBEDDING_MODEL_PATH'])
     public_mode=os.environ.get('MAGI_PUBLIC_MODE','1')!='0'
     internal_key=os.environ.get('MAGI_INTERNAL_KEY','')
     runtime=None

@@ -46,8 +46,6 @@ COPY --from=frontend-build /frontend/static/vendor ./frontend/static/vendor
 CMD ["gunicorn", "--workers", "1", "--threads", "16", "--bind", "127.0.0.1:5000", "--timeout", "600", "--graceful-timeout", "590", "gateway.app:create_app()"]
 
 FROM runtime AS backend
-ARG MODEL_REVISION
-ENV MAGI_EXPECTED_MODEL_REVISION=${MODEL_REVISION}
 COPY --from=backend-deps /app/.venv /app/.venv
 COPY backend ./backend
 COPY protocol ./protocol

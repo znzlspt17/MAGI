@@ -20,8 +20,7 @@ def validate_container(role):
     if role == 'backend':
         required += ['OPENAI_API_KEY', 'GOOGLE_OAUTH_ID', 'GOOGLE_OAUTH_SECRET',
                      'MAGI_SUBJECT_PEPPER', 'MAGI_DB_HOST', 'MAGI_DB_NAME',
-                     'MAGI_DB_USER', 'MAGI_DB_PASSWORD', 'MAGI_EMBEDDING_MODEL_PATH',
-                     'MAGI_EXPECTED_MODEL_REVISION']
+                     'MAGI_DB_USER', 'MAGI_DB_PASSWORD', 'MAGI_EMBEDDING_MODEL_PATH']
     elif role == 'gateway':
         if os.environ.get('MAGI_PROXY_HOPS') != '1':
             raise ValueError('컨테이너 게이트웨이에는 단일 프록시 설정이 필요합니다.')
