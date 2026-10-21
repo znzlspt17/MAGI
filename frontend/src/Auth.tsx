@@ -2,6 +2,7 @@ import { LoginForm } from "./components/LoginForm";
 import {
   createContext,
   useContext,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -27,7 +28,7 @@ export const useAuth = () => useContext(Context);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [publicMode, setPublic] = useState(true),
     [user, setUser] = useState<User | null>(null),
-    [status, setStatus] = useState<ServiceStatus>({}),
+    [status, setStatus] = useState<ServiceStatus>({ checkState: "loading" }),
     [usage, setUsage] = useState<Usage | null>(null),
     [ready, setReady] = useState(false),
     [notice, setNotice] = useState(""),
@@ -57,16 +58,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearRequests();
     setUser(null);
     setUsage(null);
-    setStatus({});
+    setStatus({ checkState: "loading" });
     if (/^\/jobs\/[0-9a-f]{32}$/.test(location.pathname))
       sessionStorage.setItem("return-path", location.pathname);
   };
-  const refreshStatus = async () => {
-    if (!publicMode) return;
+  const statusRequest = useRef<{ generation: number; pending: boolean; promise: Promise<void> } | null>(null);
+  const refreshStatus = useCallback((): Promise<void> => {
+    if (!publicMode || !currentUser.current) return Promise.resolve();
     const g = generation.current;
-    const value = await api<ServiceStatus>("/api/service/status");
-    if (g === generation.current) setStatus(value);
-  };
+    if (statusRequest.current?.generation === g) {
+      statusRequest.current.pending = true;
+      return statusRequest.current.promise;
+    }
+    const request = { generation: g, pending: false, promise: Promise.resolve() };
+    statusRequest.current = request;
+    request.promise = (async () => {
+      do {
+        request.pending = false;
+        try {
+          const value = await api<ServiceStatus>("/api/service/status");
+          if (g === generation.current) setStatus({ ...value, checkState: "ready" });
+        } catch {
+          if (g === generation.current) setStatus({ checkState: "error" });
+        }
+      } while (request.pending && g === generation.current);
+    })().finally(() => {
+      if (statusRequest.current === request) statusRequest.current = null;
+    });
+    return request.promise;
+  }, [publicMode]);
   useEffect(() => {
     let live = true;
     const g = ++generation.current;
@@ -114,12 +134,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const g = generation.current;
     const load = async () => {
       try {
-        const [s, u] = await Promise.all([
-          api<ServiceStatus>("/api/service/status"),
-          api<Usage>("/api/me/usage"),
-        ]);
+        const u = await api<Usage>("/api/me/usage");
         if (live && g === generation.current) {
-          setStatus(s);
           setUsage(u);
         }
       } catch (e) {
@@ -127,16 +143,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
     void load();
+    void refreshStatus();
     const statusTimer = setInterval(
         () => void refreshStatus().catch((e) => live && setNotice(e.message)),
         2000,
       ),
       usageTimer = setInterval(() => void load(), 30000);
-    const update = (event: Event) => setStatus((event as CustomEvent).detail);
+    const update = () => { void refreshStatus(); };
     window.addEventListener("service-status", update);
     const stop = () => {
       live = false;
       generation.current++;
+      setStatus({ checkState: "loading" });
       clearInterval(statusTimer);
       clearInterval(usageTimer);
       window.removeEventListener("service-status", update);
@@ -146,7 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       stop();
       window.removeEventListener("pagehide", stop);
     };
-  }, [ready, authenticated, publicMode, pollEpoch]);
+  }, [ready, authenticated, publicMode, pollEpoch, refreshStatus]);
   async function logout() {
     try {
       await post("/api/logout", {});

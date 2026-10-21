@@ -4,6 +4,8 @@ export interface User {
   csrf?: string;
 }
 export interface ServiceStatus {
+  phase?: "idle" | "running" | "waiting" | "recovery";
+  checkState?: "loading" | "ready" | "error";
   busy?: boolean;
   mine?: boolean;
   recovering?: boolean;
@@ -75,6 +77,7 @@ export interface ConversationTurn {
   eventId: string;
   role: "user" | "magi";
   text: string;
+  answers?: NonNullable<NonNullable<SessionEvent["input"]>["answers"]>;
   timestamp?: string;
   action?: string;
   questions?: string[];

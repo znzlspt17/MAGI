@@ -2,6 +2,17 @@
 body { font-size: 15px; -webkit-font-smoothing: antialiased; }
 .shell { background: #fafaf9; }
 .sidebar { padding: 12px 0 12px 12px; }
+.shell [data-slot="sidebar-container"].sidebar { position: fixed; top: 0; height: 100svh; display: flex; flex-direction: column; gap: 0; border: 0; background: transparent; }
+.shell [data-collapsible="offcanvas"] [data-slot="sidebar-container"] { visibility: hidden; pointer-events: none; }
+.shell [data-collapsible="offcanvas"] [data-slot="sidebar-gap"] { width: 0; }
+.service-status-banner { display: flex; align-items: flex-start; gap: 10px; padding: 12px 16px; border: 1px solid #d6e5dc; border-radius: 12px; background: #edf6ef; color: #28583b; flex: 1; min-width: 0; }
+.service-status-banner svg { flex-shrink: 0; margin-top: 1px; }
+.service-status-banner strong { font-size: 14px; }
+.service-status-banner p { margin: 4px 0 0; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.service-status-banner.waiting, .service-status-banner.unknown { background: #fff4df; border-color: #dfc58c; color: #684712; }
+.service-status-banner.owned { background: #f1ecfb; border-color: #d2c4eb; color: #523581; }
+.service-status-banner.inline { width: 100%; margin: 10px 0; }
+.account-header { flex-wrap: wrap; gap: 12px; }
 .sidebar [data-slot="sidebar-inner"] { border-radius: 18px; background: #f3f1f7; }
 .sidebar-brand { padding: 20px 20px 18px; }
 .brand { letter-spacing: -.6px; }

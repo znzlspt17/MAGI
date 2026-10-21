@@ -11,8 +11,9 @@ export function conversationTurns(job: Job): { turns: ConversationTurn[]; incomp
   const turns: ConversationTurn[] = [];
   for (const event of records.values()) {
     const answers = (event.input?.answers || []).filter((answer) => typeof answer.answer === "string" && answer.answer.trim());
-    const text = event.input?.request || event.input?.feedback || answers.map((answer) => [answer.question, answer.answer].filter(Boolean).join("\n")).join("\n\n") || (event.action === "approve" ? "이 명세를 승인했습니다." : "");
-    if (text) turns.push({ id: `${event.id}:user`, eventId: event.id, role: "user", text, timestamp: event.started_at, action: event.action });
+    const directText = event.input?.request || event.input?.feedback;
+    const text = directText || (answers.length ? "" : event.action === "approve" ? "이 명세를 승인했습니다." : "");
+    if (text || answers.length) turns.push({ id: `${event.id}:user`, eventId: event.id, role: "user", text, ...(!directText && answers.length ? { answers } : {}), timestamp: event.started_at, action: event.action });
     const questions = (event.questions || []).filter((q) => typeof q === "string" && q.trim());
     if (event.summary || questions.length || event.document_step_id) turns.push({ id: `${event.id}:magi`, eventId: event.id, role: "magi", text: event.summary || "", questions, documentStepId: event.document_step_id, timestamp: event.started_at });
   }

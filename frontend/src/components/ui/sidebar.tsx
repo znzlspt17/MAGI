@@ -77,6 +77,9 @@ function SidebarProvider({
   const setOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === "function" ? value(open) : value
+      if (!openState && document.activeElement instanceof HTMLElement && document.activeElement.closest('[data-slot="sidebar-container"]')) {
+        document.querySelector<HTMLButtonElement>('.desktop-sidebar-trigger')?.focus()
+      }
       if (setOpenProp) {
         setOpenProp(openState)
       } else {
@@ -233,6 +236,7 @@ function Sidebar({
       />
       <div
         data-slot="sidebar-container"
+        inert={state === "collapsed" && collapsible === "offcanvas" ? true : undefined}
         className={cn(
           "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear md:flex",
           side === "left"
@@ -263,7 +267,8 @@ function SidebarTrigger({
   onClick,
   ...props
 }: React.ComponentProps<typeof Button>) {
-  const { toggleSidebar, triggerRef } = useSidebar()
+  const { toggleSidebar, triggerRef, isMobile, openMobile, state } = useSidebar()
+  const expanded = isMobile ? openMobile : state === "expanded"
 
   return (
     <Button
@@ -278,9 +283,11 @@ function SidebarTrigger({
         toggleSidebar()
       }}
       {...props}
+      aria-label={expanded ? "메뉴 접기" : "메뉴 열기"}
+      aria-expanded={expanded}
     >
       <PanelLeftIcon />
-      <span className="sr-only">메뉴 열기</span>
+      <span className="sr-only">{expanded ? "메뉴 접기" : "메뉴 열기"}</span>
     </Button>
   )
 }

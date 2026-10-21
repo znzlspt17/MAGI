@@ -1,5 +1,6 @@
 // shadcn/ui Radix AI Elements Chat / Task compositions (MIT), revision ba1503c64472b82256d9de95e2e62c5901a38e8b.
-import { ScalesIcon, FileTextIcon, CheckCircleIcon, WarningCircleIcon, CircleNotchIcon, ClockIcon, QuestionIcon } from "@phosphor-icons/react";
+import { ScalesIcon, FileTextIcon, CheckCircleIcon, WarningCircleIcon, CircleNotchIcon, ClockIcon, QuestionIcon, CaretDownIcon } from "@phosphor-icons/react";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "./components/ui/collapsible";
 import { Message, MessageContent, MessageHeader, MessageFooter } from "./components/ui/message";
 import { Bubble, BubbleContent } from "./components/ui/bubble";
 import { MessageScrollerProvider, MessageScroller, MessageScrollerViewport, MessageScrollerContent, MessageScrollerItem, MessageScrollerButton } from "./components/ui/message-scroller";
@@ -29,6 +30,13 @@ export function Conversation({ job, select, onAction, busy }: { job: Job; select
                   <MessageHeader>{turn.role === "user" ? "나" : <><ScalesIcon weight="duotone" size={18} aria-hidden />MAGI</>}</MessageHeader>
                   <Bubble align={turn.role === "user" ? "end" : "start"} variant={turn.role === "user" ? "tinted" : "ghost"}><BubbleContent>
                     {turn.text && <p className="chat-message-text">{turn.text}</p>}
+                    {turn.answers?.map((answer, index) => <div className="chat-answer" key={`${index}:${answer.question_id || "answer"}`}>
+                      <p className="chat-message-text">{answer.answer}</p>
+                      {answer.question?.trim() && <Collapsible className="chat-question-reference">
+                        <CollapsibleTrigger className="chat-question-trigger">답변 대상 질문<CaretDownIcon size={14} aria-hidden /></CollapsibleTrigger>
+                        <CollapsibleContent><blockquote className="chat-question-text">{answer.question}</blockquote></CollapsibleContent>
+                      </Collapsible>}
+                    </div>)}
                     {!!turn.questions?.length && !(waiting && turn.eventId === latestEventId) && <ol className="chat-history-questions">{turn.questions.map((question, index) => <li key={`${index}:${question}`}>{questionDetails(question, index).label}</li>)}</ol>}
                     {turn.documentStepId && <Button className="chat-document-link" onClick={() => select(turn.documentStepId!)}><FileTextIcon size={17} aria-hidden />이 시점의 명세 열기</Button>}
                   </BubbleContent></Bubble>

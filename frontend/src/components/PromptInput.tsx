@@ -13,7 +13,7 @@ export function PromptInput({ onSend, disabled, label, buttonLabel, ...props }: 
   buttonLabel: string;
 }) {
   return <InputGroup className="chat-prompt" data-disabled={disabled || undefined}>
-    <InputGroupTextarea {...props} aria-label={label} disabled={disabled} maxLength={20000} onKeyDown={(event) => {
+    <InputGroupTextarea {...props} aria-label={label} maxLength={20000} onKeyDown={(event) => {
       props.onKeyDown?.(event);
       if (!event.defaultPrevented && isSubmitShortcut(event)) { event.preventDefault(); if (!disabled) onSend(); }
     }} />

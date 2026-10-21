@@ -1,3 +1,4 @@
+import { ServiceStatusNotice, serviceState } from "./ServiceStatus";
 import { Conversation } from "./Conversation";
 import { PromptInput } from "./components/PromptInput";
 import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
@@ -104,7 +105,7 @@ export default function Workspace() {
   selectedId.current = id;
   navigation.current = location.key;
   const isAdmin = !auth.publicMode || auth.user?.role === "admin",
-    blocked = busy || !!(auth.status.busy && !auth.status.mine);
+    blocked = busy || serviceState(auth.publicMode, auth.status).blocked;
   const refresh = useCallback(() => setRefreshIndex((i) => i + 1), []);
   useEffect(() => {
     let alive = true,
@@ -144,6 +145,7 @@ export default function Workspace() {
       );
       socket.onopen = () => {
         if (alive) {
+          window.dispatchEvent(new Event("service-status"));
           attempt = 0;
           setConnection("");
           void load();
@@ -472,7 +474,7 @@ export default function Workspace() {
         </SidebarGroup>
       </AppSidebar>
       <SidebarInset className="workspace-content">
-        <div className="mobile-workspace-bar"><SidebarTrigger aria-label="메뉴 열기" /><span>MAGI 작업 공간</span></div>
+        <div className="mobile-workspace-bar"><SidebarTrigger  /><span>MAGI 작업 공간</span></div>
         <Account />
         <main>
           <header className={`workspace-header ${id && surface === "workspace" ? "chat-header" : ""}`}>
@@ -492,6 +494,7 @@ export default function Workspace() {
                   <div className="welcome-mark"><SparkleIcon weight="duotone" size={38} aria-hidden /></div>
                   <h2>무엇을 만들고 싶으신가요?</h2>
                   <p>완벽하게 정리하지 않아도 괜찮습니다.<br />요청을 바탕으로 필요한 내용을 함께 구체화합니다.</p>
+                  <ServiceStatusNotice inline />
                   <label htmlFor="request-text">개발 요청</label>
                   <PromptInput id="request-text" label="개발 요청" buttonLabel="명세 생성 시작" rows={5} value={request} disabled={blocked}
                     placeholder="예: 팀이 매주 진행 상황을 공유할 수 있는 보고서 생성 기능을 만들어주세요."
@@ -616,30 +619,20 @@ function Account() {
   }
   return (
     <header className="account-header">
-      <SidebarTrigger aria-label="메뉴 열기" className="desktop-sidebar-trigger" />
-      <p role="status">
-        {!auth.publicMode
-          ? "로컬 작업 공간"
-          : auth.status.recovering
-            ? "서비스 복구 확인 중입니다."
-            : !auth.status.busy
-              ? "MAGI를 사용할 수 있습니다."
-              : auth.status.mine
-                ? `내 작업을 처리 중입니다.${remaining !== null ? ` · ${remaining}초 후 사용권 해제` : ""}`
-                : "다른 사용자가 사용 중입니다. 내 기록은 열람할 수 있습니다."}
-      </p>
+      <SidebarTrigger  className="desktop-sidebar-trigger" />
+      <ServiceStatusNotice />
       {remaining !== null && remaining <= 30 && (
         <p role="alert">곧 사용권이 해제됩니다.</p>
       )}
       <div className="account-controls">
-        {auth.status.mine && (
+        {auth.status.mine && auth.status.phase === "waiting" && auth.status.checkState === "ready" && (
           <>
             <Button onClick={() => void lease("keep")}>계속 사용</Button>
             <Button onClick={() => void lease("release")}>사용 종료</Button>
           </>
         )}
         {auth.publicMode &&
-          !auth.status.busy &&
+          auth.status.checkState === "ready" && !auth.status.busy &&
           location.pathname.startsWith("/jobs/") && (
             <Button onClick={() => void lease("resume")}>
               이 작업 사용권 다시 얻기

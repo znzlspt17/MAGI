@@ -96,7 +96,7 @@ class PublicService:
         if method == 'usage':
             return self.access.usage(actor['id'])
         if method == 'lease.release':
-            self.release(actor['id'])
+            self.release(actor['id'], require_owner=True)
             return self.access.status(actor['id'])
         if method == 'lease.keep':
             with self.store.transaction() as c:
@@ -166,9 +166,11 @@ class PublicService:
             raise AccessError(response['error']['message'],response['error']['code'])
         return user_payload(response.get('result'))
 
-    def release(self, uid):
+    def release(self, uid, *, require_owner=False):
         with self.store.transaction() as c:
             row = self.access.lease(c)
+            if require_owner and row['owner_id'] != uid:
+                raise AccessError('종료할 사용권이 없습니다.', 'forbidden')
             if row['owner_id'] == uid:
                 if row['phase'] == 'waiting':
                     self.access.clear(c)

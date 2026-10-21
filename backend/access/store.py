@@ -201,7 +201,7 @@ class AccessStore:
     def status(self, uid):
         with self.store.transaction() as c:
             row = self.lease(c)
-            return {'busy': row['phase'] != 'idle', 'mine': row['owner_id'] == uid,
+            return {'busy': row['phase'] != 'idle', 'mine': row['owner_id'] == uid, 'phase': row['phase'],
                     'deadline': row['deadline'] if row['owner_id'] == uid else None,
                     'recovering': row['phase'] == 'recovery'}
 

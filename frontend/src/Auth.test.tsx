@@ -5,7 +5,7 @@ import {AuthProvider,useAuth} from './Auth';
 import {api,configureAuth} from './api';
 import {migrateSessionKeys} from './storage-migration';
 vi.mock('./api',()=>({api:vi.fn(),post:vi.fn().mockResolvedValue({}),configureAuth:vi.fn(),clearRequests:vi.fn()}));
-function Account(){const auth=useAuth();return <><p>{auth.user?.id}</p><p>{auth.status.busy?'busy':'available'}</p><button onClick={()=>void auth.logout()}>logout</button></>;}
+function Account(){const auth=useAuth();return <><p>{auth.user?.id}</p><p>{auth.status.busy?'busy':'available'}</p><p>{auth.status.checkState}</p><p>{auth.status.mine?'mine':'not-mine'}</p><button onClick={()=>void auth.logout()}>logout</button></>;}
 beforeEach(()=>{vi.mocked(api).mockImplementation(async(path:string)=>path==='/api/auth/info'?{public:true,login_available:true}:path==='/api/me'?{id:'owner',role:'user',csrf:'fake-csrf'}:path==='/api/service/status'?{busy:false}:{runs:1,remaining_runs:3});sessionStorage.clear();});
 afterEach(()=>{cleanup();vi.useRealTimers();vi.clearAllMocks();vi.restoreAllMocks();});
 it('StrictMode 재마운트에서도 인증과 상태 갱신을 유지하고 타이머를 해제한다',async()=>{
@@ -40,4 +40,25 @@ it('이전 페이지 복원 시 정리한 상태 조회를 다시 시작한다',
  const restored=new Event('pageshow');Object.defineProperty(restored,'persisted',{value:true});
  act(()=>window.dispatchEvent(restored));
  await waitFor(()=>expect(vi.mocked(api).mock.calls.filter(([path])=>path==='/api/service/status')).toHaveLength(2));
+});
+
+it('WebSocket 소유 주장 대신 HTTP 재조회 결과를 사용하고 중복 신호를 합친다',async()=>{
+ let finish:(value:unknown)=>void=()=>{};
+ const original=vi.mocked(api).getMockImplementation()!;
+ vi.mocked(api).mockImplementation((path,...args)=>path==='/api/service/status'?new Promise(resolve=>{finish=resolve;}):original(path,...args));
+ render(<AuthProvider><Account/></AuthProvider>);await screen.findByText('owner');await screen.findByText('loading');
+ act(()=>{window.dispatchEvent(new CustomEvent('service-status',{detail:{busy:true,mine:true}}));window.dispatchEvent(new CustomEvent('service-status',{detail:{busy:true,mine:true}}));});
+ expect(vi.mocked(api).mock.calls.filter(([path])=>path==='/api/service/status')).toHaveLength(1);
+ await act(async()=>finish({busy:true,mine:false,phase:'running'}));
+ await screen.findByText('busy');expect(screen.queryByText('mine')).toBeNull();
+ expect(vi.mocked(api).mock.calls.filter(([path])=>path==='/api/service/status')).toHaveLength(2);
+ act(()=>window.dispatchEvent(new Event('pagehide')));
+ await act(async()=>finish({busy:true,mine:true}));
+ await screen.findByText('loading');expect(screen.queryByText('mine')).toBeNull();
+});
+it('상태 조회 실패는 이전 사용 가능 상태를 지운다',async()=>{
+ render(<AuthProvider><Account/></AuthProvider>);await screen.findByText('ready');
+ vi.mocked(api).mockRejectedValueOnce(new Error('offline'));
+ act(()=>window.dispatchEvent(new Event('service-status')));
+ await screen.findByText('error');
 });

@@ -34,6 +34,12 @@
 .chat-turn.user [data-slot="bubble-content"] { background: #eee7fb; color: #3e3054; border-radius: 16px 16px 5px 16px; padding: 13px 17px; }
 .chat-turn.magi [data-slot="bubble-content"] { background: transparent; border: 0; padding: 3px 0; }
 .chat-message-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.85; font-size: 15px; margin: 0; }
+.chat-answer + .chat-answer { margin-top: 18px; }
+.chat-question-reference { margin-top: 8px; min-width: 0; }
+.chat-question-trigger { display: inline-flex; align-items: center; gap: 6px; padding: 4px 0; border: 0; background: transparent; color: #655478; font: inherit; font-size: 12px; cursor: pointer; }
+.chat-question-trigger:focus-visible { outline: 2px solid #7550cb; outline-offset: 3px; border-radius: 3px; }
+.chat-question-trigger[data-state="open"] svg { transform: rotate(180deg); }
+.chat-question-text { margin: 8px 0 0; padding-left: 10px; border-left: 2px solid #bca9d6; color: #655478; font-size: 13px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 .chat-document-link { margin-top: 12px; }
 .chat-history-questions { padding-left: 22px; line-height: 1.9; font-size: 14px; }
 .chat-history-questions li { margin: 7px 0; }

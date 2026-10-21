@@ -1,3 +1,4 @@
+import { ServiceStatusNotice, serviceState } from "./ServiceStatus";
 import { PromptInput, isSubmitShortcut } from "./components/PromptInput";
 import { InputGroup, InputGroupTextarea } from "./components/ui/input-group";
 import { Item, ItemContent, ItemTitle, ItemDescription, ItemActions } from "./components/ui/item";
@@ -65,7 +66,7 @@ export function QuestionActions({
   conversational?: boolean;
   onReview?: () => void;
 }) {
-  const { user, status } = useAuth();
+  const { user, status, publicMode } = useAuth();
   const prefix = `draft:${user?.id || "local"}:${job.id}:`;
   const questions: string[] = job.state?.blocking_questions || [],
     forms: Record<string, QuestionForm> = job.state?.question_forms || {};
@@ -78,7 +79,7 @@ export function QuestionActions({
   const [approvedExecution, setApprovedExecution] = useState(() => sessionStorage.getItem(prefix + "approved-execution") || "");
   const submitting = useRef(false);
   const executionKey = `${job.id}:${job.execution_id || "legacy"}:${job.status}`;
-  const disabled = busy || pending || approvedExecution === executionKey || !!(status.busy && !status.mine);
+  const disabled = busy || pending || approvedExecution === executionKey || serviceState(publicMode, status).blocked;
   const actionClass = conversational ? "action-card conversation-action" : "action-card";
   async function perform(action: string, payload: unknown) {
     if (disabled || submitting.current) return false;
@@ -215,7 +216,7 @@ export function QuestionActions({
             (r: RecordData) => r.question_id === q.id,
           );
           return (
-            <fieldset key={key} disabled={disabled} className="question-form">
+            <fieldset key={key} disabled={busy || pending} className="question-form">
               <legend>
                 {index + 1}. {form?.question || q.label}
               </legend>
@@ -290,6 +291,7 @@ export function QuestionActions({
             </fieldset>
           );
         })}
+        <ServiceStatusNotice inline />
         <Notice>{error}</Notice>
         <Button
           className="primary"
@@ -317,7 +319,7 @@ export function QuestionActions({
     ["PASS_PENDING_USER_APPROVAL", "waiting_approval"].includes(effective) &&
     (!job.state || job.state.status === "PASS_PENDING_USER_APPROVAL");
   return (
-    <section className={actionClass} id="job-actions">
+    <section className={actionClass} id="job-actions"><ServiceStatusNotice inline />
       <span className="eyebrow">NEXT STEP</span>
       <h3>{job.can_continue ? "이어서 요청하기" : "명세 검토와 다음 단계"}</h3>
       {normalization && (
