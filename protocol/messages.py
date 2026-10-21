@@ -14,6 +14,7 @@ METHODS |= {"cleanup.catalog", "cleanup.preview", "cleanup.execute"}
 METHODS.add("continue")
 METHODS.add("health.check")
 METHODS |= {'admin.projects','admin.graph','admin.search','admin.node','admin.document','admin.jobs'}
+METHODS |= {'admin.usage','admin.usage.rows'}
 METHODS |= {'auth.info','auth.start','auth.callback','auth.me','auth.logout','service.status','usage',
             'lease.keep','lease.release','lease.resume','admin.overview','admin.user','admin.claim','admin.stop','admin.job','admin.settle','admin.settings'}
 
