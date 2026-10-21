@@ -73,15 +73,11 @@ def run_migrations(conn, state, *, pending_files=False, entering=None):
         versions = {r['version'] for r in conn.execute('SELECT version FROM schema_versions').fetchall()}
         if '009.sql' not in versions:
             raise KnowledgeError('새 DB의 전환 이력이 누락되었습니다.')
-        for version in sorted(v for v in versions if v.endswith('.sql')):
-            entering('version_check', version)
-            LOGGER.info('DB migration skipped migration=%s', version)
-        return 0, len([v for v in versions if v.endswith('.sql')])
     # 구 정책은 역사적 SQL을 적용하는 이 트랜잭션에서만 사용한다.
     conn.execute("SELECT set_config('magi.internal','on',true),set_config('app.internal','on',true)")
     entering('list_files')
     root = files('backend.knowledge').joinpath('migrations')
-    for i in range(1, 10):
+    for i in range(1, 11):
         name = f'{i:03}.sql'
         entering('version_check', name)
         if name in versions:
@@ -92,7 +88,7 @@ def run_migrations(conn, state, *, pending_files=False, entering=None):
         sql = root.joinpath(name).read_text(encoding='utf-8')
         entering('execute', name)
         conn.execute(sql)
-        ledger = 'schema_versions' if i == 9 else 'magi_schema_versions'
+        ledger = 'schema_versions' if i >= 9 else 'magi_schema_versions'
         entering('record_version', name)
         conn.execute(f'INSERT INTO {ledger} VALUES (%s)', (name,))
         applied += 1

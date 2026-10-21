@@ -1,6 +1,7 @@
 """비밀 파일을 읽지 않는 운영 명령. 서버 중지 상태에서만 변경한다."""
 
 import argparse
+import json
 from uuid import uuid4
 from backend.access.runtime import PublicRuntime
 from backend.access.store import AccessStore
@@ -10,17 +11,33 @@ from backend.knowledge.store import KnowledgeStore
 
 def main():
     parser=argparse.ArgumentParser(description='환경을 주입한 운영 계정으로 실행하세요. 인증값을 인자로 넘기지 마세요.')
-    parser.add_argument('action',choices=['users','make-admin','recover'])
+    parser.add_argument('action',choices=['users','make-admin','recover','reprice-costs'])
     parser.add_argument('--user-id')
     parser.add_argument('--confirm-stopped',action='store_true')
+    parser.add_argument('--job-id')
+    parser.add_argument('--start')
+    parser.add_argument('--end')
+    parser.add_argument('--apply',action='store_true')
     args=parser.parse_args()
+    if args.action=='reprice-costs':
+        from backend.access.reprice import validate_scope
+        try:
+            validate_scope(args.job_id,args.start,args.end)
+        except ValueError as exc:
+            parser.error(str(exc))
+    elif args.apply or args.job_id or args.start or args.end:
+        parser.error('보정 옵션은 reprice-costs에서만 사용할 수 있습니다.')
     config=KnowledgeConfig.from_env()
     if config is None:
         parser.error('PostgreSQL 설정이 필요합니다.')
     store=KnowledgeStore(config)
     runtime=PublicRuntime(store)
     try:
-        runtime.acquire()
+        runtime.acquire(recover=args.action!='reprice-costs')
+        if args.action=='reprice-costs':
+            from backend.access.reprice import reprice_costs
+            print(json.dumps(reprice_costs(store,job_id=args.job_id,start=args.start,end=args.end,apply=args.apply),ensure_ascii=False))
+            return
         with store.transaction() as c:
             if args.action=='users':
                 for row in c.execute('SELECT id,role,suspended FROM users ORDER BY id').fetchall():

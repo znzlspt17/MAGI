@@ -2,6 +2,8 @@
 
 from decimal import Decimal
 from backend.access.context import AccessError
+from backend.access.costs import TOKEN_FIELDS, calculate_cost, usage_problem
+from backend.model_policy import COST_POLICY
 
 
 class Meter:
@@ -37,15 +39,16 @@ class Meter:
         self.access.mark_called(ident)
         return ident
 
-    def record_usage(self, ident, model, incoming, outgoing, cached):
+    def record_usage(self, ident, model, incoming, outgoing, cached, written=None, write_30m=None, write_12h=None):
         _, _, context, output = self.price(model)
         incoming = incoming if type(incoming) is int and 0 <= incoming <= context else None
         outgoing = outgoing if type(outgoing) is int and 0 <= outgoing <= output else None
-        self.access.record_tokens(ident,incoming,outgoing,cached)
+        self.access.record_tokens(ident,incoming,outgoing,cached,written,write_30m,write_12h,policy=COST_POLICY)
 
     def settle(self, ident, model, result):
         if result is not None:
-            self.record_usage(ident,model,result.input_tokens,result.output_tokens,result.cached_tokens)
+            self.record_usage(ident,model,result.input_tokens,result.output_tokens,result.cached_tokens,
+                              result.cache_write_tokens,result.cache_write_30m_tokens,result.cache_write_12h_tokens)
         # 실패/타임아웃은 제공자의 실제 과금 여부를 추정하지 않는다.
         if result is None or type(result.input_tokens) is not int or type(result.output_tokens) is not int:
             self.access.settle(ident)
@@ -54,10 +57,8 @@ class Meter:
         if not 0 <= result.input_tokens <= context or not 0 <= result.output_tokens <= output:
             self.access.settle(ident)
             raise AccessError('제공자 사용량 상한을 확인해야 합니다.', 'unavailable')
-        row=self.prices[model]
-        if result.input_tokens <= row.get('short_context_tokens',-1):
-            incoming=Decimal(str(row['short_input_usd_per_million']))
-            outgoing=Decimal(str(row['short_output_usd_per_million']))
-        incoming *= Decimal(str(row.get('cache_write_multiplier',1)))
-        actual = ((result.input_tokens * incoming + result.output_tokens * outgoing) / Decimal(1000000)).quantize(Decimal('.00000001'), rounding='ROUND_UP')
-        self.access.settle(ident, actual, source='calculated')
+        usage = {key: getattr(result,key) for key in TOKEN_FIELDS}
+        if usage_problem(usage,self.prices[model]):
+            self.access.settle(ident)
+            return
+        self.access.settle(ident, calculate_cost(usage,self.prices[model]), source='calculated', policy=COST_POLICY)

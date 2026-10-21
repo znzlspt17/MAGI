@@ -13,7 +13,7 @@ class PublicRuntime:
         self.store=store
         self.connection=None
 
-    def acquire(self):
+    def acquire(self, *, recover=True):
         from psycopg.rows import dict_row
         c=self.store.connect(**self.store.config.connection,row_factory=dict_row)
         try:
@@ -24,8 +24,9 @@ class PublicRuntime:
                 raise InvalidStateError('다른 공개 백엔드 프로세스가 실행 중입니다.')
             c.commit()
             self.connection=c
-            with self.store.transaction() as tx:
-                tx.execute("UPDATE service_lease SET phase='recovery',deadline=NULL WHERE singleton=1 AND phase IN ('running','recovery')")
+            if recover:
+                with self.store.transaction() as tx:
+                    tx.execute("UPDATE service_lease SET phase='recovery',deadline=NULL WHERE singleton=1 AND phase IN ('running','recovery')")
         except Exception:
             c.close()
             raise

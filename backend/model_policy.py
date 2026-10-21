@@ -1,9 +1,9 @@
 """MAGI의 단일 모델과 보수적인 토큰 비용 정책.
 
-확인일: 2026-10-19 (OpenAI Standard 처리)
+확인일: 2026-10-22 (OpenAI Standard 처리)
 https://developers.openai.com/api/docs/models/gpt-6-luna
 https://developers.openai.com/api/docs/pricing
-캐시 할인은 적용하지 않고 입력 전체에 캐시 쓰기 할증을 적용해 과소 산정을 피한다.
+예약은 최악 비용으로 유지하고 정산은 관측된 입력 종류별 사용량으로 계산한다.
 """
 from decimal import Decimal
 
@@ -14,6 +14,7 @@ CONTEXT_TOKENS = 1_050_000
 MAX_OUTPUT_TOKENS = 128_000
 SHORT_CONTEXT_TOKENS = 272_000
 SERVICE_TIER = 'default'
+COST_POLICY = 'luna-standard-2026-10-22-v1'
 
 
 def require_model(model: str) -> None:
@@ -28,6 +29,8 @@ def default_prices() -> dict:
         'output_usd_per_million': Decimal('0.75'),
         'short_input_usd_per_million': Decimal('0.10'),
         'short_output_usd_per_million': Decimal('0.50'),
+        'cached_usd_per_million': Decimal('0.02'),
+        'short_cached_usd_per_million': Decimal('0.01'),
         'short_context_tokens': SHORT_CONTEXT_TOKENS,
         'cache_write_multiplier': Decimal('1.25'),
         'context_tokens': CONTEXT_TOKENS,

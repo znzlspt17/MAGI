@@ -155,6 +155,7 @@ class OpenAIProvider:
             # SDK 예외에는 요청과 응답 원문이 포함될 수 있어 전파하지 않는다.
             raise Error("OpenAI request failed.") from None
         data = response.model_dump()
+        write_tokens = _cache_write_tokens(data)
         text = response.output_text
         parsed = None
         failure = None
@@ -170,7 +171,8 @@ class OpenAIProvider:
             if meter is not None:
                 # 실패 응답에도 관측된 사용량은 보존하되 비용은 미확정으로 남긴다.
                 meter.record_usage(reservation,model,_usage_count(data,"input_tokens"),
-                                   _usage_count(data,"output_tokens"),_cached_tokens(data))
+                                   _usage_count(data,"output_tokens"),_cached_tokens(data),
+                                   *write_tokens)
                 meter.settle(reservation,model,None)
             raise Error(failure)
 
@@ -182,6 +184,9 @@ class OpenAIProvider:
             cached_tokens=_cached_tokens(data),
             response_id=safe_response_id(data.get("id")),
             cache_diagnostics=safe_diagnostics(data.get("prompt_cache_diagnostics")),
+            cache_write_tokens=write_tokens[0],
+            cache_write_30m_tokens=write_tokens[1],
+            cache_write_12h_tokens=write_tokens[2],
         )
         if meter is not None:
             meter.settle(reservation,model,result)
@@ -214,6 +219,18 @@ def _cached_tokens(data: dict[str, Any]) -> int | None:
         return None
     value = details.get("cached_tokens")
     return value if type(value) is int and value >= 0 else None
+
+
+def _cache_write_tokens(data: dict[str, Any]) -> tuple[int | None, int | None, int | None]:
+    """필드 누락과 관측된 0을 구분하며 쓰기 수명별 사용량을 읽는다."""
+    usage = data.get('usage')
+    details = usage.get('input_tokens_details') if isinstance(usage,dict) else None
+    if not isinstance(details,dict):
+        return None,None,None
+    lifetimes = details.get('cache_write_tokens_details')
+    lifetimes = lifetimes if isinstance(lifetimes,dict) else {}
+    values = (details.get('cache_write_tokens'),lifetimes.get('ttl_30m_tokens'),lifetimes.get('ttl_12h_tokens'))
+    return tuple(value if type(value) is int and 0 <= value <= 2**63-1 else None for value in values)
 
 
 def _is_reasoning_model(model: str) -> bool:

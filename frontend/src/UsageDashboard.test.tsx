@@ -16,6 +16,19 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 function mount() { return render(<MemoryRouter><UsageDashboard version={0} save={save} /></MemoryRouter>); }
 
+it("호출별 표에서 이전 산정과 사용량 기반 산정·수동 정산을 구분한다", async () => {
+  const evidence = ["legacy", "complete", "manual", "missing_usage"];
+  vi.mocked(api).mockImplementation(async (path: string) => path.includes("/rows?") ? {
+    rows: evidence.map((value, i) => ({ ...row, id: "call-" + i, state: value === "missing_usage" ? "uncertain" : "settled",
+      settlement_source: value === "manual" ? "manual" : value === "missing_usage" ? null : "calculated", cost_evidence: value })), total: 4,
+  } : summary);
+  mount();
+  await screen.findAllByRole("link", { name: "조회할 작업" });
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "호출별" }), { button: 0, ctrlKey: false });
+  for (const label of ["이전 보수적 산정", "사용량 기반 산정", "수동 정산", "정산 근거 불완전"])
+    expect(await screen.findByText(label, { selector: "small" })).toBeTruthy();
+});
+
 it("금액 정밀도와 한국 시간 기간 프리셋을 유지한다", () => {
   expect(money("0.00000001")).toBe("$0.00000001");
   expect(money("1234567.2")).toBe("$1,234,567.20000000");

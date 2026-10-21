@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./com
 import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
-import { count, money, presetRange, timestamp, validRange, type Group, type UsageRow, type UsageRows, type UsageSummary } from "./usage-data";
+import { count, money, presetRange, settlementLabel, timestamp, validRange, type Group, type UsageRow, type UsageRows, type UsageSummary } from "./usage-data";
 import "./usage-dashboard.css";
 
 const groups: [Group, string][] = [["job", "작업별"], ["user", "사용자별"], ["call", "호출별"]];
@@ -130,7 +130,7 @@ export default function UsageDashboard({ version, save }: {
             {group === "call" && <><th>호출 시각 (KST)</th><th>모델 / 정산 상태</th></>}
             {group !== "user" && <th>작업</th>}<th>사용자 ID</th>{group !== "call" && <th>호출</th>}<th>입력 / 출력 토큰</th><th>산정 비용</th><th>미확정 예약액</th><th><span className="sr-only">작업</span></th>
           </tr></thead><tbody>{rows.rows.map(row => <tr key={row.id || row.job_id + ":" + row.user_id}>
-            {group === "call" && <><td className="usage-nowrap">{timestamp(row.called_at)}<small>{row.usage_day}{row.is_call ? "" : row.reserved_at ? " · 호출 전 예약" : " · 호출 여부 미확인"}</small><small>예약 {timestamp(row.reserved_at)}</small></td><td><Badge variant={row.state === "settled" ? "secondary" : "outline"}>{stateLabel[row.state || ""] || row.state}</Badge><small>{row.model}</small><small>{row.settlement_source === "manual" ? "수동 정산" : row.settlement_source === "calculated" ? "자동 산정" : "정산 근거 기록 없음"}</small>{row.settled_at && <small>정산 {timestamp(row.settled_at)}</small>}</td></>}
+            {group === "call" && <><td className="usage-nowrap">{timestamp(row.called_at)}<small>{row.usage_day}{row.is_call ? "" : row.reserved_at ? " · 호출 전 예약" : " · 호출 여부 미확인"}</small><small>예약 {timestamp(row.reserved_at)}</small></td><td><Badge variant={row.state === "settled" ? "secondary" : "outline"}>{stateLabel[row.state || ""] || row.state}</Badge><small>{row.model}</small><small>{settlementLabel(row)}</small>{row.settled_at && <small>정산 {timestamp(row.settled_at)}</small>}</td></>}
             {group !== "user" && <td className="usage-job-cell"><Link to={"/admin/data?job_id=" + encodeURIComponent(row.job_id!)}>{row.request || "작업 제목 없음"}</Link><Id value={row.job_id!} /></td>}
             <td><Id value={row.user_id} /></td>{group !== "call" && <td>{count(row.calls)}<small>호출 전 예약 {row.pending_calls}건 · 미확인 {row.unknown_calls}건</small></td>}
             <td className="usage-nowrap">{count(row.input_tokens)} / {count(row.output_tokens)}<small>캐시 {count(row.cached_tokens)}{group !== "call" && ` · 토큰 누락 ${row.missing_tokens}건`}</small></td>

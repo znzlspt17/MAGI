@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from backend.access.context import AccessError
 from backend.access.store import day_at
+from backend.access.costs import evidence_status
 
 
 BASE = """WITH ledger AS (
@@ -98,4 +99,7 @@ def usage(service, method, params):
             order = 'spent DESC,outstanding DESC,latest_day DESC,'+tie if sort=='cost' else 'latest_day DESC,latest_at DESC NULLS LAST,'+tie
         total = c.execute(BASE+'SELECT count(*) AS total FROM ('+selection+') results',values).fetchone()['total']
         rows = c.execute(BASE+selection+' ORDER BY '+order+' LIMIT %s OFFSET %s',values+[limit,offset]).fetchall()
+        if group=='call':
+            for row in rows:
+                row['cost_evidence'] = evidence_status(row)
         return wire({'rows':rows,'total':int(total),'limit':limit,'offset':offset,'group_by':group})

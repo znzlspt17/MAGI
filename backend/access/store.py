@@ -159,16 +159,19 @@ class AccessStore:
             c.execute('UPDATE cost_calls SET called_at=COALESCE(called_at,to_timestamp(%s)) WHERE id=%s',
                       (self.clock(),ident))
 
-    def record_tokens(self, ident, incoming, outgoing, cached):
+    def record_tokens(self, ident, incoming, outgoing, cached, written=None, write_30m=None, write_12h=None, *, policy=None):
         # 누락·잘못된 값은 0으로 채우지 않고 관측한 값만 저장한다.
         incoming = incoming if type(incoming) is int and incoming >= 0 else None
         outgoing = outgoing if type(outgoing) is int and outgoing >= 0 else None
         cached = cached if type(cached) is int and incoming is not None and 0 <= cached <= incoming else None
+        # 관계가 잘못된 양수도 그대로 보존해 재산정에서 불일치를 감지한다.
+        writes = [value if type(value) is int and 0 <= value <= 2**63-1 else None
+                  for value in (written,write_30m,write_12h)]
         with self.store.transaction() as c:
-            c.execute('UPDATE cost_calls SET input_tokens=%s,output_tokens=%s,cached_tokens=%s WHERE id=%s',
-                      (incoming,outgoing,cached,ident))
+            c.execute('UPDATE cost_calls SET input_tokens=%s,output_tokens=%s,cached_tokens=%s,cache_write_tokens=%s,cache_write_30m_tokens=%s,cache_write_12h_tokens=%s,cost_policy=%s WHERE id=%s',
+                      (incoming,outgoing,cached,*writes,policy,ident))
 
-    def settle(self, ident, actual=None, *, source='calculated'):
+    def settle(self, ident, actual=None, *, source='calculated', policy=None):
         with self.store.transaction() as c:
             row = c.execute('SELECT * FROM cost_calls WHERE id=%s FOR UPDATE', (ident,)).fetchone()
             if not row or row['state'] == 'settled':
@@ -181,8 +184,8 @@ class AccessStore:
                 raise AccessError('비용 산정을 확인해야 합니다.', 'unavailable')
             c.execute('UPDATE daily_usage SET reserved=reserved-%s,spent=spent+%s WHERE day=%s AND user_id=%s',
                       (row['reserved'], actual, row['day'], row['user_id']))
-            c.execute("UPDATE cost_calls SET actual=%s,state='settled',settled_at=to_timestamp(%s),settlement_source=%s WHERE id=%s",
-                      (actual,self.clock(),source,ident))
+            c.execute("UPDATE cost_calls SET actual=%s,state='settled',settled_at=to_timestamp(%s),settlement_source=%s,cost_policy=%s WHERE id=%s",
+                      (actual,self.clock(),source,policy,ident))
 
     def finish(self, jid, generation, waiting=False):
         with self.store.transaction() as c:

@@ -120,6 +120,9 @@ class CompletionResult:
     cached_tokens: int | None = None
     response_id: str | None = None
     cache_diagnostics: dict[str, Any] | None = None
+    cache_write_tokens: int | None = None
+    cache_write_30m_tokens: int | None = None
+    cache_write_12h_tokens: int | None = None
 
 
 @dataclass(slots=True)
