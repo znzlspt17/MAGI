@@ -85,7 +85,12 @@ class Cleanup:
 
     def catalog(self):
         with self.manager.lock:
-            jobs = {j["id"]: j for j in (self.store.jobs() if self.store else [])}
+            jobs = {}
+            if self.store:
+                with self.store.transaction(mode="read") as conn:
+                    # JSON에 남은 이전 소유자 대신 DB의 현재 소유권을 표시한다.
+                    jobs = {row["id"]: {**row["data"], "id": row["id"], "owner_id": row["owner_id"]}
+                            for row in conn.execute("SELECT id,data,owner_id FROM magi_jobs ORDER BY id").fetchall()}
             for ident in self.file_jobs():
                 if ident not in jobs:
                     path = self.manager.data_dir / ident / "job.json"
@@ -97,7 +102,9 @@ class Cleanup:
                             jobs[ident] = {**data, "id": ident}
                     except (OSError, ValueError):
                         jobs[ident] = {"id": ident, "request": "이전 작업 기록"}
-            return {"jobs": [{k: j.get(k) for k in ("id", "request", "project_id", "status", "created_at")} for j in jobs.values()],
+            return {"jobs": [{**{k: j.get(k) for k in ("id", "request", "project_id", "status", "created_at")},
+                              "owner_id": j.get("owner_id") if isinstance(j.get("owner_id"), str) else None}
+                             for j in jobs.values()],
                     "projects": self.store.projects() if self.store else [], "database": self.store is not None,
                     "pending": [p.stem for p in self.root.glob("*.json") if not p.is_symlink()
                                 and self.load(p.stem)["state"] == "files_pending"]}
