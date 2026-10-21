@@ -1,3 +1,4 @@
+import { LoginForm } from "./components/LoginForm";
 import {
   createContext,
   useContext,
@@ -158,34 +159,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         <p role="status">서비스 연결 확인 중…</p>
       </main>
     );
-  if (!authenticated)
-    return (
-      <main className="login">
-        <span className="eyebrow">MAGI WORKSPACE</span>
-        <h1>
-          개발 요청을
-          <br />
-          검토 가능한 명세로
-        </h1>
-        <p>요청 작성 → 요구사항 확인 → 명세 검토 → 승인과 다운로드</p>
-        <p>
-          이름·이메일·사진은 요청하지 않습니다. 계정 구분용 식별 정보만
-          사용합니다.
-        </p>
-        <p role="status">
-          {notice ||
-            (loginAvailable
-              ? "Google 계정으로 로그인하세요."
-              : "Google 로그인 설정이 준비되지 않았습니다. 운영자에게 문의하세요.")}
-        </p>
-        {loginAvailable && (
-          <a className="button primary" href="/auth/google/start">
-            Google로 로그인
-          </a>
-        )}
-        <a href="/privacy">정보 처리 안내</a>
-      </main>
-    );
+  if (!authenticated) return <LoginForm available={loginAvailable} notice={notice} />;
   return (
     <Context.Provider
       value={{

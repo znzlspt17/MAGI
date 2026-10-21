@@ -10,6 +10,8 @@
 !protocol/**
 !frontend/
 !frontend/**
+!resources/
+!resources/**
 **/.env
 **/.env.*
 **/credentials.json

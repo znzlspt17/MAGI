@@ -1,0 +1,49 @@
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@theme inline {
+  --color-background: #fafaf9;
+  --color-foreground: #262434;
+  --color-card: #ffffff;
+  --color-card-foreground: #262434;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #262434;
+  --color-primary: #7150d4;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #f3f1f7;
+  --color-secondary-foreground: #423950;
+  --color-muted: #f3f1f7;
+  --color-muted-foreground: #6d687b;
+  --color-accent: #eee8fb;
+  --color-accent-foreground: #5636a8;
+  --color-destructive: #b83246;
+  --color-border: #e7e4ec;
+  --color-input: #ded9e7;
+  --color-ring: #7150d4;
+  --color-sidebar: #f7f6fa;
+  --color-sidebar-foreground: #423950;
+  --color-sidebar-primary: #7150d4;
+  --color-sidebar-primary-foreground: #ffffff;
+  --color-sidebar-accent: #eee8fb;
+  --color-sidebar-accent-foreground: #5636a8;
+  --color-sidebar-border: #e7e4ec;
+  --color-sidebar-ring: #7150d4;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+}
+
+/* Preflight 대신 새 컴포넌트에만 필요한 경계선 기본값을 적용한다. */
+@layer base {
+  [data-slot] { border-style: solid; border-width: 0; border-color: #e7e4ec; }
+}
+[data-slot="button"] { font-family: inherit; cursor: pointer; }
+a[data-slot="button"] { text-decoration: none; }
+a[data-slot="button"][data-variant="default"],
+a[data-slot="button"][data-variant="default"]:visited { color: #fff; }
+a[data-slot="button"][data-variant="outline"],
+a[data-slot="button"][data-variant="outline"]:visited { color: #423950; }
+[data-slot="sheet-overlay"] { position: fixed; inset: 0; background: #26243466; z-index: 50; }
+[data-slot="sheet-close"] { background: transparent; border: 0; padding: 8px; min-width: 36px; min-height: 36px; cursor: pointer; }

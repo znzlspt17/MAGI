@@ -1,0 +1,7 @@
+{
+  "react-remove-scroll-bar@2.3.8": {
+    "file": "react-remove-scroll-bar-2.3.8.txt",
+    "url": "https://raw.githubusercontent.com/theKashey/react-remove-scroll-bar/8ca9ba5ea52de03308fe8ced94f7b159a44d28ff/LICENSE",
+    "note": "The npm package declares MIT but omits LICENSE. Its gitHead is not available upstream. This pinned official upstream LICENSE provides the copyright and MIT terms; the upstream package version at this revision is 2.3.7, not evidence of a matching 2.3.8 source release."
+  }
+}

@@ -1,10 +1,18 @@
+import { Conversation } from "./Conversation";
+import { PromptInput } from "./components/PromptInput";
+import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
+import { Badge } from "./components/ui/badge";
+import { AppSidebar } from "./components/AppSidebar";
+import { SidebarProvider, SidebarInset, SidebarTrigger, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "./components/ui/sidebar";
+import { Input } from "./components/ui/input";
+import { PlusIcon, SquaresFourIcon, GraphIcon, SparkleIcon, FileTextIcon, ChatCircleDotsIcon, ClockCounterClockwiseIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api, post } from "./api";
 import { useAuth } from "./Auth";
 import { Button, Notice, statusLabel, formatTime, usageLabel } from "./UI";
 import { DocumentView } from "./DocumentView";
-import { QuestionActions, questionDetails } from "./QuestionActions";
+import { questionDetails } from "./QuestionActions";
 import Knowledge from "./Knowledge";
 import type { Job, RecordData, Step } from "./types";
 export function graphNodes(job: Job): Step[] {
@@ -74,10 +82,9 @@ export default function Workspace() {
     [surface, setSurface] = useState("workspace"),
     [query, setQuery] = useState(""),
     [filter, setFilter] = useState(""),
-    [expanded, setExpanded] = useState(false),
     [busy, setBusy] = useState(false),
     [refreshIndex, setRefreshIndex] = useState(0),
-    [tab, setTab] = useState("document"),
+    [tab, setTab] = useState("conversation"),
     [step, setStep] = useState(""),
     [detail, setDetail] = useState<RecordData | null>(null),
     [loading, setLoading] = useState(false),
@@ -86,7 +93,6 @@ export default function Workspace() {
     views = useRef(
       new Map<string, { step: string; tab: string; manual: boolean }>(),
     ),
-    currentView = useRef({ id, step, tab }),
     fetchSequence = useRef(0),
     selectedId = useRef(id),
     navigation = useRef(location.key),
@@ -97,7 +103,6 @@ export default function Workspace() {
   );
   selectedId.current = id;
   navigation.current = location.key;
-  currentView.current = { id, step, tab };
   const isAdmin = !auth.publicMode || auth.user?.role === "admin",
     blocked = busy || !!(auth.status.busy && !auth.status.mine);
   const refresh = useCallback(() => setRefreshIndex((i) => i + 1), []);
@@ -214,7 +219,7 @@ export default function Workspace() {
     manual.current = false;
     const saved = id ? views.current.get(id) : null;
     setStep(saved?.step || "");
-    setTab(saved?.tab || "document");
+    setTab(saved?.tab || "conversation");
     manual.current = saved?.manual || false;
     setSurface("workspace");
   }, [id]);
@@ -300,16 +305,8 @@ export default function Workspace() {
     };
   }, [id, step, nodeSignature]);
   useEffect(() => {
-    const old = currentView.current;
-    return () => {
-      if (old.id)
-        views.current.set(old.id, {
-          step: old.step,
-          tab: old.tab,
-          manual: manual.current,
-        });
-    };
-  }, [id, step, tab]);
+    if (id && job?.id === id) views.current.set(id, { step, tab, manual: manual.current });
+  }, [id, job?.id, step, tab]);
   useEffect(() => {
     const leave = (event: BeforeUnloadEvent) => {
       if (
@@ -340,7 +337,6 @@ export default function Workspace() {
         execution_id: job?.execution_id,
       });
       if (selectedId.current === target) {
-        manual.current = false;
         auth.setNotice("작업을 대기열에 넣었습니다.");
         refresh();
       }
@@ -402,30 +398,11 @@ export default function Workspace() {
   );
   const actualJob = job?.id === id ? job : null;
   const result = detail?.result || {};
-  const counts =
-    actualJob?.execution_graph?.unresolved_issue_counts ||
-    (actualJob
-      ? [...graphNodes(actualJob)].reverse().find((node) => node.issue_counts)
-          ?.issue_counts
-      : {}) ||
-    {};
-  const phase = !actualJob
-    ? 0
-    : actualJob.status === "FINALIZED"
-      ? 3
-      : actualJob.status === "PASS_PENDING_USER_APPROVAL" ||
-          graphNodes(actualJob).some((n) => n.has_document)
-        ? 2
-        : 1;
+  const currentDocument = actualJob && [...graphNodes(actualJob)].reverse().find((node) => node.has_document && (!actualJob.execution_id || !node.execution_id || node.execution_id === actualJob.execution_id));
+  const showConversation = () => setTab("conversation");
   return (
-    <div className="app-shell">
-      <aside className={`sidebar ${expanded ? "expanded" : ""}`}>
-        <Link className="brand" to="/" onClick={() => setSurface("workspace")}>
-          <span className="brand-mark">M</span>
-          <span>
-            MAGI<small>명세 작업 공간</small>
-          </span>
-        </Link>
+    <SidebarProvider className="magi-shell">
+      <AppSidebar>
         <Button
           className="primary new-job"
           onClick={() => {
@@ -433,35 +410,28 @@ export default function Workspace() {
             setSurface("workspace");
           }}
         >
-          ＋ 새 작업
+          <PlusIcon size={18} aria-hidden />새 작업
         </Button>
-        <nav className="primary-nav">
-          <Button
+        <SidebarGroup className="magi-main-group"><SidebarGroupLabel>작업 공간</SidebarGroupLabel><nav className="primary-nav"><SidebarMenu>
+          <SidebarMenuItem><SidebarMenuButton asChild isActive={surface === "workspace"}><Button
             aria-current={surface === "workspace" ? "page" : undefined}
             onClick={() => setSurface("workspace")}
           >
-            작업 공간
-          </Button>
-          <Button
+            <SquaresFourIcon weight="duotone" size={20} aria-hidden />작업 공간
+          </Button></SidebarMenuButton></SidebarMenuItem>
+          <SidebarMenuItem><SidebarMenuButton asChild isActive={surface === "knowledge"}><Button
             disabled={!!(auth.status.busy && !auth.status.mine)}
             aria-current={surface === "knowledge" ? "page" : undefined}
             onClick={() => setSurface("knowledge")}
           >
-            지식 검색
-          </Button>
-        </nav>
-        <Button
-          className="history-toggle"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((v) => !v)}
-        >
-          작업 목록 {expanded ? "접기" : "펼치기"}
-        </Button>
-        <div className="history">
+            <GraphIcon weight="duotone" size={20} aria-hidden />지식 검색
+          </Button></SidebarMenuButton></SidebarMenuItem>
+        </SidebarMenu></nav></SidebarGroup>
+        <SidebarGroup className="history">
           <label className="sr-only" htmlFor="history-query">
             작업 검색
           </label>
-          <input
+          <Input
             id="history-query"
             placeholder="작업 검색"
             value={query}
@@ -479,18 +449,16 @@ export default function Workspace() {
             <option value="error">오류</option>
             <option value="CRITICAL_BLOCKED">명세 보완 실패</option>
           </select>
-          <h2>
+          <SidebarGroupLabel asChild><h2>
             대화 세션 <span>{filtered.length}</span>
-          </h2>
-          <nav aria-label="작업 기록">
+          </h2></SidebarGroupLabel>
+          <nav aria-label="작업 기록"><SidebarMenu>
             {filtered.map((item) => (
-              <Link
-                key={item.id}
+              <SidebarMenuItem key={item.id}><SidebarMenuButton asChild isActive={id === item.id} className="session-menu-link"><Link
                 to={`/jobs/${item.id}`}
                 aria-current={id === item.id ? "page" : undefined}
                 onClick={() => {
                   setSurface("workspace");
-                  setExpanded(false);
                 }}
               >
                 <strong>{item.request?.slice(0, 70) || "저장된 작업"}</strong>
@@ -498,161 +466,60 @@ export default function Workspace() {
                   {statusLabel(item.status)} ·{" "}
                   {formatTime(item.updated_at || item.created_at)}
                 </small>
-              </Link>
+              </Link></SidebarMenuButton></SidebarMenuItem>
             ))}
-          </nav>
-        </div>
-        <p className="sidebar-privacy">
-          요청과 답변은 명세 생성을 위해 AI 제공자에게 전송됩니다. 비밀값과
-          민감한 정보는 입력하지 마세요.
-        </p>
-        <a href="/privacy">정보 처리 안내</a>
-      </aside>
-      <div className="workspace-content">
+          </SidebarMenu></nav>
+        </SidebarGroup>
+      </AppSidebar>
+      <SidebarInset className="workspace-content">
+        <div className="mobile-workspace-bar"><SidebarTrigger aria-label="메뉴 열기" /><span>MAGI 작업 공간</span></div>
         <Account />
         <main>
-          <header className="workspace-header">
-            <span className="eyebrow">
-              MAGI / {surface === "knowledge" ? "KNOWLEDGE" : "WORKSPACE"}
-            </span>
-            <h1>
-              {surface === "knowledge"
-                ? "지식 검색"
-                : id
-                  ? actualJob?.request?.slice(0, 70) || "작업 불러오는 중…"
-                  : "새 개발 요청"}
-            </h1>
-            <p>
-              {surface === "knowledge"
-                ? "저장된 요구사항과 명세의 관계를 살펴보세요."
-                : "아이디어를 구체화하고 검토 가능한 명세를 완성하세요."}
-            </p>
+          <header className={`workspace-header ${id && surface === "workspace" ? "chat-header" : ""}`}>
+            <div><span className="eyebrow">MAGI / {surface === "knowledge" ? "KNOWLEDGE" : "WORKSPACE"}</span>
+              <h1>{surface === "knowledge" ? "지식 검색" : id ? actualJob?.request?.slice(0, 70) || "작업 불러오는 중…" : "아이디어의 다음 문장을 함께."}</h1>
+              {!id && surface === "workspace" && <p>만들고 싶은 것을 들려주세요. 필요한 질문부터 명세 완성까지 함께합니다.</p>}
+            </div>
+            {actualJob && surface === "workspace" && <div className="chat-header-actions"><Badge variant="secondary">{statusLabel(actualJob.status)}</Badge>{currentDocument && <Button onClick={() => selectStep(currentDocument.id)}><FileTextIcon size={17} aria-hidden />명세 열기</Button>}</div>}
           </header>
           <Notice>{auth.notice || connection}</Notice>
           {surface === "knowledge" ? (
             <Knowledge selectedJobId={id} />
           ) : (
             <>
-              <ol className="workflow-progress" aria-label="명세 생성 단계">
-                {[
-                  "요청 작성",
-                  "요구사항 확인",
-                  "명세 검토·승인",
-                  "완료·다운로드",
-                ].map((label, i) => (
-                  <li
-                    key={label}
-                    aria-current={phase === i ? "step" : undefined}
-                  >
-                    <span>{String(i + 1).padStart(2, "0")}</span>
-                    {label}
-                  </li>
-                ))}
-              </ol>
               {!id ? (
-                <form
-                  className="request-form"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void generate();
-                  }}
-                >
-                  <span className="eyebrow">FROM IDEA TO SPECIFICATION</span>
+                <section className="chat-welcome">
+                  <div className="welcome-mark"><SparkleIcon weight="duotone" size={38} aria-hidden /></div>
                   <h2>무엇을 만들고 싶으신가요?</h2>
-                  <p>
-                    완벽하게 정리하지 않아도 괜찮습니다.
-                    <br />
-                    필요한 내용을 함께 구체화합니다.
-                  </p>
+                  <p>완벽하게 정리하지 않아도 괜찮습니다.<br />요청을 바탕으로 필요한 내용을 함께 구체화합니다.</p>
                   <label htmlFor="request-text">개발 요청</label>
-                  <textarea
-                    id="request-text"
-                    required
-                    maxLength={20000}
-                    rows={10}
-                    value={request}
+                  <PromptInput id="request-text" label="개발 요청" buttonLabel="명세 생성 시작" rows={5} value={request} disabled={blocked}
                     placeholder="예: 팀이 매주 진행 상황을 공유할 수 있는 보고서 생성 기능을 만들어주세요."
-                    onChange={(e) => {
-                      setRequest(e.target.value);
-                      sessionStorage.setItem(draftKey, e.target.value);
-                    }}
-                  />
-                  <div className="request-guidance">
-                    <span>01 만들고 싶은 것</span>
-                    <span>02 사용할 사람</span>
-                    <span>03 지켜야 할 조건</span>
-                  </div>
-                  <p className="subtle">
-                    OpenAI로 명세를 생성합니다. 추가 확인이 필요하면 질문을
-                    드립니다.
-                  </p>
-                  <Button className="primary" type="submit" disabled={blocked}>
-                    명세 생성 시작
-                  </Button>
-                </form>
+                    onChange={(event) => { setRequest(event.target.value); sessionStorage.setItem(draftKey, event.target.value); }} onSend={() => void generate()} />
+                  <div className="request-guidance"><span>만들고 싶은 것</span><span>사용할 사람</span><span>지켜야 할 조건</span></div>
+                  <p className="subtle">요청과 답변은 명세 생성을 위해 OpenAI에 전송됩니다.</p>
+                </section>
               ) : actualJob ? (
                 <>
-                  <div className="status-summary">
-                    <span>
-                      <small>현재 상태</small>
-                      <strong>{statusLabel(actualJob.status)}</strong>
-                    </span>
-                    <span>
-                      <small>미해결 검토</small>
-                      <strong>
-                        {(Number(counts.blocking) || 0) +
-                          (Number(counts.major) || 0)}
-                        건
-                      </strong>
-                    </span>
-                    <span>
-                      <small>다음 행동</small>
-                      <strong>
-                        {actualJob.can_continue
-                          ? "이어서 요청하기"
-                          : actualJob.status === "NEEDS_USER_INPUT"
-                            ? "답변 제출"
-                            : actualJob.status === "PASS_PENDING_USER_APPROVAL"
-                              ? "명세 승인 또는 수정"
-                              : "작업 결과 확인"}
-                      </strong>
-                    </span>
-                    {isAdmin && (
-                      <span>
-                        <small>호출 사용량</small>
-                        <strong>{actualJob.usage?.calls || 0}회</strong>
-                      </span>
-                    )}
-                  </div>
-                  {isAdmin && actualJob.usage && (
-                    <p className="subtle">{usageLabel(actualJob.usage)}</p>
-                  )}
-                  <div
-                    className="workspace-tabs"
-                    role="tablist"
-                    aria-label="작업 보기"
-                  >
+                  <Tabs value={tab} onValueChange={setTab}><TabsList className="workspace-tabs" aria-label="작업 보기">
                     {[
-                      ["document", "명세"],
                       ["conversation", "대화"],
+                      ["document", "명세"],
                       ...(isAdmin ? [["history", "실행 이력"]] : []),
                     ].map(([key, label]) => (
-                      <Button
-                        key={key}
-                        role="tab"
-                        aria-selected={tab === key}
-                        onClick={() => setTab(key)}
-                      >
-                        {label}
-                      </Button>
+                      <TabsTrigger key={key} value={key} id={`workspace-tab-${key}`} aria-controls={`workspace-panel-${key}`} className="button">
+                        {key === "document" ? <FileTextIcon size={18} aria-hidden /> : key === "conversation" ? <ChatCircleDotsIcon size={18} aria-hidden /> : <ClockCounterClockwiseIcon size={18} aria-hidden />}{label}
+                      </TabsTrigger>
                     ))}
-                  </div>
-                  <CompletedDocuments job={actualJob} select={selectStep} />
+                  </TabsList></Tabs>
+                  {tab !== "conversation" && <CompletedDocuments job={actualJob} select={selectStep} />}
+                  <div role="tabpanel" id={`workspace-panel-${tab}`} aria-labelledby={`workspace-tab-${tab}`} tabIndex={0}>
                   {tab === "conversation" ? (
-                    <Conversation job={actualJob} select={selectStep} />
+                    <Conversation key={actualJob.id} job={actualJob} select={selectStep} onAction={mutate} busy={busy} />
                   ) : (
                     <div className="document-action-layout">
                       <section className="document-panel">
+                        {tab === "history" && actualJob.usage && <p className="subtle">{usageLabel(actualJob.usage)}</p>}
                         {tab === "history" && (
                           <div
                             className="execution-list"
@@ -697,28 +564,12 @@ export default function Workspace() {
                           result.report) && <Issues result={result} />}
                       </section>
                       <aside className="action-panel">
-                        <CurrentActions
-                          job={actualJob}
-                          step={step}
-                          manual={manual.current}
-                          onCurrent={() => {
-                            manual.current = false;
-                            setStep(graphNodes(actualJob).at(-1)?.id || "");
-                          }}
-                          onAction={mutate}
-                          busy={busy}
-                        />
+                        <section className="action-card document-chat-cta"><h3>대화에서 다음 단계를 진행하세요</h3><p>답변·수정·승인은 대화의 최신 상태에서만 진행할 수 있습니다.</p><Button className="primary" onClick={showConversation}><ChatCircleDotsIcon size={18} aria-hidden />대화에서 답변하기</Button></section>
                       </aside>
                     </div>
                   )}
-                  {tab === "conversation" && (
-                    <QuestionActions
-                      key={actualJob.id}
-                      job={actualJob}
-                      onAction={mutate}
-                      busy={busy}
-                    />
-                  )}
+                  </div>
+
                 </>
               ) : (
                 <p role="status">
@@ -730,8 +581,8 @@ export default function Workspace() {
             </>
           )}
         </main>
-      </div>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
 function locationProtocol() {
@@ -765,6 +616,7 @@ function Account() {
   }
   return (
     <header className="account-header">
+      <SidebarTrigger aria-label="메뉴 열기" className="desktop-sidebar-trigger" />
       <p role="status">
         {!auth.publicMode
           ? "로컬 작업 공간"
@@ -793,39 +645,6 @@ function Account() {
               이 작업 사용권 다시 얻기
             </Button>
           )}
-        {auth.user && (
-          <details className="account-menu">
-            <summary>내 계정</summary>
-            <div>
-              <p>사용자 ID: {auth.user.id}</p>
-              <p>
-                권한: {auth.user.role === "admin" ? "관리자" : "일반 사용자"}
-              </p>
-              {auth.usage && (
-                <p>
-                  오늘 실행 {auth.usage.runs}회 · 잔여{" "}
-                  {auth.usage.remaining_runs}회
-                  {auth.usage.limit_reached ? " · 비용 한도 도달" : ""} · 갱신{" "}
-                  {auth.usage.resets_at
-                    ? formatTime(auth.usage.resets_at)
-                    : "확인 중"}
-                </p>
-              )}
-              <Button
-                onClick={() =>
-                  void navigator.clipboard
-                    .writeText(auth.user!.id)
-                    .then(() => auth.setNotice("사용자 ID를 복사했습니다."))
-                    .catch(() => auth.setNotice("표시된 ID를 직접 복사하세요."))
-                }
-              >
-                사용자 ID 복사
-              </Button>
-              {auth.user.role === "admin" && <a href="/admin">관리자 페이지</a>}
-              <Button onClick={() => void auth.logout()}>로그아웃</Button>
-            </div>
-          </details>
-        )}
       </div>
     </header>
   );
@@ -875,56 +694,6 @@ function CompletedDocuments({
         </>
       )}
     </div>
-  );
-}
-function Conversation({
-  job,
-  select,
-}: {
-  job: Job;
-  select: (id: string) => void;
-}) {
-  return (
-    <section className="conversation" aria-label="대화 이력">
-      {(job.session_events || []).map((event: RecordData, index: number) => (
-        <article className="session-turn" key={event.id || index}>
-          <h3>
-            {{
-              generate: "처음 요청",
-              answer: "질문에 답변",
-              revise: "후속·수정 요청",
-              approve: "사용자 승인",
-            }[event.action as string] || event.action}{" "}
-            · {formatTime(event.started_at)}
-          </h3>
-          <p>
-            {event.input?.request ||
-              event.input?.feedback ||
-              (event.input?.answers || [])
-                .map((a: RecordData) => `${a.question}\n${a.answer}`)
-                .join("\n\n")}
-          </p>
-          <small>
-            {statusLabel(event.status)} {event.summary}
-          </small>
-          {event.questions?.length > 0 && (
-            <ol>
-              {event.questions.map((q: string, i: number) => (
-                <li key={i}>{questionDetails(q, i).label}</li>
-              ))}
-            </ol>
-          )}
-          {event.document_step_id && (
-            <Button onClick={() => select(event.document_step_id)}>
-              이 시점의 명세 열기
-            </Button>
-          )}
-        </article>
-      ))}
-      {!job.session_events?.length && (
-        <p>이 세션에 저장된 대화 이력이 없습니다.</p>
-      )}
-    </section>
   );
 }
 function StepResult({ node, detail }: { node?: Step; detail: RecordData }) {
@@ -1043,34 +812,5 @@ function Issues({ result }: { result: RecordData }) {
         </details>
       )}
     </details>
-  );
-}
-
-function CurrentActions({
-  job,
-  step,
-  manual,
-  onCurrent,
-  onAction,
-  busy,
-}: {
-  job: Job;
-  step: string;
-  manual: boolean;
-  onCurrent: () => void;
-  onAction: (action: string, payload: unknown) => Promise<void>;
-  busy: boolean;
-}) {
-  const past = manual && step !== graphNodes(job).at(-1)?.id;
-  return past ? (
-    <section className="action-card">
-      <h3>과거 기록</h3>
-      <p>
-        과거 명세를 보고 있습니다. 답변·승인·수정은 현재 단계에서 진행하세요.
-      </p>
-      <Button onClick={onCurrent}>현재 단계로 돌아가기</Button>
-    </section>
-  ) : (
-    <QuestionActions key={job.id} job={job} onAction={onAction} busy={busy} />
   );
 }

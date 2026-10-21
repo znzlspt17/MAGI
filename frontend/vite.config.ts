@@ -1,5 +1,10 @@
 import { defineConfig } from "vite";
+import tailwindcss from "@tailwindcss/vite";
+import { resourcesAndNotices } from "./scripts/notices.mjs";
+import { fileURLToPath, URL } from "node:url";
 export default defineConfig({
+  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
+  plugins: [tailwindcss(), resourcesAndNotices()],
   base: "/static/dist/",
   build: {
     outDir: "static/dist",

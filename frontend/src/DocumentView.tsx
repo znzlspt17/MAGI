@@ -1,3 +1,4 @@
+import { DownloadSimpleIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { post } from "./api";
 import { Button, Markdown, Notice } from "./UI";
@@ -127,7 +128,7 @@ export function DocumentView({
           </Button>
         ))}
         <Button disabled={!active} onClick={download}>
-          Markdown 다운로드
+          <DownloadSimpleIcon size={18} aria-hidden />Markdown 다운로드
         </Button>
       </div>
       <p className="subtle" role="status">

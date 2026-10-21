@@ -26,8 +26,10 @@ export async function api<T = any>(
     method = (options.method || "GET").toUpperCase(),
     headers = new Headers(options.headers),
     signature = `${method}:${path}:${options.body || ""}`;
-  if (publicMode && !["GET", "HEAD", "OPTIONS"].includes(method)) {
+  if (publicMode && csrf) {
     headers.set("X-CSRF-Token", csrf);
+  }
+  if (publicMode && !["GET", "HEAD", "OPTIONS"].includes(method)) {
     if (!pending.has(signature)) pending.set(signature, crypto.randomUUID());
     headers.set("Idempotency-Key", pending.get(signature)!);
   }

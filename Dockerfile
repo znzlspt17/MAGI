@@ -8,6 +8,9 @@ RUN npm install --global pnpm@11.25.0
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY frontend/src ./src
+COPY frontend/scripts ./scripts
+COPY frontend/static/vendor ./static/vendor
+COPY resources /resources
 COPY frontend/tsconfig.json frontend/vite.config.ts ./
 RUN pnpm build
 
@@ -39,6 +42,7 @@ COPY protocol ./protocol
 COPY frontend/__init__.py ./frontend/__init__.py
 COPY frontend/templates ./frontend/templates
 COPY --from=frontend-build /frontend/static/dist ./frontend/static/dist
+COPY --from=frontend-build /frontend/static/vendor ./frontend/static/vendor
 CMD ["gunicorn", "--workers", "1", "--threads", "16", "--bind", "127.0.0.1:5000", "--timeout", "600", "--graceful-timeout", "590", "gateway.app:create_app()"]
 
 FROM runtime AS backend

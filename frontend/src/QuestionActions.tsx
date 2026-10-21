@@ -1,4 +1,8 @@
-import { useEffect, useState } from "react";
+import { PromptInput, isSubmitShortcut } from "./components/PromptInput";
+import { InputGroup, InputGroupTextarea } from "./components/ui/input-group";
+import { Item, ItemContent, ItemTitle, ItemDescription, ItemActions } from "./components/ui/item";
+import { SealCheckIcon } from "@phosphor-icons/react";
+import { useEffect, useState, useRef } from "react";
 import { useAuth } from "./Auth";
 import { Button, Notice } from "./UI";
 import type { Job, QuestionForm, RecordData } from "./types";
@@ -52,10 +56,14 @@ export function QuestionActions({
   job,
   onAction,
   busy,
+  conversational = false,
+  onReview,
 }: {
   job: Job;
   onAction: (action: string, payload: unknown) => Promise<void>;
   busy: boolean;
+  conversational?: boolean;
+  onReview?: () => void;
 }) {
   const { user, status } = useAuth();
   const prefix = `magi:draft:${user?.id || "local"}:${job.id}:`;
@@ -66,7 +74,25 @@ export function QuestionActions({
       () => sessionStorage.getItem(prefix + "feedback") || "",
     ),
     [error, setError] = useState("");
-  const disabled = busy || !!(status.busy && !status.mine);
+  const [pending, setPending] = useState(false);
+  const [approvedExecution, setApprovedExecution] = useState(() => sessionStorage.getItem(prefix + "approved-execution") || "");
+  const submitting = useRef(false);
+  const executionKey = `${job.id}:${job.execution_id || "legacy"}:${job.status}`;
+  const disabled = busy || pending || approvedExecution === executionKey || !!(status.busy && !status.mine);
+  const actionClass = conversational ? "action-card conversation-action" : "action-card";
+  async function perform(action: string, payload: unknown) {
+    if (disabled || submitting.current) return false;
+    submitting.current = true;
+    setPending(true);
+    try {
+      await onAction(action, payload);
+      if (action === "approve") {
+        sessionStorage.setItem(prefix + "approved-execution", executionKey);
+        setApprovedExecution(executionKey);
+      }
+      return true;
+    } finally { submitting.current = false; setPending(false); }
+  }
   const effective = job.retry_status || job.state?.status || job.status;
   const questionKey = questions.join("\0") + JSON.stringify(forms);
   useEffect(() => {
@@ -131,7 +157,7 @@ export function QuestionActions({
       setError("제출할 답변을 하나 이상 입력하세요.");
       return;
     }
-    await onAction("answer", answers);
+    if (!await perform("answer", answers)) return;
     for (const a of answers) {
       const key = `${a.question_id}:${forms[a.question_id]?.form_version || "text"}`;
       sessionStorage.removeItem(prefix + key);
@@ -150,8 +176,8 @@ export function QuestionActions({
       </Notice>
     );
   if (["running", "queued"].includes(job.status))
-    return (
-      <section className="action-card">
+    return conversational ? null : (
+      <section className={actionClass}>
         <h3>명세를 준비하고 있습니다</h3>
         <p>새로운 결과가 도착하면 자동으로 표시합니다.</p>
         {job.message && <p role="status">{job.message}</p>}
@@ -164,7 +190,11 @@ export function QuestionActions({
     );
   if (["NEEDS_USER_INPUT", "waiting"].includes(effective))
     return (
-      <section className="action-card" id="job-actions">
+      <section className={actionClass} id="job-actions" onKeyDown={(event) => {
+        if (event.target instanceof HTMLTextAreaElement && isSubmitShortcut(event)) {
+          event.preventDefault(); if (!disabled) void submit().catch(() => {});
+        }
+      }}>
         <span className="eyebrow">NEXT STEP</span>
         <h3>
           {job.state?.awaiting_input_reason === "review"
@@ -244,7 +274,7 @@ export function QuestionActions({
                   ),
                 )}
               {(!form || form.input_type === "text" || draft.custom) && (
-                <textarea
+                <InputGroup><InputGroupTextarea
                   aria-label={`${form?.question || q.label}${form ? " · 직접 입력" : ""}`}
                   aria-describedby={
                     context ? `question-context-${q.id}` : undefined
@@ -255,7 +285,7 @@ export function QuestionActions({
                   onChange={(e) =>
                     change(key, { ...draft, text: e.target.value })
                   }
-                />
+                /></InputGroup>
               )}
             </fieldset>
           );
@@ -287,7 +317,7 @@ export function QuestionActions({
     ["PASS_PENDING_USER_APPROVAL", "waiting_approval"].includes(effective) &&
     (!job.state || job.state.status === "PASS_PENDING_USER_APPROVAL");
   return (
-    <section className="action-card" id="job-actions">
+    <section className={actionClass} id="job-actions">
       <span className="eyebrow">NEXT STEP</span>
       <h3>{job.can_continue ? "이어서 요청하기" : "명세 검토와 다음 단계"}</h3>
       {normalization && (
@@ -296,47 +326,33 @@ export function QuestionActions({
           의견을 유지해 다시 정리할 수 있습니다.
         </Notice>
       )}
-      <label>
-        {job.can_continue ? "추가 요청 내용" : "수정 의견 보내기"}
-        <textarea
-          rows={5}
-          maxLength={20000}
-          value={feedback}
-          onChange={(e) => {
-            setFeedback(e.target.value);
-            sessionStorage.setItem(prefix + "feedback", e.target.value);
-          }}
-        />
-      </label>
-      <Notice>{error}</Notice>
-      <Button
+      <label htmlFor={`feedback-${job.id}`}>{job.can_continue ? "추가 요청 내용" : "수정 의견 보내기"}</label>
+      <PromptInput
+        id={`feedback-${job.id}`}
+        label={job.can_continue ? "추가 요청 내용" : "수정 의견 보내기"}
+        buttonLabel={job.can_continue ? "이어서 요청하기" : "수정 요청"}
+        rows={3}
+        value={feedback}
         disabled={disabled}
-        onClick={() => {
-          if (!feedback.trim()) {
-            setError("수정 의견을 입력하세요.");
-            return;
-          }
-          void onAction(
-            job.can_continue ? "continue" : "revise",
-            feedback.trim(),
-          )
-            .then(() => {
-              setFeedback("");
-              sessionStorage.removeItem(prefix + "feedback");
-            })
-            .catch(() => {});
+        onChange={(event) => { setFeedback(event.target.value); sessionStorage.setItem(prefix + "feedback", event.target.value); }}
+        onSend={() => {
+          if (!feedback.trim()) { setError("수정 의견을 입력하세요."); return; }
+          void perform(job.can_continue ? "continue" : "revise", feedback.trim()).then((sent) => {
+            if (!sent) return;
+            setFeedback(""); sessionStorage.removeItem(prefix + "feedback");
+          }).catch(() => {});
         }}
-      >
-        {job.can_continue ? "이어서 요청하기" : "수정 요청"}
-      </Button>
+      />
+      <Notice>{error}</Notice>
       {approval && (
-        <Button
-          className="primary"
-          disabled={disabled}
-          onClick={() => void onAction("approve", null).catch(() => {})}
-        >
-          이 명세 승인
-        </Button>
+        <Item variant="outline" size="sm" className="spec-confirmation">
+          <SealCheckIcon weight="duotone" size={25} aria-hidden />
+          <ItemContent><ItemTitle>이 명세를 최종 승인할까요?</ItemTitle><ItemDescription>현재 검토본을 확인한 뒤 승인해주세요. 과거 명세를 여는 것만으로 승인되지는 않습니다.</ItemDescription></ItemContent>
+          <ItemActions>
+            {onReview && <Button onClick={onReview}>현재 검토본 열기</Button>}
+            <Button className="primary" disabled={disabled} onClick={() => void perform("approve", null).catch(() => {})}>{approvedExecution === executionKey ? "승인 전송됨" : "이 명세 승인"}</Button>
+          </ItemActions>
+        </Item>
       )}
     </section>
   );

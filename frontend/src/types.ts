@@ -46,10 +46,37 @@ export interface Job extends RecordData {
   status: string;
   execution_id?: string;
   state?: RecordData;
+  session_events?: SessionEvent[];
   execution_graph?: {
     nodes: Step[];
     legacy?: boolean;
     recording_incomplete?: boolean;
     unresolved_issue_counts?: Record<string, number>;
   };
+}
+
+export interface SessionEvent {
+  id: string;
+  action: string;
+  input?: {
+    request?: string;
+    feedback?: string;
+    answers?: { question_id?: string; question?: string; answer?: string }[];
+  };
+  status?: string;
+  started_at?: string;
+  summary?: string;
+  questions?: string[];
+  document_step_id?: string;
+}
+
+export interface ConversationTurn {
+  id: string;
+  eventId: string;
+  role: "user" | "magi";
+  text: string;
+  timestamp?: string;
+  action?: string;
+  questions?: string[];
+  documentStepId?: string;
 }

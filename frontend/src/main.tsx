@@ -4,7 +4,11 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./Auth";
 import Workspace from "./Workspace";
 import Admin from "./Admin";
+import "./theme.css";
 import "./styles.css";
+import "./workspace-design.css";
+import "./chat-design.css";
+import { Licenses } from "./Licenses";
 export function Privacy() {
   return (
     <main className="privacy">
@@ -26,7 +30,7 @@ export function Privacy() {
         요청하세요. 백업 보존·삭제 기간과 운영자 연락처는 공개 전 운영 문서에
         확정해야 합니다.
       </p>
-      <a href="/">돌아가기</a>
+      <div className="public-links"><a href="/">돌아가기</a><a href="/licenses">오픈소스 라이선스</a></div>
     </main>
   );
 }
@@ -35,6 +39,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/privacy" element={<Privacy />} />
+        <Route path="/licenses" element={<Licenses />} />
         <Route
           path="/admin/*"
           element={

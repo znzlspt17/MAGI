@@ -1,3 +1,4 @@
+import { MagnifyingGlassIcon, GraphIcon, ListBulletsIcon, ArrowsOutIcon, FunnelIcon } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, post, ApiError } from "./api";
 import { useAuth } from "./Auth";
@@ -372,7 +373,7 @@ export default function Knowledge({
       <header className="section-heading">
         <div>
           <span className="eyebrow">KNOWLEDGE</span>
-          <h2 id="knowledge-title">
+          <h2 id="knowledge-title"><GraphIcon weight="duotone" size={26} aria-hidden />
             {admin ? "프로젝트 지식 그래프" : "결정과 명세 지식 그래프"}
           </h2>
           <p>저장된 결정, 근거와 명세의 관계를 살펴보세요.</p>
@@ -441,7 +442,7 @@ export default function Knowledge({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <button disabled={busy}>검색</button>
+          <button disabled={busy}><MagnifyingGlassIcon size={18} aria-hidden />검색</button>
         </form>
         <div className="button-row">
           <button
@@ -466,14 +467,14 @@ export default function Knowledge({
             aria-expanded={list}
             onClick={() => setList(!list)}
           >
-            목록
+            <ListBulletsIcon size={18} aria-hidden />목록
           </button>
           <button id="graph-fit" onClick={() => handle.current?.fit()}>
-            전체 맞춤
+            <ArrowsOutIcon size={18} aria-hidden />전체 맞춤
           </button>
         </div>
         <details className="graph-menu">
-          <summary>필터</summary>
+          <summary><FunnelIcon size={16} aria-hidden />필터</summary>
           <label>
             유형
             <select

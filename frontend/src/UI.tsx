@@ -1,3 +1,5 @@
+import { Button as ShadcnButton } from "./components/ui/button";
+import { InfoIcon } from "@phosphor-icons/react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
@@ -8,12 +10,12 @@ export function Button({
   className = "",
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement>) {
-  return <button type="button" className={`button ${className}`} {...props} />;
+  return <ShadcnButton type="button" variant={className.split(" ").includes("primary") ? "default" : "outline"} className={`button ${className}`} {...props} />;
 }
 export function Notice({ children }: { children?: ReactNode }) {
   return children ? (
     <div className="notice" role="status">
-      {children}
+      <InfoIcon weight="duotone" size={20} aria-hidden />{children}
     </div>
   ) : null;
 }

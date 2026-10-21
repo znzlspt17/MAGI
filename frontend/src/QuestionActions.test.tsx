@@ -2,9 +2,10 @@ import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {act,cleanup,fireEvent,render,screen,waitFor,within} from '@testing-library/react';
 import {QuestionActions} from './QuestionActions';
 import type {Job} from './types';
-vi.mock('./Auth',()=>({useAuth:()=>({user:{id:'owner'},status:{}})}));
+const authState=vi.hoisted(()=>({status:{} as {busy?:boolean;mine?:boolean}}));
+vi.mock('./Auth',()=>({useAuth:()=>({user:{id:'owner'},status:authState.status})}));
 afterEach(cleanup);
-beforeEach(()=>sessionStorage.clear());
+beforeEach(()=>{sessionStorage.clear();authState.status={};});
 const forms={
  S:{question_id:'S',question:'운영체제',input_type:'single_choice',options:[{id:'a',label:'Windows'},{id:'b',label:'Linux'}],form_version:'S-v1'},
  M:{question_id:'M',question:'기능',input_type:'multiple_choice',options:[{id:'a',label:'저장'},{id:'b',label:'검색'}],form_version:'M-v1'},
@@ -63,6 +64,49 @@ describe('질문 답변',()=>{
   expect(action.mock.calls[0][1]).toEqual([{question_id:'A',question:'[A] 보관 기간',answer:'30일'}]);
   view.rerender(<QuestionActions job={{...value,state:{...value.state,blocking_questions:['[B] 백업 필요']}}} onAction={action} busy={false}/>);
   expect(screen.queryByRole('textbox',{name:'보관 기간'})).toBeNull();
+ });
+});
+
+describe('대화 입력과 승인',()=>{
+ const continued:Job={id:'continue',execution_id:'e1',status:'FINALIZED',can_continue:true};
+ it('Enter는 줄바꿈으로 남기고 Ctrl+Enter만 전송하며 IME 조합을 보호한다',async()=>{
+  const action=vi.fn().mockResolvedValue(undefined);
+  render(<QuestionActions job={continued} onAction={action} busy={false} conversational/>);
+  const input=screen.getByRole('textbox',{name:'추가 요청 내용'});
+  fireEvent.change(input,{target:{value:'추가 요청'}});
+  expect(fireEvent.keyDown(input,{key:'Enter'})).toBe(true);
+  fireEvent.keyDown(input,{key:'Enter',ctrlKey:true,isComposing:true});
+  fireEvent.keyDown(input,{key:'Enter',ctrlKey:true,keyCode:229});
+  expect(action).not.toHaveBeenCalled();
+  expect(fireEvent.keyDown(input,{key:'Enter',ctrlKey:true})).toBe(false);
+  await waitFor(()=>expect(action).toHaveBeenCalledWith('continue','추가 요청'));
+ });
+ it('전송 실패 때 초안을 유지하고 다시 제출할 수 있다',async()=>{
+  const action=vi.fn().mockRejectedValueOnce(new Error('network')).mockResolvedValue(undefined);
+  render(<QuestionActions job={continued} onAction={action} busy={false} conversational/>);
+  const input=screen.getByRole('textbox',{name:'추가 요청 내용'});
+  fireEvent.change(input,{target:{value:'실패해도 보존'}});
+  await act(async()=>fireEvent.click(screen.getByRole('button',{name:'이어서 요청하기'})));
+  expect((input as HTMLTextAreaElement).value).toBe('실패해도 보존');
+  expect(sessionStorage.getItem('magi:draft:owner:continue:feedback')).toBe('실패해도 보존');
+  await act(async()=>fireEvent.click(screen.getByRole('button',{name:'이어서 요청하기'})));
+  expect((input as HTMLTextAreaElement).value).toBe('');
+ });
+ it('다른 사용자의 lease 동안 입력과 승인을 잠근다',()=>{
+  authState.status={busy:true,mine:false};
+  render(<QuestionActions job={{id:'approve',status:'PASS_PENDING_USER_APPROVAL'}} onAction={vi.fn()} busy={false} conversational/>);
+  expect((screen.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(true);
+  expect((screen.getByRole('button',{name:'이 명세 승인'}) as HTMLButtonElement).disabled).toBe(true);
+ });
+ it('동일 실행의 승인은 재마운트해도 반복하지 않으며 새 실행에서는 다시 허용한다',async()=>{
+  const action=vi.fn().mockResolvedValue(undefined),value:Job={id:'approve',execution_id:'e1',status:'PASS_PENDING_USER_APPROVAL'};
+  const first=render(<QuestionActions job={value} onAction={action} busy={false} conversational/>);
+  await act(async()=>fireEvent.click(screen.getByRole('button',{name:'이 명세 승인'})));
+  expect(action).toHaveBeenCalledOnce();first.unmount();
+  const second=render(<QuestionActions job={value} onAction={action} busy={false} conversational/>);
+  expect((screen.getByRole('button',{name:'승인 전송됨'}) as HTMLButtonElement).disabled).toBe(true);
+  second.rerender(<QuestionActions job={{...value,execution_id:'e2'}} onAction={action} busy={false} conversational/>);
+  expect((screen.getByRole('button',{name:'이 명세 승인'}) as HTMLButtonElement).disabled).toBe(false);
  });
 });
 

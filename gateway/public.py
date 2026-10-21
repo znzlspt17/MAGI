@@ -60,9 +60,9 @@ def install(app, client):
                     return jsonify(error='요청이 너무 많습니다. 잠시 후 다시 시도하세요.',request_id=g.request_id),429
                 windows[identity]=(minute,old[1]+1)
         if not origin:
-            if request.path not in {'/','/privacy','/api/auth/info'} and not request.path.startswith('/static/'):
+            if request.path not in {'/','/privacy','/licenses','/api/auth/info'} and not request.path.startswith('/static/'):
                 return jsonify(error='공개 서비스 설정이 필요합니다.',request_id=g.request_id),503
-        if request.path in {'/','/privacy','/api/auth/info','/auth/google/start','/auth/google/callback'} or request.path.startswith('/static/'):
+        if request.path in {'/','/privacy','/licenses','/api/auth/info','/auth/google/start','/auth/google/callback'} or request.path.startswith('/static/'):
             return None
         if request.path.startswith(('/api/','/ws/')):
             try:
@@ -199,6 +199,10 @@ def install(app, client):
         if action not in ({'catalog'} if request.method=='GET' else {'preview','execute'}):
             abort(404)
         return relay('cleanup.'+action,request.get_json(silent=True) or {})
+
+    @app.get('/licenses')
+    def licenses():
+        return render_frontend()
 
     @app.get('/privacy')
     def privacy():
