@@ -10,7 +10,7 @@ import { QuestionActions, questionDetails } from "./QuestionActions";
 import { Button, Notice, formatTime, statusLabel } from "./UI";
 import type { Job } from "./types";
 
-export function Conversation({ job, select, onAction, busy }: { job: Job; select: (stepId: string) => void; onAction: (action: string, payload: unknown) => Promise<void>; busy: boolean }) {
+export function Conversation({ job, select, onAction, busy }: { job: Job; select: (stepId: string, requirements?: boolean) => void; onAction: (action: string, payload: unknown) => Promise<void>; busy: boolean }) {
   const { turns, incomplete } = conversationTurns(job);
   const latestEventId = job.session_events?.at(-1)?.id;
   const waiting = ["NEEDS_USER_INPUT", "waiting"].includes(job.retry_status || job.state?.status || job.status);
@@ -53,6 +53,6 @@ export function Conversation({ job, select, onAction, busy }: { job: Job; select
         <MessageScrollerButton size="sm" className="chat-latest">최신 메시지로 이동</MessageScrollerButton>
       </MessageScroller>
     </MessageScrollerProvider>
-    <div className="chat-actions"><QuestionActions key={job.id} job={job} onAction={onAction} busy={busy} conversational onReview={reviewStep ? () => select(reviewStep) : undefined} /></div>
+    <div className="chat-actions"><QuestionActions key={job.id} job={job} onAction={onAction} busy={busy} conversational onReview={reviewStep ? () => select(reviewStep) : undefined} onRequirementReview={reviewStep ? () => select(reviewStep, true) : undefined} /></div>
   </section>;
 }

@@ -2,6 +2,7 @@ import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {act,cleanup,fireEvent,render,screen,waitFor,within} from '@testing-library/react';
 import {QuestionActions} from './QuestionActions';
 import type {Job} from './types';
+vi.mock('./RequirementReview',()=>({RequirementReview:()=>null}));
 const authState=vi.hoisted(()=>({status:{} as {busy?:boolean;mine?:boolean}}));
 vi.mock('./Auth',()=>({useAuth:()=>({publicMode:true,user:{id:'owner'},status:authState.status})}));
 afterEach(cleanup);

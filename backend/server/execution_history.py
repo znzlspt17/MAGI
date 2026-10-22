@@ -225,6 +225,9 @@ class ExecutionHistory:
                     content = ""
             if isinstance(review, dict) and review.get("after_hash") == digest(normalize(content)):
                 detail["change_review"] = copy.deepcopy(review)
+            pointer = _read_json(root / "state/candidate_snapshot.json")
+            if isinstance(pointer, dict):
+                detail["review_snapshot_id"] = pointer.get("id")
             node["status"] = "waiting_approval"
             node["summary"] = "사용자 승인을 기다리고 있습니다."
         elif stage == "critical_report":
@@ -245,6 +248,9 @@ class ExecutionHistory:
             node["summary"] = "남은 결함과 자동 보완 실패 원인을 확인하세요."
         elif stage == "approve":
             self._copy_document(root / "final/FINAL_AGENT_SPEC.md", detail, node, "final")
+            pointer = _read_json(root / "state/candidate_snapshot.json")
+            if isinstance(pointer, dict):
+                detail["review_snapshot_id"] = pointer.get("id")
         self._save(data)
 
     @staticmethod
@@ -307,6 +313,8 @@ class ExecutionHistory:
         payload["result"] = result
         if isinstance(detail.get("change_review"), dict):
             payload["change_review"] = copy.deepcopy(detail["change_review"])
+        if isinstance(detail.get("review_snapshot_id"), str):
+            payload["review_snapshot_id"] = detail["review_snapshot_id"]
         if isinstance(result.get("research"), dict):
             payload["research"] = copy.deepcopy(result["research"])
         if isinstance(node.get("usage"), dict):

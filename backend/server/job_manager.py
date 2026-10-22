@@ -504,6 +504,54 @@ class JobManager:
         stem = Path(document.get("filename", "SPEC.md")).stem.removesuffix(".en")
         return {**document, **translated, "filename": stem + ".ko.md"}
 
+    def requirement_review(self, ident, params):
+        """선택한 이력과 일치하는 불변 자료만 사용한다. 모델과 과금 경로는 호출하지 않는다."""
+        from backend.services.requirement_review import build_review, load_snapshot
+        from backend.services.change_review import LATEST
+        with self.lock:
+            job = self._get_locked(ident)
+            writer = ArtifactWriter(self._job_root(ident))
+            step_id = params.get("step_id")
+            snapshot, basis_id, review_status = None, None, "unknown"
+            if step_id:
+                detail = self.step(ident, step_id)
+                document = detail.get("document") or {}
+                content = document.get("content", "")
+                if document.get("kind") not in {"candidate", "final"}:
+                    return {"status": "unavailable", "message": "검토 후보 또는 완료 명세에서 근거표를 확인할 수 있습니다."}
+                basis_id = (detail.get("change_review") or {}).get("after_id")
+                if re.fullmatch(r"[0-9a-f]{64}", step_id):
+                    from backend.services.completed_specs import load_completed
+                    archive = load_completed(writer, step_id)
+                    basis_id = archive.get("review_snapshot_id")
+                else:
+                    basis_id = detail.get("review_snapshot_id") or basis_id
+                snapshot = load_snapshot(writer, basis_id, content)
+                if snapshot is None and re.fullmatch(r"[0-9a-f]{64}", step_id):
+                    # 기존 완료 보존본도 같은 파일 안에 함께 고정된 요구사항·인용만 사용한다.
+                    frozen_sheet = archive.get("basis", {}).get("requirement_lock_sheet")
+                    links = archive.get("trace", {}).get("links", [])
+                    if isinstance(frozen_sheet, dict) and links:
+                        snapshot = {"requirements": frozen_sheet,
+                                    "compiled_blocks": [{**link, "text": link["quote"]} for link in links]}
+                        basis_id = step_id
+                if snapshot:
+                    review_status = "approved" if document.get("kind") == "final" else "pending_approval"
+            else:
+                if job["status"] not in {"PASS_PENDING_USER_APPROVAL", "FINALIZED"}:
+                    return {"status": "unavailable", "message": "검토 후보가 준비되면 요구사항별 근거를 확인할 수 있습니다."}
+                path = "final/FINAL_AGENT_SPEC.md" if job["status"] == "FINALIZED" else "draft/approval_candidate_spec.en.md"
+                content = self._read_text(self.artifact(ident, path)) or ""
+                basis_id = (self._read_json(self.artifact(ident, LATEST)) or {}).get("id")
+                snapshot = load_snapshot(writer, basis_id, content)
+                if snapshot:
+                    review_status = "approved" if job["status"] == "FINALIZED" else "pending_approval"
+            if not content:
+                return {"status": "unavailable", "message": "기준 명세가 없습니다."}
+            return build_review(content, snapshot, basis_id=basis_id if snapshot else step_id,
+                                review_status=review_status, offset=params.get("offset", 0),
+                                query=params.get("query", ""), missing=params.get("missing", False), evidence_for=params.get("evidence_for"))
+
     def impact_context(self, params):
         from backend.knowledge.impact import impact_context
         ident = params.get("job_id")

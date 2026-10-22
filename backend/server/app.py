@@ -202,6 +202,8 @@ class Server:
                     if isinstance(step_id, str)
                     else self.manager.public(ident)
                 )
+            elif method == "requirement.review":
+                payload = self.manager.requirement_review(_ident(params), params)
             elif method == "document":
                 step_id = params.get("step_id")
                 language = params.get("language")

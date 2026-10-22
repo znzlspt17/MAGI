@@ -126,6 +126,24 @@ def create_app(config: dict | None = None) -> Flask:
         response.headers["Cache-Control"] = "no-store"
         return response
 
+    @app.get("/api/jobs/<ident>/requirement-review")
+    def requirement_review(ident):
+        try:
+            offset = int(request.args.get("offset", "0"))
+            if offset < 0 or offset % 20:
+                raise ValueError()
+        except ValueError:
+            return jsonify({"error": "근거표 페이지가 올바르지 않습니다."}), 400
+        try:
+            response = jsonify(client().call("requirement.review", {"id": ident,
+                "step_id": request.args.get("step_id"), "offset": offset,
+                "query": request.args.get("query", ""), "missing": request.args.get("missing") == "true",
+                "evidence_for": request.args.get("evidence_for")}))
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        except ClientError as exc:
+            return _client_error(exc)
+
     @app.get("/api/jobs/<ident>/steps/<step_id>")
     def job_step(ident, step_id):
         """Relay a single saved execution-step detail without exposing storage paths."""

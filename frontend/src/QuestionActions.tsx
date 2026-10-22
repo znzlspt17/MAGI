@@ -1,5 +1,6 @@
 import { ServiceStatusNotice, serviceState } from "./ServiceStatus";
 import { ChangeReview } from "./ChangeReview";
+import { RequirementReview } from "./RequirementReview";
 import { PromptInput, isSubmitShortcut } from "./components/PromptInput";
 import { InputGroup, InputGroupTextarea } from "./components/ui/input-group";
 import { Item, ItemContent, ItemTitle, ItemDescription, ItemActions } from "./components/ui/item";
@@ -60,12 +61,14 @@ export function QuestionActions({
   busy,
   conversational = false,
   onReview,
+  onRequirementReview,
 }: {
   job: Job;
   onAction: (action: string, payload: unknown) => Promise<void>;
   busy: boolean;
   conversational?: boolean;
   onReview?: () => void;
+  onRequirementReview?: () => void;
 }) {
   const { user, status, publicMode } = useAuth();
   const prefix = `draft:${user?.id || "local"}:${job.id}:`;
@@ -329,6 +332,7 @@ export function QuestionActions({
           의견을 유지해 다시 정리할 수 있습니다.
         </Notice>
       )}
+      {approval && <RequirementReview key={`${job.id}:${job.execution_id || job.status}`} jobId={job.id} compact onOpen={onRequirementReview || onReview} />}
       {approval && <ChangeReview review={job.change_review} onQuestion={question => {
         const value = feedback.trim() ? `${feedback.trim()}\n\n${question}` : question;
         setFeedback(value); sessionStorage.setItem(prefix + "feedback", value);

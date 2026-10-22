@@ -3,14 +3,21 @@ import { useEffect, useRef, useState } from "react";
 import { post } from "./api";
 import { Button, Markdown, Notice } from "./UI";
 import type { DocumentData } from "./types";
+import { RequirementReview, type RequirementEvidence } from "./RequirementReview";
 export function DocumentView({
   jobId,
   stepId,
   document,
+  onQuestion,
+  reviewOnly = false,
+  onShowDocument,
 }: {
   jobId: string;
   stepId: string;
   document: DocumentData;
+  onQuestion?: (question: string) => void;
+  reviewOnly?: boolean;
+  onShowDocument?: () => void;
 }) {
   const [language, setLanguage] = useState("ko"),
     [mode, setMode] = useState("rendered"),
@@ -21,6 +28,18 @@ export function DocumentView({
     cache = useRef(new Map<string, DocumentData>()),
     pending = useRef(new Map<string, Promise<DocumentData>>()),
     controllers = useRef(new Set<AbortController>());
+  const [location, setLocation] = useState<RequirementEvidence | null>(null);
+  const original = useRef<HTMLPreElement>(null);
+  const normalized = document.content.replace(/\r\n?/g, "\n").trimEnd();
+  useEffect(() => { setLocation(null); }, [jobId, stepId, document.content]);
+  function locate(ref: RequirementEvidence) {
+    if (Array.from(normalized).slice(ref.start, ref.end).join("") !== ref.quote) return;
+    setLocation(ref); setLanguage("en"); setMode("raw");
+    onShowDocument?.();
+  }
+  useEffect(() => {
+    if (location) { original.current?.querySelector("mark")?.scrollIntoView?.({ block: "center" }); original.current?.focus(); }
+  }, [location, active]);
   const source = document.content,
     hash = document.source_hash;
   useEffect(
@@ -35,6 +54,7 @@ export function DocumentView({
     const current = ++sequence.current;
     setActive(null);
     setError("");
+    if (reviewOnly) return;
     const key = `${jobId}:${stepId}:${hash || source}:${language}`;
     if (language === "en") {
       setActive({ ...document, language: "en" });
@@ -87,7 +107,7 @@ export function DocumentView({
     return () => {
       sequence.current++;
     };
-  }, [jobId, stepId, source, hash, language, retry]);
+  }, [jobId, stepId, source, hash, language, retry, reviewOnly]);
   function download() {
     if (!active) return;
     const url = URL.createObjectURL(
@@ -101,6 +121,8 @@ export function DocumentView({
   }
   return (
     <section aria-label="명세 문서">
+      {["candidate", "final"].includes(document.kind || "") && <RequirementReview key={`${jobId}:${stepId}:${hash || source}`} jobId={jobId} stepId={stepId} sourceHash={hash} onLocate={locate} onQuestion={onQuestion} />}
+      {reviewOnly ? <Button onClick={onShowDocument}>명세 문서 보기</Button> : <>
       <div className="document-controls">
         {[
           ["ko", "한국어"],
@@ -153,10 +175,11 @@ export function DocumentView({
       )}
       {active &&
         (mode === "raw" ? (
-          <pre className="markdown-raw">{active.content}</pre>
+          location && language === "en" ? <pre ref={original} tabIndex={-1} aria-label="선택한 근거의 영어 명세 원문" className="rr-original">{Array.from(normalized).slice(0, location.start).join("")}<mark>{Array.from(normalized).slice(location.start, location.end).join("")}</mark>{Array.from(normalized).slice(location.end).join("")}</pre> : <pre className="markdown-raw">{active.content}</pre>
         ) : (
           <Markdown content={active.content} />
         ))}
+      </>}
     </section>
   );
 }

@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 
-from backend.errors import InvalidStateError
+from backend.errors import InvalidStateError, ArtifactError
 
 
 def archive_completed(writer, state, content=None):
@@ -14,6 +14,16 @@ def archive_completed(writer, state, content=None):
     trace = writer.path("analysis/spec_trace.json")
     if trace.is_file():
         data["trace"] = writer.read_json("analysis/spec_trace.json")
+    from backend.services.requirement_review import load_snapshot
+    pointer = writer.path("state/candidate_snapshot.json")
+    if pointer.is_file():
+        try:
+            value = writer.read_json("state/candidate_snapshot.json")
+            ident = value.get("id") if isinstance(value, dict) else None
+        except (OSError, ValueError, UnicodeError, ArtifactError):
+            ident = None
+        if load_snapshot(writer, ident, content):
+            data["review_snapshot_id"] = ident
     serialized = json.dumps(data, ensure_ascii=False, sort_keys=True)
     ident = hashlib.sha256(serialized.encode()).hexdigest()
     path = f"completed/{ident}.json"

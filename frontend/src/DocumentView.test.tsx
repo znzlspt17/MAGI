@@ -2,7 +2,7 @@ import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
 import {DocumentView} from './DocumentView';
 import {post} from './api';
-vi.mock('./api',()=>({post:vi.fn()}));
+vi.mock('./api',()=>({post:vi.fn(),api:vi.fn().mockResolvedValue({status:'unavailable',message:'기준 없음'})}));
 afterEach(()=>{cleanup();vi.restoreAllMocks();});
 beforeEach(()=>vi.mocked(post).mockReset());
 const english={content:'# English document',filename:'spec.en.md',source_hash:'snapshot'};
@@ -11,6 +11,14 @@ function deferred(){let resolve!:(v:any)=>void,reject!:(v:any)=>void;const promi
 const click=(name:string)=>fireEvent.click(screen.getByRole('button',{name}));
 const blobText=(blob:Blob)=>new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=reject;reader.readAsText(blob);});
 const download=()=>screen.getByRole('button',{name:'Markdown 다운로드'}) as HTMLButtonElement;
+it('근거표만 열면 번역 생성과 모델 호출을 시작하지 않는다',async()=>{
+ const open=vi.fn();
+ render(<DocumentView jobId="job" stepId="one" document={{...english,kind:'candidate'}} reviewOnly onShowDocument={open}/>);
+ await screen.findByText('기준 없음');
+ expect(post).not.toHaveBeenCalled();
+ expect(screen.queryByRole('button',{name:'Markdown 다운로드'})).toBeNull();
+ click('명세 문서 보기');expect(open).toHaveBeenCalledOnce();
+});
 it('늦게 도착한 번역은 영어 선택을 유지하고 캐시와 다운로드는 선택 언어를 따른다',async()=>{
  const pending=deferred();vi.mocked(post).mockReturnValue(pending.promise);
  const blobs:Blob[]=[],links:HTMLAnchorElement[]=[];

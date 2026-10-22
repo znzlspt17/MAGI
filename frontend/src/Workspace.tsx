@@ -325,8 +325,11 @@ export default function Workspace() {
     window.addEventListener("beforeunload", leave);
     return () => window.removeEventListener("beforeunload", leave);
   }, [request]);
-  function selectStep(value: string) {
+  const [evidenceOnly, setEvidenceOnly] = useState(false);
+  useEffect(() => { setEvidenceOnly(false); }, [id]);
+  function selectStep(value: string, requirements = false) {
     manual.current = true;
+    setEvidenceOnly(requirements);
     setStep(value);
     setTab("document");
   }
@@ -546,6 +549,14 @@ export default function Workspace() {
                             jobId={actualJob.id}
                             stepId={step}
                             document={detail.document}
+                            reviewOnly={evidenceOnly}
+                            onShowDocument={() => setEvidenceOnly(false)}
+                            onQuestion={question => {
+                              const key = `draft:${auth.user?.id || "local"}:${actualJob.id}:feedback`;
+                              const prior = sessionStorage.getItem(key)?.trim();
+                              sessionStorage.setItem(key, prior ? `${prior}\n\n${question}` : question);
+                              showConversation();
+                            }}
                           />
                         ) : (
                           <StepResult node={node} detail={detail} hideQuestions={!!actualJob.session_events?.find(event => event.id === node?.execution_id)?.questions?.length && JSON.stringify(actualJob.session_events?.find(event => event.id === node?.execution_id)?.questions) === JSON.stringify(detail?.result?.questions || detail?.result?.blocking_questions || [])} />

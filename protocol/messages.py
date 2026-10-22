@@ -12,6 +12,7 @@ METHODS |= {"projects.list", "projects.create", "projects.assign", "knowledge.se
             "knowledge.graph", "knowledge.node", "knowledge.document", "knowledge.retry"}
 METHODS |= {"cleanup.catalog", "cleanup.preview", "cleanup.execute"}
 METHODS.add("continue")
+METHODS.add("requirement.review")
 METHODS.add("health.check")
 METHODS |= {"knowledge.impact", "knowledge.impact.analyse"}
 METHODS |= {'admin.projects','admin.graph','admin.search','admin.node','admin.document','admin.jobs'}

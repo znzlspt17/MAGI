@@ -104,7 +104,7 @@ export const statusLabel = (status?: string) =>
     failed: "오류",
     interrupted: "중단됨",
     NEEDS_USER_INPUT: "요구사항 확인 필요",
-    PASS_PENDING_USER_APPROVAL: "검토 완료",
+    PASS_PENDING_USER_APPROVAL: "명세 문서 검토 통과 · 사용자 승인 대기",
     CRITICAL_BLOCKED: "명세 보완 실패",
     FINALIZED: "최종 완료",
     error: "오류",
