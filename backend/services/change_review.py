@@ -208,6 +208,10 @@ def _snapshot(writer, spec, state):
             "events": events, "revision_history": history, "answers": sheet.get("user_answers", []),
             "sources": sources, "compiled_blocks": supplied,
             "legacy": not bool(supplied)}
+    from backend.services.implementation_plan import PATH, valid_plan
+    plan = read_json(writer, PATH)
+    if valid_plan(plan, spec):
+        data["implementation_plan"] = plan
     data["id"] = digest(data)
     return data
 

@@ -1,0 +1,19 @@
+.implementation-package { position: fixed; z-index: 90; top: 50%; left: 50%; transform: none; translate: -50% -50%; width: min(640px, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow: auto; padding: 1.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-xl); background: var(--color-popover); color: var(--color-popover-foreground); box-shadow: 0 20px 60px #26243430; }
+body:has(.implementation-package) [data-slot=dialog-overlay] { position: fixed; inset: 0; z-index: 89; background: #26243455; }
+.implementation-package [data-slot=dialog-header] { display: grid; gap: .5rem; padding-right: 2rem; margin-bottom: 1rem; }
+.implementation-package [data-slot=dialog-title] { margin: 0; font-size: 1.2rem; }
+.implementation-package [data-slot=dialog-description], .package-note { color: var(--color-muted-foreground); line-height: 1.7; font-size: .85rem; }
+.implementation-package .cn-dialog-close { position: absolute; top: .8rem; right: .8rem; }
+.package-badges { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .8rem; }
+.package-version { display: flex; align-items: center; gap: .4rem; padding: .4rem 0; background: transparent; border: 0; color: var(--color-primary); font-size: .8rem; }
+.implementation-package dl { padding: .8rem; background: var(--color-secondary); border-radius: var(--radius-md); font-size: .75rem; }
+.implementation-package dd { margin: .4rem 0 .8rem; overflow-wrap: anywhere; font-family: monospace; }
+.implementation-package [data-slot=alert] { padding: .8rem; margin: .8rem 0; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-secondary); font-size: .8rem; }
+.package-files { display: grid; gap: .5rem; }
+.package-files [data-slot=item] { display: flex; align-items: center; gap: .7rem; padding: .8rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.package-files [data-slot=item-content] { min-width: 0; flex: 1; }
+.package-files [data-slot=item-title] { font-size: .85rem; overflow-wrap: anywhere; }
+.package-files [data-slot=item-description], .package-file-size { color: var(--color-muted-foreground); font-size: .75rem; line-height: 1.5; }
+.package-files svg { flex-shrink: 0; }
+.implementation-package [data-slot=dialog-footer] { display: flex; gap: .5rem; justify-content: flex-end; margin-top: 1rem; }
+@media (max-width: 760px) { .implementation-package { padding: 1rem; } .implementation-package [data-slot=dialog-footer] { flex-direction: column; } .package-files [data-slot=item] { flex-wrap: wrap; } .package-file-size { margin-left: auto; } }

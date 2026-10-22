@@ -88,6 +88,8 @@ def language_issues(value):
             if name != "decisions":
                 for index, block in enumerate(getattr(value, name)):
                     field(f"{name}[{index}].text", block.text, "en")
+                    if name == "implementation_order":
+                        field(f"{name}[{index}].title", block.title, "en")
     elif isinstance(value, SpecResponse):
         for name, text in value.model_dump().items():
             if name not in {"decisions", "spec_links"}:

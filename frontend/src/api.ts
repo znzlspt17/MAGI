@@ -62,3 +62,20 @@ export function post<T = any>(
     body: JSON.stringify(payload),
   });
 }
+
+export async function apiBlob(path: string, signal?: AbortSignal): Promise<Blob> {
+  const generation = authGeneration;
+  const headers = new Headers();
+  if (publicMode && csrf) headers.set("X-CSRF-Token", csrf);
+  const response = await fetch(path, { method: "GET", credentials: "same-origin", headers, signal });
+  if (generation !== authGeneration) throw new Error("접속 계정이 변경되었습니다. 다시 조회하세요.");
+  if (publicMode && response.status === 401) window.dispatchEvent(new Event("signed-out"));
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new ApiError(data.error || "파일을 받지 못했습니다.", response.status);
+  }
+  if (!response.headers.get("Content-Type")?.includes("application/zip")) throw new Error("ZIP 응답을 확인할 수 없습니다.");
+  const blob = await response.blob();
+  if (generation !== authGeneration) throw new Error("접속 계정이 변경되었습니다. 다시 조회하세요.");
+  return blob;
+}

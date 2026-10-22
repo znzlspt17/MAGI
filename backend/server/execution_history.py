@@ -248,6 +248,10 @@ class ExecutionHistory:
             node["summary"] = "남은 결함과 자동 보완 실패 원인을 확인하세요."
         elif stage == "approve":
             self._copy_document(root / "final/FINAL_AGENT_SPEC.md", detail, node, "final")
+            saved = _read_json(root / "state/state.json")
+            completed = (saved.get("latest_completed") or {}) if isinstance(saved, dict) else {}
+            if isinstance(completed.get("id"), str) and detail.get("document"):
+                detail["document"]["completed_id"] = completed["id"]
             pointer = _read_json(root / "state/candidate_snapshot.json")
             if isinstance(pointer, dict):
                 detail["review_snapshot_id"] = pointer.get("id")

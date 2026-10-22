@@ -22,8 +22,11 @@ def archive_completed(writer, state, content=None):
             ident = value.get("id") if isinstance(value, dict) else None
         except (OSError, ValueError, UnicodeError, ArtifactError):
             ident = None
-        if load_snapshot(writer, ident, content):
+        snapshot = load_snapshot(writer, ident, content)
+        if snapshot:
             data["review_snapshot_id"] = ident
+            if snapshot.get("implementation_plan"):
+                data["implementation_plan"] = snapshot["implementation_plan"]
     serialized = json.dumps(data, ensure_ascii=False, sort_keys=True)
     ident = hashlib.sha256(serialized.encode()).hexdigest()
     path = f"completed/{ident}.json"

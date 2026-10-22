@@ -27,6 +27,7 @@ export interface QuestionForm {
   form_version: string;
 }
 export interface DocumentData {
+  completed_id?: string;
   content: string;
   filename?: string;
   language?: string;

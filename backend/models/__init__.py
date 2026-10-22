@@ -780,14 +780,21 @@ class SpecBlock(ResponseModel):
     decision_ids: list[str] = Field(description="Only supplied lock decisions or additional decisions declared in this response.")
 
 
+class ImplementationTask(SpecBlock):
+    title: str = Field(description="Short English implementation task title.")
+    depends_on: list[str] = Field(description="Predecessor task item IDs; no cycles or self reference.")
+    spec_item_ids: list[str] = Field(min_length=1, description="Actual behavior block IDs in this response, outside implementation_order and verification sections.")
+    completion_item_ids: list[str] = Field(min_length=1, description="Existing block IDs in acceptance_criteria, test_plan or manual_verification_checklist.")
+
+
 # 저장·조회 형식인 SpecResponse는 유지하고 제공자 출력만 블록 구조로 분리한다.
 SpecDraftResponse = create_model("SpecDraftResponse", __base__=ResponseModel,
     decisions=(list[DecisionTrace], Field(default_factory=list)),
-    **{name: (list[SpecBlock], Field(description="Ordered substantive English content blocks for this section. Include at least one block."))
+    **{name: (list[ImplementationTask] if name == "implementation_order" else list[SpecBlock], Field(description="Ordered substantive English content blocks for this section. Include at least one block."))
        for name in SpecResponse.model_fields if name not in {"decisions", "spec_links"}})
 
 
-def assemble_spec_draft(draft, sheet):
+def assemble_spec_draft(draft, sheet, task_plan=None):
     """실제 출력 본문에서만 인용을 만들고 기존 명세·추적 형식으로 변환한다."""
     from backend.errors import SpecCompilationError
     from backend.knowledge.trace import REQUIREMENT_GROUPS
@@ -795,11 +802,15 @@ def assemble_spec_draft(draft, sheet):
     known_requirements = {item["id"] for group in REQUIREMENT_GROUPS for item in sheet.to_dict().get(group, [])}
     known_decisions = {item["id"] for item in sheet.decisions} | {item.id for item in draft.decisions}
     headings = set(REQUIRED_FINAL_SPEC_HEADINGS) | {"### Locked Constraints"}
+    from backend.services.implementation_plan import prepare_plan
+    task_plan = task_plan or prepare_plan(draft, sheet)
     sections, links, identities = {}, [], set()
     for name in SpecResponse.model_fields:
         if name in {"decisions", "spec_links"}:
             continue
         blocks = getattr(draft, name)
+        if name == "implementation_order":
+            blocks = [SpecBlock(item_id=t["item_id"], text=t["rendered"], requirement_ids=t["requirement_ids"], decision_ids=t["decision_ids"]) for t in task_plan["tasks"]]
         if not blocks:
             raise SpecCompilationError([f"{name}: include at least one substantive content block."])
         for index, block in enumerate(blocks):

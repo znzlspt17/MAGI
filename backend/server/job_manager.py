@@ -13,7 +13,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from backend.engine import Engine
-from backend.errors import ReviewValidationError
+from backend.errors import ReviewValidationError, InvalidStateError
 from backend.infrastructure.usage import provider_usage_summary
 from backend.models import State
 from backend.server.diagnostics import diagnose_exception, safe_user_error
@@ -101,6 +101,8 @@ class JobManager:
         self.on_change = on_change
         self.lock = threading.RLock()
         self._document_locks: dict[tuple[str, str], threading.Lock] = {}
+        from backend.services.implementation_package import PackageCache
+        self._package_cache = PackageCache()
         self.jobs: dict[str, dict] = {}
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="web")
         self._futures = {}
@@ -459,7 +461,7 @@ class JobManager:
                     raise KeyError(step_id)
                 content = load_completed(ArtifactWriter(self._job_root(ident)), step_id)["content"]
                 detail = {"id": step_id, "stage": "completed_document", "title": "보존된 완료 명세", "status": "completed",
-                          "document": {"content": content, "filename": "FINAL_AGENT_SPEC.en.md", "kind": "final"}}
+                          "document": {"content": content, "filename": "FINAL_AGENT_SPEC.en.md", "kind": "final", "completed_id": step_id}}
             elif step_id == "legacy-current" and history.graph()["legacy"]:
                 detail = self._legacy_node(self.summary(ident), detail=True)
             else:
@@ -469,6 +471,20 @@ class JobManager:
             document = detail.get("document")
             if isinstance(document, dict) and isinstance(document.get("content"), str):
                 document["source_hash"] = source_key(document["content"])
+                if document.get("kind") == "final":
+                    from backend.services.completed_specs import completed_references, load_completed
+                    state = self._read_json(self._job_root(ident) / "state/state.json") or {}
+                    matches = []
+                    for path in completed_references(state):
+                        try:
+                            if load_completed(ArtifactWriter(self._job_root(ident)), Path(path).stem)["content"] == document["content"]:
+                                matches.append(Path(path).stem)
+                        except InvalidStateError:
+                            continue
+                    if document.get("completed_id") not in matches:
+                        document.pop("completed_id", None)
+                    if not document.get("completed_id") and len(matches) == 1:
+                        document["completed_id"] = matches[0]
             return detail
 
     @tracked
@@ -503,6 +519,39 @@ class JobManager:
                         self.knowledge.store.save_translation(ident, artifacts)
         stem = Path(document.get("filename", "SPEC.md")).stem.removesuffix(".en")
         return {**document, **translated, "filename": stem + ".ko.md"}
+
+    def implementation_package(self, ident, params, *, read_file=False):
+        from backend.services.completed_specs import completed_references, load_completed
+        from backend.services.implementation_package import create_package, file_chunk
+        from backend.services.spec_translation import cached_translation
+        with self.lock:
+            self._get_locked(ident)
+            writer = ArtifactWriter(self._job_root(ident))
+            state = self._read_json(writer.path("state/state.json")) or {}
+            completed_id = params.get("completed_id")
+            if completed_id is None:
+                completed_id = (state.get("latest_completed") or {}).get("id")
+            if not isinstance(completed_id, str) or not re.fullmatch(r"[0-9a-f]{64}", completed_id):
+                raise KeyError(ident)
+            if f"completed/{completed_id}.json" not in completed_references(state):
+                raise KeyError(ident)
+            archive = load_completed(writer, completed_id)
+        bundle_id = params.get("bundle_id")
+        if (read_file or bundle_id is not None) and (not isinstance(bundle_id, str) or not re.fullmatch(r"[0-9a-f]{64}", bundle_id)):
+            raise ValueError("묶음 식별값이 올바르지 않습니다.")
+        cached = self._package_cache.get((ident, completed_id, bundle_id)) if bundle_id else None
+        if cached is None:
+            doc = {"content": archive["content"], "filename": "SPEC.en.md"}
+            translated = cached_translation(doc, writer.path("translations/" + source_key(archive["content"])))
+            metadata, files = create_package(completed_id, archive, translated["content"] if translated else None)
+            if bundle_id is not None and bundle_id != metadata["bundle_id"]:
+                raise ValueError("묶음 자료가 변경되었습니다. 포함 자료를 다시 조회하세요.")
+            self._package_cache.put((ident, completed_id, metadata["bundle_id"]), metadata, files)
+        else:
+            metadata, files = cached
+        if read_file:
+            return file_chunk(metadata, files, params.get("file_id"), params.get("offset", 0))
+        return metadata
 
     def requirement_review(self, ident, params):
         """선택한 이력과 일치하는 불변 자료만 사용한다. 모델과 과금 경로는 호출하지 않는다."""

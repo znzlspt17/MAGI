@@ -21,7 +21,7 @@ ARTIFACT_PATHS = (
     "context/project_manifest.json", "context/project_summary.ko.md",
     "analysis/requirement_lock_sheet.json", "analysis/requirement_lock_sheet.ko.md",
     "analysis/spec_trace.json", "review/checklist_issues.json", "review/resolution.json", "review/resolved_draft.en.md",
-    "analysis/spec_blocks.json", "analysis/change_review.json", "state/candidate_snapshot.json",
+    "analysis/spec_blocks.json", "analysis/change_review.json", "state/candidate_snapshot.json", "analysis/implementation_plan.json",
     "analysis/01_intent_parse.ko.md", "analysis/02_requirement_lock.ko.md",
     "analysis/03_scope_classification.ko.md", "analysis/04_initial_assumptions.ko.md",
     "analysis/05_blocking_questions.ko.md", "research/web_sources.json",

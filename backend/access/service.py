@@ -22,6 +22,7 @@ PUBLIC_FIELDS.update('research search_method mode performed outcome result_count
 PUBLIC_FIELDS.update('change_review before_id after_id before_hash after_hash before after item_id start end line meaning relation evidence analysed remaining calls diff'.split())
 PUBLIC_FIELDS.update('review_snapshot_id review_status rows unlinked unlinked_total specification acceptance verification spec_status acceptance_status verification_status test_status spec_linked acceptance_linked verification_linked group shared category specification_total acceptance_total verification_total'.split())
 PUBLIC_FIELDS.update('impact recommendation option_ids'.split())
+PUBLIC_FIELDS.update('completed_id bundle_id format_version files size sha256 completeness korean_included task_count available total_size file_limit total_limit eof'.split())
 PUBLIC_FIELDS.update('basis node recorded paths path_total inferred topic included omitted recorded_total recorded_included stale change_kind proposal limitations quote'.split())
 
 
@@ -172,7 +173,7 @@ class PublicService:
             if temporary:
                 with self.temporary(actor, params.get('id') or 'read-operation'):
                     return self.result(dispatch({**request,'params':params}))
-            if method not in {'get','download','knowledge.document','subscribe','requirement.review'}:
+            if method not in {'get','download','knowledge.document','subscribe','requirement.review','implementation.package','implementation.package.file'}:
                 raise AccessError('요청을 처리할 수 없습니다.', 'invalid')
             return self.result(dispatch({**request,'params':params}))
         finally:

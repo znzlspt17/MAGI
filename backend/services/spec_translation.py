@@ -6,7 +6,7 @@ import re
 import logging
 from itertools import zip_longest
 
-from backend.errors import Error, TranslationValidationError, TRANSLATION_RULES
+from backend.errors import Error, ArtifactError, TranslationValidationError, TRANSLATION_RULES
 from backend.infrastructure.output_language import has_hangul, prose, technical_only, OutputLanguageError
 from backend.infrastructure.provider_call import complete_with_usage
 from backend.infrastructure.stage_retry import CURRENT_RETRY, MAX_RETRIES
@@ -53,12 +53,12 @@ def cached_translation(document, root):
     from backend.infrastructure.artifact_writer import ArtifactWriter
     try:
         cached = ArtifactWriter(root).read_json('translation.ko.json')
-        if cached.get('source_hash') != source_key(document['content']) or not isinstance(cached.get('content'),str):
+        if not isinstance(cached, dict) or cached.get('source_hash') != source_key(document['content']) or not isinstance(cached.get('content'),str):
             return None
         _validate(document['content'],cached['content'])
         stem=Path(document.get('filename','SPEC.md')).stem.removesuffix('.en')
         return {**document, 'content':cached['content'],'language':'ko','source_hash':cached['source_hash'],'filename':stem+'.ko.md'}
-    except (OSError,ValueError,TranslationValidationError):
+    except (OSError,ValueError,ArtifactError,TranslationValidationError):
         return None
 
 

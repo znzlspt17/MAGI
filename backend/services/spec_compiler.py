@@ -157,11 +157,17 @@ class SpecCompiler:
                 stage="spec_compile",
                 temperature=0,
             )
+        task_plan = None
+        if isinstance(raw_output, SpecDraftResponse):
+            from backend.services.implementation_plan import prepare_plan
+            task_plan = prepare_plan(raw_output, sheet)
         draft_blocks = ([{"section": name, **block.model_dump()} for name in type(raw_output).model_fields
                          if name != "decisions" for block in getattr(raw_output, name)]
                         if isinstance(raw_output, SpecDraftResponse) else [])
         if isinstance(raw_output, SpecDraftResponse):
-            raw_output = assemble_spec_draft(raw_output, sheet)
+            draft_blocks = [b for b in draft_blocks if b["section"] != "implementation_order"] + [
+                {"section": "implementation_order", **t, "text": t["rendered"]} for t in task_plan["tasks"]]
+            raw_output = assemble_spec_draft(raw_output, sheet, task_plan)
         if not isinstance(raw_output, SpecResponse):
             raise SpecCompilationError(["Return the complete structured SpecResponse."])
         from backend.knowledge.runtime import CURRENT
@@ -200,6 +206,9 @@ class SpecCompiler:
                 if writer is not None:
                     writer.write_json("analysis/spec_trace.json", {"decisions": decisions, "links": links}, overwrite=True)
                     from backend.services.change_review import BLOCKS, digest, normalize
+                    if task_plan:
+                        from backend.services.implementation_plan import PATH
+                        writer.write_json(PATH, {**task_plan, "source_hash": digest(normalize(assembled))}, overwrite=True)
                     writer.write_json(BLOCKS, {"source_hash": digest(normalize(assembled)),
                         "blocks": draft_blocks or [{**link, "text": link["quote"]} for link in links]}, overwrite=True)
                 return assembled

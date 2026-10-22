@@ -15,6 +15,7 @@ import { api, post } from "./api";
 import { useAuth } from "./Auth";
 import { Button, Notice, statusLabel, formatTime, usageLabel } from "./UI";
 import { DocumentView } from "./DocumentView";
+import { ImplementationPackage } from "./ImplementationPackage";
 import { questionDetails } from "./QuestionActions";
 import Knowledge from "./Knowledge";
 import type { Job, RecordData, Step } from "./types";
@@ -651,6 +652,7 @@ function CompletedDocuments({
   const [selected, setSelected] = useState("");
   return (
     <div className="completed-documents">
+      {(job.latest_completed || job.status === "FINALIZED") && <ImplementationPackage key={`${job.id}:${job.latest_completed?.id || "latest"}`} jobId={job.id} completedId={job.latest_completed?.id} label="최근 승인본 구현 묶음" />}
       <span>
         {job.status === "FINALIZED"
           ? "최근 완료본"

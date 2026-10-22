@@ -13,6 +13,7 @@ METHODS |= {"projects.list", "projects.create", "projects.assign", "knowledge.se
 METHODS |= {"cleanup.catalog", "cleanup.preview", "cleanup.execute"}
 METHODS.add("continue")
 METHODS.add("requirement.review")
+METHODS |= {"implementation.package", "implementation.package.file"}
 METHODS.add("health.check")
 METHODS |= {"knowledge.impact", "knowledge.impact.analyse"}
 METHODS |= {'admin.projects','admin.graph','admin.search','admin.node','admin.document','admin.jobs'}

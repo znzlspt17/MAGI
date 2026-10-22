@@ -204,6 +204,8 @@ class Server:
                 )
             elif method == "requirement.review":
                 payload = self.manager.requirement_review(_ident(params), params)
+            elif method in {"implementation.package", "implementation.package.file"}:
+                payload = self.manager.implementation_package(_ident(params), params, read_file=method.endswith(".file"))
             elif method == "document":
                 step_id = params.get("step_id")
                 language = params.get("language")

@@ -126,6 +126,37 @@ def create_app(config: dict | None = None) -> Flask:
         response.headers["Cache-Control"] = "no-store"
         return response
 
+    @app.get("/api/jobs/<ident>/implementation-package")
+    def implementation_package(ident):
+        try:
+            response = jsonify(client().call("implementation.package", {"id": ident, "completed_id": request.args.get("completed_id")}))
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        except ClientError as exc:
+            return _client_error(exc)
+
+    @app.after_request
+    def package_no_store(response):
+        if request.endpoint in {"implementation_package", "implementation_package_download"}:
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.get("/api/jobs/<ident>/implementation-package/download")
+    def implementation_package_download(ident):
+        from gateway.implementation_package import download_package
+        try:
+            bundle_id = request.args.get("bundle_id", "")
+            if len(bundle_id) != 64 or any(c not in "0123456789abcdef" for c in bundle_id):
+                raise ValueError("묶음 식별값이 올바르지 않습니다.")
+            output, name = download_package(client(), ident, request.args.get("completed_id"), bundle_id)
+            response = send_file(output, as_attachment=True, download_name=name, mimetype="application/zip")
+            response.headers["Cache-Control"] = "no-store"
+            return response
+        except ClientError as exc:
+            return _client_error(exc)
+        except (ValueError, KeyError, TypeError):
+            return jsonify({"error": "구현 묶음을 확인하지 못했습니다. 포함 자료를 다시 조회하세요."}), 400
+
     @app.get("/api/jobs/<ident>/requirement-review")
     def requirement_review(ident):
         try:

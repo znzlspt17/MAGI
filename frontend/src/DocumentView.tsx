@@ -4,6 +4,7 @@ import { post } from "./api";
 import { Button, Markdown, Notice } from "./UI";
 import type { DocumentData } from "./types";
 import { RequirementReview, type RequirementEvidence } from "./RequirementReview";
+import { ImplementationPackage } from "./ImplementationPackage";
 export function DocumentView({
   jobId,
   stepId,
@@ -121,6 +122,7 @@ export function DocumentView({
   }
   return (
     <section aria-label="명세 문서">
+      {document.kind === "final" && document.completed_id && <ImplementationPackage key={`${jobId}:${document.completed_id}`} jobId={jobId} completedId={document.completed_id} />}
       {["candidate", "final"].includes(document.kind || "") && <RequirementReview key={`${jobId}:${stepId}:${hash || source}`} jobId={jobId} stepId={stepId} sourceHash={hash} onLocate={locate} onQuestion={onQuestion} />}
       {reviewOnly ? <Button onClick={onShowDocument}>명세 문서 보기</Button> : <>
       <div className="document-controls">
