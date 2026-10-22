@@ -223,6 +223,11 @@ class Server:
                            getattr(self.manager.cleanup, action)(params))
                 if action == "execute":
                     self.publish_from_worker({"event": "records.deleted", "ids": payload["targets"]})
+            elif method == "knowledge.impact":
+                payload = self.manager.impact(params)
+            elif method == "knowledge.impact.analyse":
+                from backend.knowledge.projection import digest
+                payload = self.manager.impact_analyse(params.get("job_id"), params, request.get("idempotency_key") or digest(params))
             elif method.startswith(("projects.", "knowledge.")):
                 payload = self.manager.knowledge_call(method, params)
             elif method == "continue":

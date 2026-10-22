@@ -7,13 +7,13 @@ export function isSubmitShortcut(event: KeyboardEvent): boolean {
   return event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229;
 }
 
-export function PromptInput({ onSend, disabled, label, buttonLabel, ...props }: Omit<ComponentProps<"textarea">, "onSubmit"> & {
+export function PromptInput({ onSend, disabled, label, buttonLabel, maxLength = 20000, ...props }: Omit<ComponentProps<"textarea">, "onSubmit"> & {
   onSend: () => void;
   label: string;
   buttonLabel: string;
 }) {
   return <InputGroup className="chat-prompt" data-disabled={disabled || undefined}>
-    <InputGroupTextarea {...props} aria-label={label} maxLength={20000} onKeyDown={(event) => {
+    <InputGroupTextarea {...props} aria-label={label} maxLength={maxLength} onKeyDown={(event) => {
       props.onKeyDown?.(event);
       if (!event.defaultPrevented && isSubmitShortcut(event)) { event.preventDefault(); if (!disabled) onSend(); }
     }} />

@@ -151,20 +151,22 @@ class KnowledgeStore(ChunkStore, CleanupStore):
                 "SELECT id,data FROM executions WHERE job_id=%s AND data ? 'action' ORDER BY sequence", (job_id,)).fetchall()]
 
     def commit_stage(self, job, execution, stage, state, artifacts, *, connection=None):
-        nodes, edges = project(job["id"], state, artifacts, stage)
+        nodes, edges = ([], []) if stage == "impact_review" else project(job["id"], state, artifacts, stage)
         # 실행·단계·내용을 포함하므로 동일 재전송은 멱등이고 후속 버전은 보존된다.
-        identity_artifacts = artifacts if stage in {"import", "translation"} else {
-            path: content for path, content in artifacts.items() if not path.startswith("translations/")}
+        supplements = ("translations/", "impact_reviews/", "impact_requests/")
+        identity_artifacts = artifacts if stage in {"import", "translation", "impact_review"} else {
+            path: content for path, content in artifacts.items() if not path.startswith(supplements)}
         snapshot = digest([job["id"], execution, stage, state, identity_artifacts])
         with (self.transaction() if connection is None else nullcontext(connection)) as conn:
             conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (job["id"],))
             if conn.execute("SELECT id FROM snapshots WHERE id=%s", (snapshot,)).fetchone():
                 return snapshot
-            if stage not in {"import", "translation"}:
+            if stage not in {"import", "translation", "impact_review"}:
                 durable = conn.execute("SELECT path,content FROM artifacts WHERE snapshot_id="
-                    "(SELECT id FROM snapshots WHERE job_id=%s ORDER BY sequence DESC LIMIT 1) AND path LIKE 'translations/%%'",
+                    "(SELECT id FROM snapshots WHERE job_id=%s ORDER BY sequence DESC LIMIT 1) "
+                    "AND (path LIKE 'translations/%%' OR path LIKE 'impact_reviews/%%' OR path LIKE 'impact_requests/%%')",
                     (job["id"],)).fetchall()
-                artifacts = {path: content for path, content in artifacts.items() if not path.startswith("translations/")}
+                artifacts = {path: content for path, content in artifacts.items() if not path.startswith(supplements)}
                 artifacts.update({row["path"]: row["content"] for row in durable})
             self._save_job(conn, job)
             conn.execute("INSERT INTO executions(id,job_id,data) VALUES (%s,%s,%s) "
@@ -227,6 +229,12 @@ class KnowledgeStore(ChunkStore, CleanupStore):
         if not translated or any(not path.startswith("translations/") or not is_artifact_path(path) for path in translated):
             raise ValueError("번역 산출물 경로가 올바르지 않습니다.")
         self._save_supplement(job_id, translated, "translation")
+
+    def save_impact(self, job_id, artifacts):
+        from backend.knowledge.runtime import is_artifact_path
+        if not artifacts or any(not path.startswith(("impact_reviews/", "impact_requests/")) or not is_artifact_path(path) for path in artifacts):
+            raise ValueError("영향 분석 산출물 경로가 올바르지 않습니다.")
+        self._save_supplement(job_id, artifacts, "impact_review")
 
     def _save_supplement(self, job_id, translated, stage):
         with self.transaction() as conn:

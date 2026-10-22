@@ -504,6 +504,105 @@ class JobManager:
         stem = Path(document.get("filename", "SPEC.md")).stem.removesuffix(".en")
         return {**document, **translated, "filename": stem + ".ko.md"}
 
+    def impact_context(self, params):
+        from backend.knowledge.impact import impact_context
+        ident = params.get("job_id")
+        with self.lock:
+            job = self._get_locked(ident)
+            if job["status"] not in {"PASS_PENDING_USER_APPROVAL", "FINALIZED"}:
+                raise ValueError("승인 후보가 준비된 작업에서 변경 영향을 검토할 수 있습니다.")
+            if self.knowledge is None:
+                raise ValueError("지식 저장소가 설정되지 않았습니다.")
+        node_id = params.get("node_id") or None
+        if node_id is not None and (not isinstance(node_id, str) or not re.fullmatch(r"[0-9a-f]{64}", node_id)):
+            raise ValueError("요구사항 항목이 올바르지 않습니다.")
+        return impact_context(self.knowledge.store, ident, node_id)
+
+    def impact(self, params):
+        from backend.knowledge.impact import impact_page
+        return impact_page(self.impact_context(params), params.get("offset", 0))
+
+    def cached_impact(self, params, request_key):
+        from backend.services.impact_review import validate_request
+        from backend.knowledge.projection import digest
+        validate_request(params)
+        ident = params.get("job_id")
+        self.get(ident)  # 캐시 조회도 소유자 검증을 먼저 수행한다.
+        if not isinstance(request_key, str) or not 8 <= len(request_key) <= 128:
+            raise ValueError("중복 방지 요청 키가 필요합니다.")
+        path = self.artifact(ident, f"impact_requests/{digest(request_key)}.json")
+        record = self._read_json(path)
+        if not record:
+            return None
+        if record.get("fingerprint") != digest(params):
+            raise ValueError("같은 요청 키에 다른 변경 가정을 사용할 수 없습니다.")
+        key = record.get("id", "")
+        if not re.fullmatch(r"[0-9a-f]{64}", key):
+            raise ValueError("저장된 분석을 확인할 수 없습니다.")
+        with self.lock:
+            analysis_lock = self._document_locks.setdefault((ident, "impact:" + key), threading.Lock())
+        if analysis_lock.locked():
+            return None
+        report = self._read_json(self.artifact(ident, f"impact_reviews/{key}/report.json"))
+        if report is None:
+            raise ValueError("접수된 분석의 결과를 확인할 수 없습니다. 자동 재전송하지 않습니다.")
+        if report["status"] == "running":
+            report = {**report, "status": "interrupted", "reason": "중단된 호출은 자동 재전송하지 않습니다."}
+        return self._impact_result(params, report)
+
+    def _impact_result(self, params, report):
+        # 처리 중 접근 권한이 바뀌었다면 결과를 반환하지 않는다.
+        self.get(params.get("job_id"))
+        try:
+            current = self.impact_context(params)["basis"]["id"]
+        except ValueError:
+            current = None
+        return {**report, "stale": current != report.get("basis", {}).get("id")}
+
+    @tracked
+    def impact_analyse(self, ident, params, request_key):
+        from backend.knowledge.projection import digest
+        if not isinstance(request_key, str) or not 8 <= len(request_key) <= 128:
+            raise ValueError("중복 방지 요청 키가 필요합니다.")
+        with self.lock:
+            request_lock = self._document_locks.setdefault((ident, "impact-request:" + digest(request_key)), threading.Lock())
+        with request_lock:
+            return self._impact_analyse(ident, params, request_key)
+
+    def _impact_analyse(self, ident, params, request_key):
+        from backend.services.impact_review import prepare_review, run_review
+        from backend.knowledge.projection import digest
+        cached = self.cached_impact(params, request_key)
+        if cached is not None:
+            return cached
+        context = self.impact_context(params)
+        # 검색 결과는 문맥 선택에만 사용하고 기록된 관계에는 넣지 않는다.
+        ranked = self.knowledge.search(params["proposal"], kind="spec", job_id=params["job_id"])
+        prepared = prepare_review(context, params, [node["id"] for node in ranked.get("nodes", [])])
+        key = prepared[0]
+        if params["job_id"] != ident:
+            raise ValueError("작업 범위가 일치하지 않습니다.")
+        with self.lock:
+            analysis_lock = self._document_locks.setdefault((ident, "impact:" + key), threading.Lock())
+            provider_name = self._get_locked(ident)["provider"]
+        with analysis_lock:
+            writer = ArtifactWriter(self.artifact(ident, f"impact_reviews/{key}"), allow_overwrite=True)
+            root = ArtifactWriter(self.root(ident), allow_overwrite=True)
+            request_path = f"impact_requests/{digest(request_key)}.json"
+            root.write_json_atomic(request_path, {"id": key, "fingerprint": digest(params)})
+
+            def save():
+                paths = ("input.json", "report.json", "state/provider_usage.json")
+                artifacts = {f"impact_reviews/{key}/{path}": writer.read_text(path) for path in paths if writer.path(path).is_file()}
+                artifacts[request_path] = root.read_text(request_path)
+                self.knowledge.store.save_impact(ident, artifacts)
+
+            engine = self._engine_for_provider(provider_name)
+            report = run_review(writer, engine.provider, engine.config.model_routing["compiler"].model,
+                                prepared, save, context["basis"])
+            save()
+        return self._impact_result(params, report)
+
     def _restore_jobs(self) -> None:
         if self.knowledge is not None:
             from backend.knowledge.runtime import restore_artifacts

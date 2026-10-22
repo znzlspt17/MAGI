@@ -20,6 +20,7 @@ SAFE_DOC = re.compile(r'(?:final/FINAL_AGENT_SPEC\.md|draft/approval_candidate_s
 PUBLIC_FIELDS=set('''id request status message action created_at updated_at queued_at progress execution_id project_id retry_status retry_action can_continue read_only latest_completed source_hash step_id continuation_error state blocking_questions awaiting_input_reason review_questions question_forms saved_answers candidate final critical execution_graph version nodes legacy session_events completed_documents title input feedback answers started_at completed_at questions summary document_step_id stage duration_ms issue_counts has_document has_issues detail_available result issues resolved_issues requirements document content filename kind language recording_incomplete source target edges mode embedding_status has_more offset next_offset body attrs active logical_key sequence actor section requirement_id scope title_path question text rationale conditions sources requirement_ids decision_ids question_id question_text answer selection selected_option_ids custom_text form_version input_type options label value decision_key required_change decision_question resolution_reason missing_information severity code explanation description confirmed_basis basis_refs status_label pending total limit truncated groups node_id node_count edge_count connected_id references source_text translated_text delta number_mismatches current_status pending_questions input_type is_required allow_custom selected label_ko default_id recommended help hint requirement text_ko text_en name reason duration elapsed_ms percent total_steps completed_steps count accepted superseded implementation changes source_id requirement source_refs coverage effect expected actual resolution issue_id summary_ko request_type non_scope mandatory_requirements constraints assumptions decisions workflow_status user_reply decision_text index information priority blocking major minor passed failed resolved unresolved answer_forms custom_label instruction prompt choices option_id decision support status_text done next_action can_retry user_action required provenance change original_quote known active_session sessions'''.split())
 PUBLIC_FIELDS.update('research search_method mode performed outcome result_count query retrieved_at url job_id resolution_reasons recommended_requirements optional_requirements locked_constraints document_has_more document_next_offset other_body other_kind original_text parent_id related_node_ids'.split())
 PUBLIC_FIELDS.update('change_review before_id after_id before_hash after_hash before after item_id start end line meaning relation evidence analysed remaining calls diff'.split())
+PUBLIC_FIELDS.update('basis node recorded paths path_total inferred topic included omitted recorded_total recorded_included stale change_kind proposal limitations quote'.split())
 
 
 def user_payload(value):
@@ -82,7 +83,7 @@ class PublicService:
         self.access.throttle(actor['id'])
         if request.get('csrf') is not None and not hmac.compare_digest(str(request['csrf']), actor['csrf']):
             raise AccessError('요청 확인 값이 올바르지 않습니다.')
-        mutations = {'generate','answer','revise','approve','continue','lease.keep','lease.release','lease.resume','auth.logout'}
+        mutations = {'generate','answer','revise','approve','continue','lease.keep','lease.release','lease.resume','auth.logout','knowledge.impact.analyse'}
         if (method in mutations or method.startswith(('cleanup.','admin.')) or method == 'knowledge.retry' or method == 'document') and method != 'cleanup.catalog':
             if not hmac.compare_digest(str(request.get('csrf','')), actor['csrf']):
                 raise AccessError('요청 확인 값이 필요합니다.')
@@ -111,6 +112,25 @@ class PublicService:
             return self.admin(actor, method, params)
         token = ACTOR.set(actor)
         try:
+            if method in {'knowledge.impact','knowledge.impact.analyse'}:
+                self.manager.get(params.get('job_id'))
+                if method == 'knowledge.impact':
+                    try:
+                        return user_payload(self.manager.impact(params))
+                    except AccessError:
+                        raise
+                    except ValueError as exc:
+                        raise AccessError(str(exc), 'invalid') from None
+                try:
+                    cached = self.manager.cached_impact(params, request.get('idempotency_key'))
+                except AccessError:
+                    raise
+                except ValueError as exc:
+                    raise AccessError(str(exc), 'invalid') from None
+                if cached is not None:
+                    return user_payload(cached)
+                with self.temporary(actor, params['job_id']):
+                    return self.result(dispatch(request))
             if method == 'list':
                 return user_payload([self.manager.summary(i) for i in self.manager.ids()])
             if method.startswith('projects.'):

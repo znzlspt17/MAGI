@@ -38,11 +38,11 @@ class Client:
         try:
             with connect(self.url, additional_headers=self._headers(), open_timeout=3, close_timeout=2, max_size=4 * 1024 * 1024) as socket:
                 socket.send(json.dumps(request, ensure_ascii=False))
-                raw = socket.recv(timeout=520 if method == "document" else 120 if method == "knowledge.search" or method.startswith('cleanup.') else 30 if method.startswith(("projects.", "knowledge.")) else 10)
+                raw = socket.recv(timeout=520 if method == "document" else 180 if method == "knowledge.impact.analyse" else 120 if method == "knowledge.search" or method.startswith('cleanup.') else 30 if method.startswith(("projects.", "knowledge.")) else 10)
         except Exception as exc:
             raise ClientError(
                 "작업 서버에 연결할 수 없습니다. 서버 상태를 확인하세요.",
-                uncertain=method in {"generate", "answer", "revise", "approve", "continue", "cleanup.execute"},
+                uncertain=method in {"generate", "answer", "revise", "approve", "continue", "cleanup.execute", "knowledge.impact.analyse"},
             ) from exc
         try:
             response = _response(raw, request_id)
@@ -50,7 +50,7 @@ class Client:
             raise ClientError(
                 str(exc),
                 status=exc.status,
-                uncertain=method in {"generate", "answer", "revise", "approve", "continue", "cleanup.execute"},
+                uncertain=method in {"generate", "answer", "revise", "approve", "continue", "cleanup.execute", "knowledge.impact.analyse"},
             ) from exc
         if "error" in response:
             error = response["error"]
@@ -63,7 +63,7 @@ class Client:
                 status=statuses.get(code, 503),
                 response_received=True,
                 uncertain=(
-                    method in {"generate", "answer", "revise", "approve", "continue", "cleanup.execute"}
+                    method in {"generate", "answer", "revise", "approve", "continue", "cleanup.execute", "knowledge.impact.analyse"}
                     and code not in {"not_found", "invalid", "conflict",'busy','quota','unauthorized','forbidden','configuration'}
                 ),
             )

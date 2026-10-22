@@ -186,7 +186,7 @@ def create_app(config: dict | None = None) -> Flask:
 
     @app.get("/api/knowledge/<action>")
     def knowledge(action):
-        if action not in {"search", "graph", "node", "document"}:
+        if action not in {"search", "graph", "node", "document", "impact"}:
             abort(404)
         params = dict(request.args)
         for key in ("depth", "limit", "offset"):
@@ -207,6 +207,16 @@ def create_app(config: dict | None = None) -> Flask:
         _json()
         try:
             return jsonify(client().call("knowledge.retry", {})), 202
+        except ClientError as exc:
+            return _client_error(exc, mutation=True)
+
+    @app.post("/api/knowledge/impact")
+    def impact_analyse():
+        payload = _json()
+        try:
+            response = jsonify(client().call("knowledge.impact.analyse", payload))
+            response.headers["Cache-Control"] = "no-store"
+            return response
         except ClientError as exc:
             return _client_error(exc, mutation=True)
 

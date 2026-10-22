@@ -36,6 +36,8 @@ def is_artifact_path(relative):
             or re.fullmatch(r"completed/[0-9a-f]{64}\.json", relative) is not None
             or re.fullmatch(r"history/[0-9a-f]{32}\.md", relative) is not None
             or re.fullmatch(r"(?:candidate_snapshots|change_reviews)/[0-9a-f]{64}\.json", relative) is not None
+            or re.fullmatch(r"impact_requests/[0-9a-f]{64}\.json", relative) is not None
+            or re.fullmatch(r"impact_reviews/[0-9a-f]{64}/(?:input\.json|report\.json|state/provider_usage\.json)", relative) is not None
             or re.fullmatch(r"translations/[0-9a-f]{64}/(?:translation\.ko\.json|validation\.json|state/(?:provider_usage|conversation_state)\.json)", relative) is not None)
 
 
@@ -43,11 +45,16 @@ def read_artifacts(root):
     root = Path(root).resolve()
     result = {}
     paths = list(ARTIFACT_PATHS)
-    for name in ("candidate_snapshots", "change_reviews"):
+    for name in ("candidate_snapshots", "change_reviews", "impact_requests"):
         directory = root / name
         if directory.is_dir() and not any(p.is_symlink() for p in (directory, *directory.parents)):
             paths.extend(name + "/" + p.name for p in directory.iterdir()
                          if not p.is_symlink() and re.fullmatch(r"[0-9a-f]{64}\.json", p.name))
+    directory = root / "impact_reviews"
+    if directory.is_dir() and not any(p.is_symlink() for p in (directory, *directory.parents)):
+        for folder in directory.iterdir():
+            if folder.is_dir() and not folder.is_symlink() and re.fullmatch(r"[0-9a-f]{64}", folder.name):
+                paths.extend(f"impact_reviews/{folder.name}/{name}" for name in ("input.json", "report.json", "state/provider_usage.json"))
     completed_dir = root / "completed"
     if completed_dir.is_dir() and not any(p.is_symlink() for p in (completed_dir, *completed_dir.parents)):
         paths.extend("completed/" + p.name for p in completed_dir.iterdir()

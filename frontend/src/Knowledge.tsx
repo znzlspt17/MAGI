@@ -14,6 +14,7 @@ import {
   type KnowledgeNode,
 } from "./graph-data";
 import "./admin-knowledge.css";
+import { ImpactReview } from "./ImpactReview";
 const empty: GraphData = { nodes: [], edges: [] };
 const sourceLabel = (source: string) =>
   source.startsWith("user_request")
@@ -55,6 +56,7 @@ export default function Knowledge({
     [matches, setMatches] = useState<string[]>([]),
     [selected, setSelected] = useState<KnowledgeNode | null>(null),
     [group, setGroup] = useState<any>(null),
+    [newRequirement, setNewRequirement] = useState(false),
     [mode, setMode] = useState("summary"),
     [expanded, setExpanded] = useState(new Set<string>()),
     [orphans, setOrphans] = useState(false),
@@ -87,6 +89,7 @@ export default function Knowledge({
         : e.message || "지식 조회에 실패했습니다.",
     );
   function invalidate() {
+    setNewRequirement(false);
     generation.current++;
     selection.current++;
     setSelected(null);
@@ -111,6 +114,7 @@ export default function Knowledge({
     return "/api/knowledge/" + action + "?" + p;
   }
   const clear = () => {
+    setNewRequirement(false);
     selection.current++;
     setSelected(null);
     setGroup(null);
@@ -301,6 +305,7 @@ export default function Knowledge({
       if (ticket !== selection.current || !active.current) return;
       setOrphans(true);
       setSelected(node);
+      setNewRequirement(false);
       if (matchMedia("(max-width:760px)").matches) setList(false);
     } catch (e) {
       if (ticket === selection.current && active.current) fail(e);
@@ -412,6 +417,7 @@ export default function Knowledge({
         </div>
       )}
       <div className="knowledge-controls">
+        {!admin && session && <button type="button" onClick={() => { selection.current++; setSelected(null); setGroup(null); setNewRequirement(true); }}>새 요구사항 영향 검토</button>}
         <form
           id="knowledge-form"
           onSubmit={(e) => {
@@ -641,7 +647,7 @@ export default function Knowledge({
             </ul>
           </aside>
         )}
-        {(selected || group) && (
+        {(selected || group || newRequirement) && (
           <aside
             id="graph-inspector"
             className="knowledge-drawer inspector-drawer"
@@ -658,7 +664,7 @@ export default function Knowledge({
               </button>
             </header>
             <div id="knowledge-detail">
-              {group ? (
+              {newRequirement ? <ImpactReview key={`new:${session}`} jobId={session} inspect={id => void showNode(id)} /> : group ? (
                 <>
                   <h3>{group.label}</h3>
                   <p>같은 작업·문서 버전의 명세를 묶어 표시합니다.</p>
@@ -706,6 +712,7 @@ export default function Knowledge({
                         ?.request || selected.job_id}
                     </p>
                     <Markdown content={selected.body} />
+                    {!admin && selected.kind === "requirement" && selected.job_id && <ImpactReview key={selected.id} jobId={selected.job_id} nodeId={selected.id} inspect={id => void showNode(id)} />}
                     {selected.attrs?.rationale && (
                       <p>명시된 근거: {selected.attrs.rationale}</p>
                     )}
