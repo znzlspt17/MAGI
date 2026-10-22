@@ -25,7 +25,7 @@ CANONICAL_FIELDS = {
     "review_resolution": {"issues", "confirmed_basis", "previous_resolutions", "review_questions", "diagnose_keys"},
 }
 REFERENCE_RULES = (
-    "Reference actual user inputs using supplied S references and retrieved knowledge using supplied K references. "
+    "Reference supplied source records using S references and retrieved knowledge using K references. S type project_decision is structured user confirmation, not a user-authored quote; preserve its original_actor and conditions. "
     "Use only references supplied for this call in source, sources, basis_refs, conflicting_source and reused_node_ids. "
     "Keep requirement, workflow, decision and issue IDs unchanged. K references are proposals, never user confirmation. "
     "Input fields ending in _source point to supplied original text; reproduce that exact text when the output schema requires original_text. "
@@ -72,10 +72,10 @@ class PromptContext:
             entries[ref]["aliases"].append(alias)
         self.aliases[alias] = ref
         self.available["sources"].add(ref)
-        item = self.source_items.setdefault(ref, {"type": "user_answer" if alias.startswith("user_answer:")
+        item = self.source_items.setdefault(ref, {"type": "project_decision" if alias.startswith("project_decision:") else "user_answer" if alias.startswith("user_answer:")
                                                 else "user_feedback" if alias.startswith("user_feedback") else "user_request",
                                                 "text": text})
-        role = "user_answer" if alias.startswith("user_answer:") else "user_feedback" if alias.startswith("user_feedback") else "user_request"
+        role = "project_decision" if alias.startswith("project_decision:") else "user_answer" if alias.startswith("user_answer:") else "user_feedback" if alias.startswith("user_feedback") else "user_request"
         if role != item["type"]:
             item.setdefault("roles", [item["type"]])
             if role not in item["roles"]:
@@ -260,12 +260,19 @@ def prepare_context(writer, payload, stage):
             else:
                 for text in state.get("revision_history", []) or [body]:
                     context.source("user_feedback", text)
+        elif title.startswith("Explicitly selected project decisions"):
+            continue
         else:
             sections.append(item)
     sources.update({key: text for key, text in canonical.get("confirmed_basis", {}).items() if key.startswith("user_")})
     sources.update(canonical.get("actual_user_sources", {}))
     for alias, text in sources.items():
         context.source(alias, text)
+    from backend.services.project_decisions import CURRENT_REUSE, source_ref
+    reused = CURRENT_REUSE.get()
+    for selection in reused:
+        ref = context.source(source_ref(selection), selection["text"])
+        context.source_items[ref].update(type="project_decision", original_actor=selection["actor"], conditions=selection["conditions"], confirmation="explicit_selection")
     def answers(value):
         if isinstance(value, dict):
             if value.get("question_id") and isinstance(value.get("answer"), str):
@@ -298,7 +305,7 @@ def prepare_context(writer, payload, stage):
                     and any(node["body"] in text for text in sources.values()))):
                 continue
             ref = context.node(node["id"])
-            knowledge["items"][ref] = {"type": node["kind"], "text": node["body"],
+            knowledge["items"][ref] = {"type": node["kind"], "text": node["body"], "adoption_allowed": node.get("job_id") == runtime.job["id"],
                 "status": attrs.get("status", "reference"), "actor": attrs.get("actor", "llm"),
                 **{key: attrs[key] for key in ("rationale", "conditions", "origin") if attrs.get(key)}}
         for edge in runtime.retrieved.get("edges", []):
@@ -310,7 +317,7 @@ def prepare_context(writer, payload, stage):
     canonical = {key: value for key, value in canonical.items() if key in CANONICAL_FIELDS[stage]}
     if stage == "review_resolution":
         context.basis_source_aliases = set(canonical.get("confirmed_basis", {}))
-        canonical["confirmed_basis"] = {key: value for key, value in canonical.get("confirmed_basis", {}).items() if not key.startswith("user_")}
+        canonical["confirmed_basis"] = {key: value for key, value in canonical.get("confirmed_basis", {}).items() if not key.startswith(("user_", "project_decision:"))}
         canonical["issues"] = [{key: value for key, value in issue.items() if key in ISSUE_FIELDS} for issue in canonical.get("issues", [])]
         canonical["previous_resolutions"] = [{"issues": [{key: issue[key] for key in ("issue_id", "requirement_id", "checklist_id", "decision_key", "required_change", "resolution_reason", "basis_refs") if key in issue}
                                                                for issue in entry.get("issues", [])], "action": entry.get("action")}
@@ -337,6 +344,8 @@ def prepare_context(writer, payload, stage):
         source_table[original_ref].pop("text", None)
         source_table[original_ref]["content_from"] = "Original user request (immutable)"
     canonical["sources"] = source_table
+    if reused:
+        canonical["selected_project_decisions"] = [context.aliases[source_ref(item)] for item in reused]
     if knowledge["items"]:
         canonical["knowledge"] = knowledge
     result = []

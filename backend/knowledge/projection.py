@@ -54,6 +54,11 @@ def project(job_id, state, artifacts, stage=None):
         source = add(key, "input", answer["answer"], actor=actor, status=status, question=answer.get("question", ""))
     if not requirements_stage:
         return nodes, edges
+    from backend.services.project_decisions import source_ref
+    for item in state.get("reused_decisions", []):
+        ref = source_ref(item)
+        add(ref, "decision", item["text"], actor=item["actor"], status="confirmed", conditions=item["conditions"],
+            provenance="explicit_project_reuse", registry_id=item["id"], version=item["version"], completed_id=item["completed_id"], source_hash=item["source_hash"])
     for group in REQUIREMENT_GROUPS:
         for item in sheet.get(group, []):
             ident = add("req:" + item["id"], "requirement", item["text"], requirement_id=item["id"], group=group,

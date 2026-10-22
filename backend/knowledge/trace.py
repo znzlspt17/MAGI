@@ -99,7 +99,8 @@ def validate_decisions(decisions, sheet, retrieved=(), feedback="", request="", 
         if prior.get(decision["id"]) == decision:
             # 이전 선택을 그대로 보존하는 것은 과거 출처의 새로운 채택과 구분한다.
             permitted.update(decision["reused_node_ids"])
-        available_sources = user_sources.keys() | (confirmed or {}).keys()
+        from backend.services.project_decisions import CURRENT_REUSE, source_ref
+        available_sources = user_sources.keys() | (confirmed or {}).keys() | {source_ref(item) for item in CURRENT_REUSE.get()}
         if not set(decision["sources"]) <= available_sources or not set(decision["reused_node_ids"]) <= permitted:
             raise ValueError("결정 출처를 확인할 수 없습니다.")
         if decision["actor"] == "user":

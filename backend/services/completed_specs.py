@@ -10,7 +10,7 @@ from backend.errors import InvalidStateError, ArtifactError
 def archive_completed(writer, state, content=None):
     content = writer.read_text("final/FINAL_AGENT_SPEC.md") if content is None else content
     data = {"content": content, "basis": {key: value for key, value in state.to_dict().items()
-            if key in {"original_user_request", "user_request", "requirement_lock_sheet", "confirmed_user_sources", "revision_history"}}}
+            if key in {"original_user_request", "user_request", "requirement_lock_sheet", "confirmed_user_sources", "revision_history", "reused_decisions"}}}
     trace = writer.path("analysis/spec_trace.json")
     if trace.is_file():
         data["trace"] = writer.read_json("analysis/spec_trace.json")

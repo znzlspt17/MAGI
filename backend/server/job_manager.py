@@ -13,7 +13,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from backend.engine import Engine
-from backend.errors import ReviewValidationError, InvalidStateError
+from backend.errors import ReviewValidationError, InvalidStateError, ArtifactError
 from backend.infrastructure.usage import provider_usage_summary
 from backend.models import State
 from backend.server.diagnostics import diagnose_exception, safe_user_error
@@ -153,10 +153,17 @@ class JobManager:
         demo: bool | None = None,
         provider: str | None = None,
         project_id: str | None = None,
+        decision_reuse: list | None = None,
     ) -> dict:
         selected_provider = self._validate_request(request, demo, provider)
-        if project_id:
-            raise ValueError("프로젝트 지정은 지원하지 않습니다. 새 대화 세션을 생성하세요.")
+        if decision_reuse is not None and not isinstance(decision_reuse, list):
+            raise ValueError("재사용 결정은 목록으로 전달하세요.")
+        if self.knowledge is None and (project_id or decision_reuse):
+            raise ValueError("공통 결정에는 지식 저장소가 필요합니다.")
+        if project_id is not None and (not isinstance(project_id, str) or not _ID.fullmatch(project_id)):
+            raise ValueError("프로젝트 식별값을 확인하세요.")
+        if decision_reuse and not project_id:
+            raise ValueError("재사용할 결정의 프로젝트를 선택하세요.")
         with self.lock:
             self._require_open()
             if sum(job["status"] in _ACTIVE for job in self.jobs.values()) >= 20:
@@ -179,10 +186,14 @@ class JobManager:
                 "queue_order": order,
                 "project_id": None,
             }
-            job["project_id"] = job["id"] if self.knowledge is not None else None
+            job["project_id"] = (project_id or job["id"]) if self.knowledge is not None else None
+            job["reused_decisions"] = []
             job["execution_id"] = uuid4().hex
             if self.knowledge is not None:
-                self.knowledge.store.accept_job(job, job["request"])
+                job["_decision_selections"] = decision_reuse if decision_reuse is not None else []
+                with self.knowledge.store.transaction():
+                    self.knowledge.store.accept_job(job, job["request"])
+                    self._validate_reuse_sources(job["reused_decisions"])
             self.jobs[job["id"]] = job
             if not self._export_job_locked(job):
                 del self.jobs[job["id"]]
@@ -339,6 +350,7 @@ class JobManager:
                 result["retry_action"] = "revise"
             if source["status"] == "queued":
                 result["queue_position"] = self._queue_position_locked(source["id"])
+            result["reused_decision_count"] = len(source.get("reused_decisions", []))
             result["can_continue"] = False
             result["read_only"] = False
             result["latest_completed"] = None
@@ -431,7 +443,7 @@ class JobManager:
             job["execution_graph"] = graph
             job["session_events"] = history.conversation()
             from backend.services.completed_specs import completed_references
-            job["completed_documents"] = [{"id": Path(path).stem, "title": "완료 명세 · " + Path(path).stem[:8]}
+            job["completed_documents"] = [{"id": Path(path).stem, "title": "완료 명세 · " + Path(path).stem[:8], "detail_available": True, "has_document": True, "stage": "completed_document"}
                                           for path in completed_references(state or {})]
             for relative, key in (
                 ("draft/approval_candidate_spec.en.md", "candidate"),
@@ -1017,6 +1029,7 @@ class JobManager:
             if action == "generate":
                 result = engine.generate_from_text(
                     text=request_text,
+                    reused_decisions=job.get("reused_decisions", []),
                     output_dir=str(root),
                     web_search_mode="off",
                     on_progress=lambda event: self._engine_progress(ident, event),
@@ -1357,8 +1370,39 @@ class JobManager:
         store = self.knowledge.store
         if method == "projects.list":
             return store.projects()
-        if method in {"projects.create", "projects.assign"}:
-            raise ValueError("프로젝트 생성·이동은 지원이 종료되었습니다. 대화 세션을 사용하세요.")
+        if method == "projects.create":
+            return store.create_project(params.get("name"))
+        if method == "projects.reused_decisions":
+            from backend.services.project_decisions import page
+            job = self._get_locked(params.get("job_id"))
+            items = copy.deepcopy(job.get("reused_decisions", []))
+            for item in items:
+                item["source_available"] = False
+                try:
+                    self._validate_reuse_sources([item]); item["source_available"] = True
+                except (KeyError, ValueError, InvalidStateError, ArtifactError, OSError):
+                    pass
+            return page({"rows": items, "total": len(items)}, params.get("offset", 0))
+        if method == "projects.decisions":
+            return self.project_decisions(params)
+        if method == "projects.decisions.register":
+            with store.transaction():
+                if not isinstance(params.get("completed_id"), str):
+                    raise ValueError("등록할 승인본을 선택하세요.")
+                with store.transaction(mode="read") as conn:
+                    store.require_project(conn, params.get("project_id"))
+                packet = self.decision_candidates(params.get("job_id"), params)
+                candidate = next((d for d in packet["rows"] if d["decision_id"] == params.get("decision_id")), None)
+                if not candidate or candidate["project_id"] != params.get("project_id") or candidate["source_hash"] != params.get("source_hash"):
+                    raise ValueError("승인된 결정과 출처를 다시 확인하세요.")
+                return store.register_decision(params["project_id"], candidate)
+        if method == "projects.decisions.deactivate":
+            return store.deactivate_decision(params.get("project_id"), params.get("decision_id"), params.get("version"))
+        if method == "projects.decision_candidates":
+            from backend.services.project_decisions import page
+            return page(self.decision_candidates(params.get("job_id"), params), params.get("offset", 0))
+        if method == "projects.assign":
+            raise ValueError("대화 이동은 지원하지 않습니다.")
         if method == "knowledge.search":
             return self.knowledge.search(params.get("query"), params.get("project_id"), params.get("kind"), params.get("status"), job_id=params.get("job_id"))
         if method == "knowledge.node":
@@ -1372,6 +1416,53 @@ class JobManager:
             self.knowledge.schedule()
             return {"status": "queued"}
         raise ValueError("알 수 없는 지식 조회입니다.")
+
+    def decision_candidates(self, ident, params):
+        from backend.services.completed_specs import completed_references, load_completed
+        from backend.services.project_decisions import candidates
+        job = self._get_locked(ident)
+        writer = ArtifactWriter(self._job_root(ident))
+        state = self._read_json(writer.path("state/state.json")) or {}
+        completed_id = params.get("completed_id") or (state.get("latest_completed") or {}).get("id")
+        if not isinstance(completed_id, str) or f"completed/{completed_id}.json" not in completed_references(state):
+            raise KeyError("completed")
+        archive = load_completed(writer, completed_id)
+        rows = candidates(archive, completed_id, ident, job.get("project_id"))
+        return {"rows": rows, "completed_id": completed_id, "project_id": job.get("project_id"), "total": len(rows)}
+
+    def _validate_reuse_sources(self, items):
+        for item in items:
+            with self.knowledge.store.transaction(mode="read") as conn:
+                if not conn.execute("SELECT 1 FROM jobs WHERE id=%s AND project_id=%s", (item["job_id"], item["project_id"])).fetchone():
+                    raise KeyError("source")
+            try:
+                packet = self.decision_candidates(item["job_id"], {"completed_id": item["completed_id"]})
+            except (ArtifactError, InvalidStateError):
+                raise ValueError("결정의 승인 출처를 읽을 수 없습니다. 다시 확인하세요.") from None
+            if not any(c["decision_id"] == item["decision_id"] and all(c[k] == item[k] for k in ("text", "conditions", "source_hash", "actor", "project_id", "evidence")) for c in packet["rows"]):
+                raise ValueError("결정의 승인 출처를 검증하지 못했습니다. 다시 확인하세요.")
+
+    def project_decisions(self, params):
+        offset = params.get("offset", 0)
+        query, status = params.get("query", ""), params.get("status", "active")
+        if type(offset) is not int or offset < 0 or not isinstance(query, str) or len(query) > 200 or status not in {"active", "inactive", "all"}:
+            raise ValueError("목록 조회 형식을 확인하세요.")
+        rows = self.knowledge.store.registered_decisions(params.get("project_id"))
+        rows = [r for r in rows if (status == "all" or r["active"] == (status == "active")) and query.casefold() in (r["text"] + r["conditions"]).casefold()]
+        from backend.services.project_decisions import page
+        packet = page({"rows": rows, "total": len(rows), "project_id": params["project_id"]}, offset)
+        rows = packet["rows"]
+        for item in rows:
+            item["source_available"] = False
+            item["stale"] = False
+            try:
+                self._validate_reuse_sources([item])
+                source = self._read_json(self._job_root(item["job_id"]) / "state/state.json") or {}
+                item["stale"] = bool(source.get("latest_completed") and source["latest_completed"]["id"] != item["completed_id"])
+                item["source_available"] = True
+            except (KeyError, ValueError, InvalidStateError, ArtifactError, OSError):
+                pass
+        return packet
 
     def _job_root(self, ident: str) -> Path:
         if not isinstance(ident, str) or not _ID.fullmatch(ident):

@@ -297,7 +297,7 @@ class RunKnowledge:
         return {**confirmed_sources(state, {}), **self.user_sources}
 
     def reusable_ids(self):
-        return {node["id"] for node in self.retrieved["nodes"] if node.get("active") and node.get("attrs", {}).get("scope") == "product" and node.get("kind") in {"decision", "requirement", "spec"}}
+        return {node["id"] for node in self.retrieved["nodes"] if node.get("job_id") == self.job["id"] and node.get("active") and node.get("attrs", {}).get("scope") == "product" and node.get("kind") in {"decision", "requirement", "spec"}}
 
     def bind_decisions(self, decisions, previous=()):
         from copy import deepcopy

@@ -25,6 +25,8 @@ def confirmed_basis(state, sheet):
     basis = {item["id"]: item["text"] for group in REQUIREMENT_GROUPS for item in sheet.get(group, [])}
     basis["user_request"] = state.get("original_user_request") or state.get("user_request", "")
     basis.update(state.get("confirmed_user_sources", {}))
+    from backend.services.project_decisions import source_ref
+    basis.update({source_ref(item): item["text"] for item in state.get("reused_decisions", [])})
     if state.get("revision_feedback"):
         basis["user_feedback"] = state["revision_feedback"]
     return basis

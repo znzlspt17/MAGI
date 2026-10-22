@@ -95,6 +95,11 @@ class RequirementLockBuilder:
                                        previous)
                 except ValueError:
                     raise _normalization_error("trace", ["Decision trace references are invalid."]) from None
+                from backend.services.project_decisions import validate_requirement_sources
+                try:
+                    validate_requirement_sources(sheet, state.get("reused_decisions", []), require_all=not bool(state.get("revision_feedback")))
+                except ValueError as exc:
+                    raise _normalization_error("trace", [str(exc)]) from None
                 return sheet
             except RequirementNormalizationError as exc:
                 logging.getLogger("backend.server").warning(
@@ -359,5 +364,8 @@ _REQUIREMENT_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*[A-Za-z0-9_]$")
 
 def _valid_source(value: str) -> bool:
     if value in {"user_request", "user_feedback"}:
+        return True
+    from backend.services.project_decisions import CURRENT_REUSE, source_ref
+    if value in {source_ref(item) for item in CURRENT_REUSE.get()}:
         return True
     return bool(re.fullmatch(r"user_answer:[A-Za-z0-9_-]+", value))

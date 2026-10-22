@@ -214,7 +214,7 @@ def create_app(config: dict | None = None) -> Flask:
             return jsonify(
                 client().call(
                     "generate",
-                    {"request": request_text, "demo": demo, "provider": provider, "project_id": data.get("project_id")},
+                    {"request": request_text, "demo": demo, "provider": provider, "project_id": data.get("project_id"), "decision_reuse": data.get("decision_reuse")},
                 )
             ), 202
         except ClientError as exc:
@@ -224,10 +224,53 @@ def create_app(config: dict | None = None) -> Flask:
     def projects():
         try:
             if request.method == "POST":
-                return jsonify(error="프로젝트 생성은 지원이 종료되었습니다. 대화 세션을 사용하세요."), 410
+                return jsonify(client().call("projects.create", {"name": _json().get("name")})), 201
             return jsonify(client().call("projects.list", {}))
         except ClientError as exc:
             return _client_error(exc)
+
+    @app.get("/api/jobs/<ident>/reused-decisions")
+    def reused_decisions(ident):
+        try:
+            return jsonify(client().call("projects.reused_decisions", {"job_id": ident, "offset": int(request.args.get("offset", 0))}))
+        except (TypeError, ValueError):
+            return jsonify(error="조회 위치를 확인하세요."), 400
+        except ClientError as exc:
+            return _client_error(exc)
+
+    @app.get("/api/jobs/<ident>/decision-candidates")
+    def decision_candidates(ident):
+        try:
+            return jsonify(client().call("projects.decision_candidates", {"job_id": ident, "completed_id": request.args.get("completed_id"), "offset": int(request.args.get("offset", 0))}))
+        except (TypeError, ValueError):
+            return jsonify(error="조회 위치를 확인하세요."), 400
+        except ClientError as exc:
+            return _client_error(exc)
+
+    @app.route("/api/projects/<ident>/decisions", methods=["GET", "POST"])
+    def project_decisions(ident):
+        try:
+            if request.method == "POST":
+                data = _json()
+                return jsonify(client().call("projects.decisions.register", {**{k: data.get(k) for k in ("job_id", "completed_id", "decision_id", "source_hash")}, "project_id": ident}))
+            return jsonify(client().call("projects.decisions", {"project_id": ident, "offset": int(request.args.get("offset", 0)), "query": request.args.get("query", ""), "status": request.args.get("status", "active")}))
+        except (TypeError, ValueError):
+            return jsonify(error="조회 위치를 확인하세요."), 400
+        except ClientError as exc:
+            return _client_error(exc, mutation=request.method == "POST")
+
+    @app.post("/api/projects/<ident>/decisions/<decision_id>/deactivate")
+    def deactivate_project_decision(ident, decision_id):
+        try:
+            return jsonify(client().call("projects.decisions.deactivate", {"project_id": ident, "decision_id": decision_id, "version": _json().get("version")}))
+        except ClientError as exc:
+            return _client_error(exc, mutation=True)
+
+    @app.after_request
+    def project_no_store(response):
+        if request.endpoint in {"projects", "reused_decisions", "decision_candidates", "project_decisions", "deactivate_project_decision"}:
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.put("/api/jobs/<ident>/project")
     def assign_project(ident):

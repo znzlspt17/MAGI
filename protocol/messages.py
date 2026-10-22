@@ -11,6 +11,7 @@ METHODS = {"list", "get", "generate", "answer", "revise", "approve", "download",
 METHODS |= {"projects.list", "projects.create", "projects.assign", "knowledge.search",
             "knowledge.graph", "knowledge.node", "knowledge.document", "knowledge.retry"}
 METHODS |= {"cleanup.catalog", "cleanup.preview", "cleanup.execute"}
+METHODS |= {"projects.decisions", "projects.decisions.register", "projects.decisions.deactivate", "projects.decision_candidates", "projects.reused_decisions"}
 METHODS.add("continue")
 METHODS.add("requirement.review")
 METHODS |= {"implementation.package", "implementation.package.file"}

@@ -11,6 +11,7 @@ TABLES = ('schema_versions', 'projects', 'jobs', 'executions', 'snapshots', 'art
           'chunks', 'chunk_vectors', 'deleted_jobs', 'cleanup_commits', 'deleted_nodes',
           'users', 'sessions', 'login_states', 'service_lease', 'daily_usage', 'cost_calls',
           'admissions', 'admin_audit', 'service_settings', 'request_windows')
+ADDITIONAL_TABLES = {'project_decisions'}
 PENDING = 'prefix-files-pending'
 NOTICE = '이전 저장 형식입니다. python -m backend.knowledge.rename 명령으로 먼저 전환하세요.'
 LOGGER = logging.getLogger('backend.knowledge.store')
@@ -21,7 +22,7 @@ def schema_state(conn):
                         "WHERE n.nspname=current_schema() AND c.relkind IN ('r','p')").fetchall()
     names = {r['relname'] for r in rows}
     old = {'magi_' + name for name in TABLES} & names
-    new = set(TABLES) & names
+    new = (set(TABLES) | ADDITIONAL_TABLES) & names
     if old and new:
         raise KnowledgeError('이전·새 DB 객체가 혼재합니다. 백업과 충돌 객체를 확인하세요.')
     if old:
@@ -29,8 +30,11 @@ def schema_state(conn):
             raise KnowledgeError('이전 DB 스키마가 완전하지 않습니다. 먼저 기존 버전의 마이그레이션을 완료하세요.')
         return 'legacy'
     if new:
-        if new != set(TABLES):
+        if not set(TABLES) <= new:
             raise KnowledgeError('새 DB 스키마가 완전하지 않습니다.')
+        versions = {row['version'] for row in conn.execute('SELECT version FROM schema_versions').fetchall()}
+        if '011.sql' in versions and not ADDITIONAL_TABLES <= new:
+            raise KnowledgeError('공통 결정 DB 스키마가 완전하지 않습니다.')
         return 'current'
     return 'empty'
 
@@ -77,7 +81,7 @@ def run_migrations(conn, state, *, pending_files=False, entering=None):
     conn.execute("SELECT set_config('magi.internal','on',true),set_config('app.internal','on',true)")
     entering('list_files')
     root = files('backend.knowledge').joinpath('migrations')
-    for i in range(1, 11):
+    for i in range(1, 12):
         name = f'{i:03}.sql'
         entering('version_check', name)
         if name in versions:

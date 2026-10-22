@@ -365,6 +365,7 @@ class State:
     diagnosed_keys: list[str] = field(default_factory=list)
     resolution_stop: bool = False
     confirmed_user_sources: dict[str, str] = field(default_factory=dict)
+    reused_decisions: list[dict[str, Any]] = field(default_factory=list)
     interview_pre_answers: list[dict[str, Any]] = field(default_factory=list)
     # requirement lock stage
     requirement_lock: str = ""
@@ -857,6 +858,7 @@ class WorkflowState(TypedDict, total=False):
     diagnosed_keys: list[str]
     resolution_stop: bool
     confirmed_user_sources: dict[str, str]
+    reused_decisions: list[dict[str, Any]]
     interview_pre_answers: list[dict[str, Any]]
     _interview_direction_changing: bool
     requirement_lock: str

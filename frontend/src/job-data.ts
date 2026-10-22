@@ -16,7 +16,7 @@ export type JobDetail = JobRecord & {
 export type JobCatalog = { jobs: JobRecord[]; pending: string[] };
 export type CleanupOperation = {
   id: string; scope: string; targets?: string[];
-  counts: { jobs: number; files?: number };
+  counts: { jobs: number; files?: number; project_decisions?: number };
   external_references?: number; skipped?: unknown[];
 };
 

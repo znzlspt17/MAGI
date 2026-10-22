@@ -35,16 +35,20 @@ class CleanupStore:
             counts[table] = conn.execute(f"SELECT count(*) AS total FROM {table} WHERE job_id=ANY(%s)", (job_ids,)).fetchone()["total"]
         edges = conn.execute(f"SELECT id,source,target FROM edges WHERE source IN ({nodes}) OR target IN ({nodes}) ORDER BY id", (job_ids, job_ids)).fetchall()
         owned = {r["id"] for r in conn.execute(nodes, (job_ids,)).fetchall()}
+        project_ids = [p["id"] for p in projects]
+        decisions = conn.execute("SELECT id,project_id,source_job_id,version,active FROM project_decisions WHERE source_job_id=ANY(%s) OR project_id=ANY(%s) ORDER BY id", (job_ids, project_ids)).fetchall()
+        counts["project_decisions"] = len(decisions)
         counts.update(jobs=len(jobs), projects=len(projects), edges=len(edges))
         return {"jobs": jobs, "projects": projects, "counts": counts,
-                "external_references": sum((e["source"] in owned) != (e["target"] in owned) for e in edges),
-                "fingerprint": digest([jobs, projects, counts, edges])}
+                "external_references": sum((e["source"] in owned) != (e["target"] in owned) for e in edges) + sum(d["source_job_id"] in job_ids and d["project_id"] not in project_ids for d in decisions),
+                "fingerprint": digest([jobs, projects, counts, edges, decisions])}
 
     def cleanup_delete(self, conn, inventory):
         ids = [j["id"] for j in inventory["jobs"]]
         conn.execute("DELETE FROM admissions WHERE result->>'id'=ANY(%s)",(ids,))
         for ident in ids:
             conn.execute("INSERT INTO deleted_jobs(id) VALUES (%s) ON CONFLICT DO NOTHING", (ident,))
+        conn.execute("UPDATE project_decisions SET active=false,version=version+1,updated_at=now() WHERE source_job_id=ANY(%s)", (ids,))
         nodes = "SELECT id FROM nodes WHERE job_id=ANY(%s)"
         conn.execute(f"INSERT INTO deleted_nodes(id) {nodes} ON CONFLICT DO NOTHING", (ids,))
         conn.execute(f"DELETE FROM edges WHERE source IN ({nodes}) OR target IN ({nodes})", (ids, ids))

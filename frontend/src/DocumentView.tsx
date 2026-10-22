@@ -4,6 +4,7 @@ import { post } from "./api";
 import { Button, Markdown, Notice } from "./UI";
 import type { DocumentData } from "./types";
 import { RequirementReview, type RequirementEvidence } from "./RequirementReview";
+import { ApprovedDecisions } from "./ProjectDecisions";
 import { ImplementationPackage } from "./ImplementationPackage";
 export function DocumentView({
   jobId,
@@ -12,7 +13,9 @@ export function DocumentView({
   onQuestion,
   reviewOnly = false,
   onShowDocument,
+  initialLanguage = "ko",
 }: {
+  initialLanguage?: "ko" | "en";
   jobId: string;
   stepId: string;
   document: DocumentData;
@@ -20,7 +23,7 @@ export function DocumentView({
   reviewOnly?: boolean;
   onShowDocument?: () => void;
 }) {
-  const [language, setLanguage] = useState("ko"),
+  const [language, setLanguage] = useState<string>(initialLanguage),
     [mode, setMode] = useState("rendered"),
     [retry, setRetry] = useState(0),
     [active, setActive] = useState<DocumentData | null>(null),
@@ -122,6 +125,7 @@ export function DocumentView({
   }
   return (
     <section aria-label="명세 문서">
+      {document.kind === "final" && document.completed_id && <ApprovedDecisions key={`decisions:${jobId}:${document.completed_id}`} jobId={jobId} completedId={document.completed_id} />}
       {document.kind === "final" && document.completed_id && <ImplementationPackage key={`${jobId}:${document.completed_id}`} jobId={jobId} completedId={document.completed_id} />}
       {["candidate", "final"].includes(document.kind || "") && <RequirementReview key={`${jobId}:${stepId}:${hash || source}`} jobId={jobId} stepId={stepId} sourceHash={hash} onLocate={locate} onQuestion={onQuestion} />}
       {reviewOnly ? <Button onClick={onShowDocument}>명세 문서 보기</Button> : <>

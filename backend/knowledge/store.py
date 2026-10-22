@@ -21,7 +21,10 @@ from backend.knowledge.cleanup import CleanupStore, MAINTENANCE_LOCK
 from backend.access.context import ACTOR, TRANSACTION, METER, AccessError
 
 
-class KnowledgeStore(ChunkStore, CleanupStore):
+from backend.knowledge.project_decisions import ProjectDecisionStore
+
+
+class KnowledgeStore(ChunkStore, CleanupStore, ProjectDecisionStore):
     def __init__(self, config, connect=None):
         self.config = config
         if connect is None:
@@ -95,14 +98,15 @@ class KnowledgeStore(ChunkStore, CleanupStore):
 
     def projects(self):
         with self.transaction(mode='read') as conn:
-            return conn.execute("SELECT id,name FROM projects ORDER BY created_at,id").fetchall()
+            actor = ACTOR.get()
+            return conn.execute("SELECT id,name FROM projects" + (" WHERE owner_id=%s" if actor else "") + " ORDER BY created_at,id", (actor['id'],) if actor else ()).fetchall()
 
     def create_project(self, name, ident=None):
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= 120:
             raise ValueError("프로젝트 이름은 1~120자로 입력하세요.")
         ident = ident or uuid4().hex
         with self.transaction() as conn:
-            conn.execute("INSERT INTO projects(id,name) VALUES (%s,%s) ON CONFLICT(id) DO NOTHING", (ident, name.strip()))
+            conn.execute("INSERT INTO projects(id,name,owner_id) VALUES (%s,%s,%s) ON CONFLICT(id) DO NOTHING", (ident, name.strip(), ACTOR.get()['id'] if ACTOR.get() else None))
             return conn.execute("SELECT id,name FROM projects WHERE id=%s", (ident,)).fetchone()
 
     def save_job(self, job):
@@ -118,7 +122,7 @@ class KnowledgeStore(ChunkStore, CleanupStore):
         if conn.execute("SELECT 1 FROM deleted_jobs WHERE id=%s", (job["id"],)).fetchone():
             raise ValueError("삭제된 작업은 다시 저장할 수 없습니다.")
         conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (job["id"],))
-        if not conn.execute("SELECT 1 FROM projects WHERE id=%s", (job["project_id"],)).fetchone():
+        if not conn.execute("SELECT 1 FROM projects WHERE id=%s", (job["project_id"],)).fetchone() and not conn.execute("SELECT 1 FROM jobs WHERE id=%s AND project_id=%s", (job["id"], job["project_id"])).fetchone():
             raise ValueError("프로젝트를 찾을 수 없습니다.")
         conn.execute("INSERT INTO jobs(id,project_id,data,owner_id) VALUES (%s,%s,%s,%s) "
                      "ON CONFLICT(id) DO UPDATE SET project_id=EXCLUDED.project_id,data=EXCLUDED.data",
@@ -131,8 +135,12 @@ class KnowledgeStore(ChunkStore, CleanupStore):
     def accept_job(self, job, payload):
         # 내부 프로젝트와 최초 요청을 하나의 트랜잭션으로 접수한다.
         with self.transaction() as conn:
-            conn.execute("INSERT INTO projects(id,name) VALUES (%s,%s)",
-                         (job["id"], job["request"][:80]))
+            if job["project_id"] == job["id"]:
+                conn.execute("INSERT INTO projects(id,name,owner_id) VALUES (%s,%s,%s)",
+                             (job["id"], job["request"][:80], job.get("owner_id")))
+            else:
+                self.require_project(conn, job["project_id"])
+            job["reused_decisions"] = self.freeze_decisions(job["project_id"], job.pop("_decision_selections", []))
             self._save_job(conn, job)
             conn.execute("INSERT INTO executions(id,job_id,data) VALUES (%s,%s,%s)",
                          (job["execution_id"], job["id"], self._json(

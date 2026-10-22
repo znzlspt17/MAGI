@@ -204,7 +204,7 @@ def _snapshot(writer, spec, state):
             if answer.get("question_id") and isinstance(answer.get("answer"), str):
                 add_source(sources, "user_answer:" + answer["question_id"], answer["answer"])
     data = {"content": normalize(spec), "blocks": document_blocks(spec, supplied),
-            "requirements": sheet, "decisions": read_json(writer, "analysis/spec_trace.json", {}),
+            "requirements": sheet, "reused_decisions": state.get("reused_decisions", []), "decisions": read_json(writer, "analysis/spec_trace.json", {}),
             "events": events, "revision_history": history, "answers": sheet.get("user_answers", []),
             "sources": sources, "compiled_blocks": supplied,
             "legacy": not bool(supplied)}

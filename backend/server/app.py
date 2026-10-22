@@ -219,6 +219,7 @@ class Server:
                         params.get("demo"),
                         params.get("provider"),
                         params.get("project_id"),
+                        params.get("decision_reuse"),
                     )["id"]
                 )
             elif method.startswith("cleanup."):

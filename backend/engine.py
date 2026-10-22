@@ -76,6 +76,7 @@ class Engine:
         project_dir: str | None = None,
         web_search_mode: str | None = None,
         input_source: str = "direct_text",
+        reused_decisions: list[dict] | None = None,
         overwrite: bool = False,
         on_progress: Callable[[dict[str, str]], None] | None = None,
     ) -> Result:
@@ -114,6 +115,7 @@ class Engine:
             status="DRAFT",
             user_request=text,
             original_user_request=text,
+            reused_decisions=copy.deepcopy(reused_decisions or []),
             input_source=input_source,
             project_dir=str(Path(project_dir).resolve()) if project_dir else None,
             output_dir=str(Path(output_dir).resolve()),
@@ -376,9 +378,12 @@ class Engine:
         heartbeat = RunHeartbeat(writer=writer, state=state)
         heartbeat.start()
         try:
-            final_state = State.from_workflow_state(
-                workflow.invoke(state.to_workflow_state())
-            )
+            from backend.services.project_decisions import CURRENT_REUSE
+            reuse_token = CURRENT_REUSE.set(state.reused_decisions)
+            try:
+                final_state = State.from_workflow_state(workflow.invoke(state.to_workflow_state()))
+            finally:
+                CURRENT_REUSE.reset(reuse_token)
             heartbeat.stop(final_status=final_state.status)
         except Exception as exc:
             # 저장을 마친 해결 판단과 연결된 최신 초안은 실패 시에도 보존한다.

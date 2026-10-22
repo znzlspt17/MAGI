@@ -15,6 +15,7 @@ import { api, post } from "./api";
 import { useAuth } from "./Auth";
 import { Button, Notice, statusLabel, formatTime, usageLabel } from "./UI";
 import { DocumentView } from "./DocumentView";
+import { ProjectDecisionPicker, ReusedDecisions, type DecisionSelection } from "./ProjectDecisions";
 import { ImplementationPackage } from "./ImplementationPackage";
 import { questionDetails } from "./QuestionActions";
 import Knowledge from "./Knowledge";
@@ -101,6 +102,9 @@ export default function Workspace() {
     selectedId = useRef(id),
     navigation = useRef(location.key),
     mutating = useRef(false);
+  const [projectId, setProjectId] = useState("");
+  const [decisionSelections, setDecisionSelections] = useState<DecisionSelection[]>([]);
+  useEffect(() => { setProjectId(""); setDecisionSelections([]); }, [auth.user?.id]);
   const draftKey = `draft:${auth.user?.id || "local"}`;
   const [request, setRequest] = useState(
     () => sessionStorage.getItem(draftKey) || "",
@@ -256,6 +260,10 @@ export default function Workspace() {
                 (n: Step) => n.id === previous,
               );
           if (manual.current && exists) return previous;
+          const requestedCompleted = new URLSearchParams(location.search).get("completed_id");
+          if (requestedCompleted && (value.completed_documents || []).some((d: Step) => d.id === requestedCompleted)) {
+            manual.current = true; setTab("document"); return requestedCompleted;
+          }
           const doc = [...nodes].reverse().find((n) => n.has_document);
           return (doc || nodes.at(-1))?.id || "";
         });
@@ -270,7 +278,7 @@ export default function Workspace() {
       alive = false;
       controller.abort();
     };
-  }, [id, refreshIndex]);
+  }, [id, refreshIndex, location.search]);
   const node =
     job &&
     [...graphNodes(job), ...(job.completed_documents || [])].find(
@@ -370,10 +378,12 @@ export default function Workspace() {
       const value = await post<Job>("/api/jobs", {
         request: request.trim(),
         provider: "openai",
-        project_id: null,
+        project_id: projectId || null,
+        decision_reuse: decisionSelections,
       });
       if (submitted === navigation.current) {
         setRequest("");
+        setDecisionSelections([]);
         sessionStorage.removeItem(draftKey);
         navigate(`/jobs/${value.id}`);
       }
@@ -503,8 +513,9 @@ export default function Workspace() {
                   <h2>무엇을 만들고 싶으신가요?</h2>
                   <p>완벽하게 정리하지 않아도 괜찮습니다.<br />요청을 바탕으로 필요한 내용을 함께 구체화합니다.</p>
                   <ServiceStatusNotice inline />
+                  <ProjectDecisionPicker key={auth.user?.id || "local"} projectId={projectId} onProject={setProjectId} selections={decisionSelections} onSelections={setDecisionSelections} />
                   <label htmlFor="request-text">개발 요청</label>
-                  <PromptInput id="request-text" label="개발 요청" buttonLabel="명세 생성 시작" rows={5} value={request} disabled={blocked}
+                  <PromptInput id="request-text" label="개발 요청" buttonLabel={decisionSelections.length ? `선택한 결정 ${decisionSelections.length}개와 함께 생성` : "명세 생성 시작"} rows={5} value={request} disabled={blocked}
                     placeholder="예: 팀이 매주 진행 상황을 공유할 수 있는 보고서 생성 기능을 만들어주세요."
                     onChange={(event) => { setRequest(event.target.value); sessionStorage.setItem(draftKey, event.target.value); }} onSend={() => void generate()} />
                   <div className="request-guidance"><span>만들고 싶은 것</span><span>사용할 사람</span><span>지켜야 할 조건</span></div>
@@ -512,6 +523,7 @@ export default function Workspace() {
                 </section>
               ) : actualJob ? (
                 <>
+                  <ReusedDecisions key={actualJob.id} jobId={actualJob.id} count={actualJob.reused_decision_count || 0} />
                   <Tabs value={tab} onValueChange={setTab}><TabsList className="workspace-tabs" aria-label="작업 보기">
                     {[
                       ["conversation", "대화"],
@@ -549,6 +561,7 @@ export default function Workspace() {
                           <DocumentView
                             jobId={actualJob.id}
                             stepId={step}
+                            initialLanguage={new URLSearchParams(location.search).has("completed_id") ? "en" : "ko"}
                             document={detail.document}
                             reviewOnly={evidenceOnly}
                             onShowDocument={() => setEvidenceOnly(false)}

@@ -171,6 +171,9 @@ class ExecutionHistory:
         if node is None:
             return
         detail = node.setdefault("detail", {})
+        state = _read_json(root / "state/state.json") or {}
+        if state.get("reused_decisions"):
+            detail["reused_decisions"] = copy.deepcopy(state["reused_decisions"])
         if stage == "await_user":
             node["status"] = "waiting"
             node["summary"] = "사용자 답변을 기다리고 있습니다."

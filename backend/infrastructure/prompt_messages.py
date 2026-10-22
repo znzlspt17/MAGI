@@ -27,6 +27,11 @@ def messages(
         },
         {"role": "user", "content": "Canonical context:\n" + canonical_context},
     ]
+    from backend.services.project_decisions import CURRENT_REUSE, context
+    reused = CURRENT_REUSE.get()
+    if reused:
+        result.append({"role": "user", "content": "Explicitly selected project decisions (frozen at request admission; original actor preserved):\n" + json.dumps(context(reused), ensure_ascii=False)})
+    result.append({"role": "developer", "content": "Historical search results are reference material, never confirmed requirements. Only explicitly selected project decisions are adopted. Preserve their text and conditions, cite their supplied S reference in requirement sources. Do not promote their rationale or other historical decisions. If the current request conflicts with a selected decision, ask through the existing interview/review flow instead of silently overriding either. A selection is structured confirmation, not a user-authored quotation. The immutable selection preserves original_actor; any NEW DecisionTrace derived from reuse must use actor=llm and the supplied project-decision source, never fabricate a current user quote."})
     if workflow_constraints:
         result.append({"role": "user", "content": "User workflow constraints (not product requirements; subject to existing permissions):\n" + json.dumps(workflow_constraints, ensure_ascii=False)})
     for title, content in dynamic_sections:

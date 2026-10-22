@@ -22,6 +22,7 @@ PUBLIC_FIELDS.update('research search_method mode performed outcome result_count
 PUBLIC_FIELDS.update('change_review before_id after_id before_hash after_hash before after item_id start end line meaning relation evidence analysed remaining calls diff'.split())
 PUBLIC_FIELDS.update('review_snapshot_id review_status rows unlinked unlinked_total specification acceptance verification spec_status acceptance_status verification_status test_status spec_linked acceptance_linked verification_linked group shared category specification_total acceptance_total verification_total'.split())
 PUBLIC_FIELDS.update('impact recommendation option_ids'.split())
+PUBLIC_FIELDS.update('reused_decisions reused_decision_count source_available registry_id decision_reuse'.split())
 PUBLIC_FIELDS.update('completed_id bundle_id format_version files size sha256 completeness korean_included task_count available total_size file_limit total_limit eof'.split())
 PUBLIC_FIELDS.update('basis node recorded paths path_total inferred topic included omitted recorded_total recorded_included stale change_kind proposal limitations quote'.split())
 
@@ -86,7 +87,7 @@ class PublicService:
         self.access.throttle(actor['id'])
         if request.get('csrf') is not None and not hmac.compare_digest(str(request['csrf']), actor['csrf']):
             raise AccessError('요청 확인 값이 올바르지 않습니다.')
-        mutations = {'generate','answer','revise','approve','continue','lease.keep','lease.release','lease.resume','auth.logout','knowledge.impact.analyse'}
+        mutations = {'generate','answer','revise','approve','continue','lease.keep','lease.release','lease.resume','auth.logout','knowledge.impact.analyse','projects.create','projects.decisions.register','projects.decisions.deactivate'}
         if (method in mutations or method.startswith(('cleanup.','admin.')) or method == 'knowledge.retry' or method == 'document') and method != 'cleanup.catalog':
             if not hmac.compare_digest(str(request.get('csrf','')), actor['csrf']):
                 raise AccessError('요청 확인 값이 필요합니다.')
@@ -137,7 +138,11 @@ class PublicService:
             if method == 'list':
                 return user_payload([self.manager.summary(i) for i in self.manager.ids()])
             if method.startswith('projects.'):
-                return [] if method == 'projects.list' else self._deny()
+                if method in {'projects.list','projects.decisions','projects.decision_candidates','projects.reused_decisions'}:
+                    return self.result(dispatch(request))
+                if method in {'projects.create','projects.decisions.register','projects.decisions.deactivate'}:
+                    return self.project_mutation(actor, request, dispatch)
+                return self._deny()
             if method.startswith('cleanup.'):
                 return self.cleanup(actor, method, params)
             if method == 'knowledge.retry':
@@ -178,6 +183,21 @@ class PublicService:
             return self.result(dispatch({**request,'params':params}))
         finally:
             ACTOR.reset(token)
+
+    def project_mutation(self, actor, request, dispatch):
+        key = request.get('idempotency_key')
+        if not isinstance(key, str) or not 8 <= len(key) <= 128:
+            raise AccessError('중복 방지 요청 키가 필요합니다.', 'invalid')
+        fingerprint = digest(json.dumps([request['method'],request['params']], sort_keys=True, ensure_ascii=False))
+        with self.manager.lock, self.store.transaction() as c:
+            previous = c.execute('SELECT fingerprint,result FROM admissions WHERE user_id=%s AND key=%s', (actor['id'],key)).fetchone()
+            if previous:
+                if previous['fingerprint'] != fingerprint:
+                    raise AccessError('같은 요청 키에 다른 입력을 사용할 수 없습니다.', 'busy')
+                return previous['result']
+            result = self.result(dispatch(request))
+            c.execute('INSERT INTO admissions VALUES (%s,%s,%s,%s)', (actor['id'],key,fingerprint,self.store._json(result)))
+            return result
 
     @staticmethod
     def _deny():
@@ -424,6 +444,8 @@ class PublicService:
                     raise KeyError(owner)
                 c.execute("UPDATE jobs SET owner_id=%s,data=jsonb_set(data,'{owner_id}',to_jsonb(%s::text)) WHERE id=%s AND owner_id IS NULL",(owner,owner,jid))
                 job['owner_id']=owner
+                # 이관 후에도 한 소유자로 확인되는 개인 프로젝트만 공개한다.
+                c.execute("UPDATE projects SET owner_id=%s WHERE id=%s AND owner_id IS NULL AND NOT EXISTS(SELECT 1 FROM jobs WHERE project_id=%s AND (owner_id IS NULL OR owner_id<>%s))", (owner,job['project_id'],job['project_id'],owner))
             elif method=='admin.stop':
                 lease=self.access.lease(c)
                 if lease['phase']=='waiting':
