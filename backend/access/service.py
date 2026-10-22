@@ -21,6 +21,7 @@ PUBLIC_FIELDS=set('''id request status message action created_at updated_at queu
 PUBLIC_FIELDS.update('research search_method mode performed outcome result_count query retrieved_at url job_id resolution_reasons recommended_requirements optional_requirements locked_constraints document_has_more document_next_offset other_body other_kind original_text parent_id related_node_ids'.split())
 PUBLIC_FIELDS.update('change_review before_id after_id before_hash after_hash before after item_id start end line meaning relation evidence analysed remaining calls diff'.split())
 PUBLIC_FIELDS.update('review_snapshot_id review_status rows unlinked unlinked_total specification acceptance verification spec_status acceptance_status verification_status test_status spec_linked acceptance_linked verification_linked group shared category specification_total acceptance_total verification_total'.split())
+PUBLIC_FIELDS.update('impact recommendation option_ids'.split())
 PUBLIC_FIELDS.update('basis node recorded paths path_total inferred topic included omitted recorded_total recorded_included stale change_kind proposal limitations quote'.split())
 
 

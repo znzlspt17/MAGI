@@ -5,7 +5,11 @@ from backend.models import QuestionFormSpec
 
 
 def question_form(question_id, question, value=None):
-    spec = QuestionFormSpec.model_validate(value or {}).model_dump()
+    parsed = QuestionFormSpec.model_validate(value or {})
+    from backend.infrastructure.output_language import language_issues
+    if language_issues(parsed):
+        raise ValueError("질문 영향 설명과 추천 안내는 한국어로 작성해야 합니다.")
+    spec = parsed.model_dump()
     form = {"question_id": question_id, "question": question, **spec}
     form["form_version"] = hashlib.sha256(json.dumps(form, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
     return form

@@ -22,7 +22,8 @@ export interface QuestionForm {
   question_id: string;
   question: string;
   input_type: "text" | "single_choice" | "multiple_choice";
-  options: { id: string; label: string }[];
+  options: { id: string; label: string; impact?: string | null; assumptions?: string[] }[];
+  recommendation?: { option_ids: string[]; reason: string; assumptions: string[] } | null;
   form_version: string;
 }
 export interface DocumentData {

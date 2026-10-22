@@ -100,7 +100,7 @@ class SpecInterviewer:
             ):
                 blocking.append(f"[{question_id}] {text}")
                 try:
-                    forms.setdefault(question_id, question_form(question_id, text, {k: item[k] for k in ("input_type", "options") if k in item} if isinstance(item, dict) else {}))
+                    forms.setdefault(question_id, question_form(question_id, text, {k: item[k] for k in ("input_type", "options", "recommendation") if k in item} if isinstance(item, dict) else {}))
                 except ValueError as error:
                     raise InvalidStateError("Interview question form is invalid.") from error
 

@@ -1,0 +1,20 @@
+.question-form .question-choice-field { margin: .6rem 0; }
+.question-form .choice-card { display: flex; align-items: flex-start; gap: .75rem; width: 100%; padding: 1rem; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-card); cursor: pointer; text-align: left; }
+.question-form .choice-card[data-selected=true] { border-color: var(--color-primary); background: var(--color-accent); }
+.question-form .choice-card:focus-within { outline: 2px solid var(--color-ring); outline-offset: 2px; }
+.question-form .choice-card input { flex: 0 0 auto; margin: .25rem 0 0; accent-color: var(--color-primary); }
+.question-form .choice-copy { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: .4rem; overflow-wrap: anywhere; }
+.question-form .choice-heading { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; font-weight: 600; }
+.question-form .choice-description { display: flex; flex-direction: column; gap: .35rem; }
+.question-form .choice-description [data-slot=field-description] { margin: 0; color: var(--color-foreground); font-size: .85rem; font-weight: 400; line-height: 1.7; }
+.question-form .choice-assumption { color: var(--color-muted-foreground); font-size: .78rem; font-weight: 400; line-height: 1.6; }
+.question-form .choice-recommended { border: 1px solid var(--color-border); background: var(--color-secondary); color: var(--color-secondary-foreground); }
+.question-form .choice-selected { font-size: .75rem; color: var(--color-primary); }
+.question-form .question-recommendation { position: relative; margin: 1rem 0; padding: 1rem 1rem 1rem 2.8rem; background: var(--color-secondary); border: 1px solid var(--color-border); border-radius: var(--radius-lg); color: var(--color-foreground); }
+.question-form .question-recommendation > svg { position: absolute; left: 1rem; top: 1.15rem; color: var(--color-primary); }
+.question-form .question-recommendation p { margin: .4rem 0; line-height: 1.65; font-size: .85rem; }
+.question-form .recommendation-boundary, .question-form .question-recommendation-unavailable { color: var(--color-muted-foreground); font-size: .8rem; }
+.question-form .question-guidance-notice { color: var(--color-muted-foreground); font-size: .78rem; line-height: 1.6; margin: .4rem 0; }
+.question-form .question-evidence-trigger { text-align: left; font-size: .8rem; color: var(--color-primary); padding: .35rem 0; border: 0; background: transparent; }
+.question-form ~ [data-slot=field-error] { color: var(--color-destructive); font-size: .85rem; line-height: 1.6; }
+@media (max-width: 760px) { .question-form .choice-card { padding: .8rem; } .question-form .question-recommendation { padding-right: .8rem; } }

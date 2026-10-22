@@ -6,6 +6,7 @@ from backend.errors import Error
 from backend.models import InterviewResponse, LockResponse, ReviewResponse, SpecResponse, SpecDraftResponse, ReportResponse
 from backend.models import ReviewResolutionResponse
 from backend.models import SpecTranslationResponse
+from backend.models import QuestionFormSpec
 
 
 LANGUAGE_RULES = {
@@ -54,10 +55,24 @@ def language_issues(value):
         elif not text.strip() or (body and not has_hangul(body) and not technical_only(body)):
             checks.append(f"{path}: ko")
 
+    def guidance(form, path):
+        if form is None:
+            return
+        for index, option in enumerate(form.options):
+            if option.impact is not None:
+                field(f"{path}.options[{index}].impact", option.impact, "ko")
+            for n, text in enumerate(option.assumptions):
+                field(f"{path}.options[{index}].assumptions[{n}]", text, "ko")
+        if form.recommendation is not None:
+            field(f"{path}.recommendation.reason", form.recommendation.reason, "ko")
+            for n, text in enumerate(form.recommendation.assumptions):
+                field(f"{path}.recommendation.assumptions[{n}]", text, "ko")
+
     if isinstance(value, InterviewResponse):
         for name in ("blocking_questions", "additional_questions"):
             for index, item in enumerate(getattr(value, name)):
                 field(f"{name}[{index}].question", item.question, "ko")
+                guidance(item, f"{name}[{index}]")
         for index, text in enumerate(value.assumptions):
             field(f"assumptions[{index}]", text, "ko")
     elif isinstance(value, LockResponse):
@@ -79,6 +94,7 @@ def language_issues(value):
                 field(name, text, "en")
     elif isinstance(value, ReviewResolutionResponse):
         for index, item in enumerate(value.resolutions):
+            guidance(item.decision_form, f"resolutions[{index}].decision_form")
             for name in ("resolution_reason", "required_change"):
                 field(f"resolutions[{index}].{name}", getattr(item, name), "ko")
             for name in ("missing_information", "decision_question"):
@@ -86,6 +102,7 @@ def language_issues(value):
                     field(f"resolutions[{index}].{name}", getattr(item, name), "ko")
     elif isinstance(value, ReviewResponse):
         for index, item in enumerate(value.issues):
+            guidance(item.decision_form, f"issues[{index}].decision_form")
             field(f"issues[{index}].resolution_reason", item.resolution_reason, "ko")
             if item.missing_information:
                 field(f"issues[{index}].missing_information", item.missing_information, "ko")
@@ -93,6 +110,8 @@ def language_issues(value):
             field(f"issues[{index}].required_change", item.required_change, "ko")
             if item.decision_question is not None:
                 field(f"issues[{index}].decision_question", item.decision_question, "ko")
+    elif isinstance(value, QuestionFormSpec):
+        guidance(value, "form")
     elif isinstance(value, SpecTranslationResponse):
         field("content", value.content, "ko")
     elif isinstance(value, ReportResponse):

@@ -69,6 +69,7 @@ describe('질문 답변',()=>{
   const value:Job={id:'review',status:'NEEDS_USER_INPUT',state:{awaiting_input_reason:'review',blocking_questions:['[A] 보관 기간','[B] 백업 필요'],review_questions:[{question_id:'A',requirement_ids:['REQ-005'],missing_information:['재사용 조건'],resolution_reasons:['사용자 동작'],problems:['보관 기간 미정'],required_changes:['삭제 동작 확정'],evidence:[{source:'draft',quote:'<img src=x onerror=alert(1)>'}]}]}};
   const action=vi.fn().mockResolvedValue(undefined),view=render(<QuestionActions job={value} onAction={action} busy={false}/>);
   for(const text of ['관련 요구사항: REQ-005','미확정 내용: 재사용 조건','결정이 필요한 이유: 사용자 동작','검토에서 발견한 문제: 보관 기간 미정','확인이 필요한 이유: 삭제 동작 확정'])expect(screen.getByText(text)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button',{name:'명세 검토 근거 보기'}));
   expect(screen.getByText(/<img src=x/)).toBeTruthy();expect(view.container.querySelector('img')).toBeNull();
   fireEvent.change(screen.getByRole('textbox',{name:'보관 기간'}),{target:{value:'30일'}});
   await act(async()=>fireEvent.click(screen.getByRole('button',{name:'답변 제출'})));

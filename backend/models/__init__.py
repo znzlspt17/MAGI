@@ -6,7 +6,7 @@ import dataclasses
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Literal, TypedDict
+from typing import Annotated, Any, Literal, TypedDict
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
@@ -42,11 +42,20 @@ class ResponseModel(BaseModel):
 class QuestionOption(ResponseModel):
     id: str
     label: str
+    impact: str | None = Field(default=None, min_length=1, max_length=240, description="Korean conditional impact, including relevant benefits and burdens. Advisory, never a user decision.")
+    assumptions: list[Annotated[str, Field(min_length=1, max_length=120)]] = Field(default_factory=list, max_length=3, description="Korean conditions under which the impact applies; not confirmed requirements.")
+
+
+class QuestionRecommendation(ResponseModel):
+    option_ids: list[str] = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=300, description="Korean recommendation rationale grounded in supplied context, never user approval.")
+    assumptions: list[Annotated[str, Field(min_length=1, max_length=120)]] = Field(default_factory=list, max_length=3)
 
 
 class QuestionFormSpec(ResponseModel):
     input_type: Literal["text", "single_choice", "multiple_choice"] = "text"
     options: list[QuestionOption] = Field(default_factory=list)
+    recommendation: QuestionRecommendation | None = Field(default=None, description="Optional advice. Use null when priorities or context are insufficient; never preselect an answer.")
 
     @model_validator(mode="after")
     def validate_options(self):
@@ -59,6 +68,12 @@ class QuestionFormSpec(ResponseModel):
         labels = [o.label.strip() for o in self.options]
         if any(not value.strip() for value in ids + labels) or len(set(ids)) != len(ids) or len(set(labels)) != len(labels):
             raise ValueError("Options require unique non-empty IDs and labels.")
+        if self.recommendation is not None:
+            recommended = self.recommendation.option_ids
+            if (self.input_type == "text" or len(set(recommended)) != len(recommended)
+                    or not set(recommended) <= set(ids)
+                    or self.input_type == "single_choice" and len(recommended) != 1):
+                raise ValueError("Recommendation must reference valid unique options of the question.")
         return self
 
 

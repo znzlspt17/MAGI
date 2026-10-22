@@ -4,7 +4,12 @@ import { RequirementReview } from "./RequirementReview";
 import { PromptInput, isSubmitShortcut } from "./components/PromptInput";
 import { InputGroup, InputGroupTextarea } from "./components/ui/input-group";
 import { Item, ItemContent, ItemTitle, ItemDescription, ItemActions } from "./components/ui/item";
-import { SealCheckIcon } from "@phosphor-icons/react";
+import { SealCheckIcon, LightbulbIcon } from "@phosphor-icons/react";
+import { Field, FieldSet, FieldLegend, FieldLabel, FieldDescription, FieldError } from "./components/ui/field";
+import { Badge } from "./components/ui/badge";
+import { Alert, AlertTitle, AlertDescription } from "./components/ui/alert";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "./components/ui/collapsible";
+import "./question-guidance.css";
 import { useEffect, useState, useRef } from "react";
 import { useAuth } from "./Auth";
 import { Button, Notice } from "./UI";
@@ -35,11 +40,11 @@ export function ReviewContext({ record }: { record?: RecordData }) {
           </p>
         )),
       )}
-      {(record.evidence || []).map((e: RecordData, i: number) => (
+      {!!record.evidence?.length && <Collapsible><CollapsibleTrigger className="question-evidence-trigger">명세 검토 근거 보기</CollapsibleTrigger><CollapsibleContent>{(record.evidence || []).map((e: RecordData, i: number) => (
         <blockquote key={i}>
           관련 명세 ({e.source}): {e.quote}
         </blockquote>
-      ))}
+      ))}</CollapsibleContent></Collapsible>}
     </div>
   );
 }
@@ -220,18 +225,19 @@ export function QuestionActions({
             (r: RecordData) => r.question_id === q.id,
           );
           return (
-            <fieldset key={key} disabled={busy || pending} className="question-form">
-              <legend>
+            <FieldSet key={key} disabled={busy || pending} className="question-form">
+              <FieldLegend>
                 {index + 1}. {form?.question || q.label}
-              </legend>
+              </FieldLegend>
               <div id={`question-context-${q.id}`}>
                 <ReviewContext record={context} />
               </div>
+              {form && form.input_type !== "text" && (form.recommendation !== undefined || form.options.some(option => option.impact)) && <p className="question-guidance-notice">영향과 전제는 모델의 안내입니다. 선택한 항목과 직접 입력한 내용만 답변으로 제출됩니다.</p>}
               {form &&
                 form.input_type !== "text" &&
-                [...form.options, { id: "__custom", label: "직접 입력" }].map(
+                [...form.options, { id: "__custom", label: "직접 입력", impact: null, assumptions: [] }].map(
                   (option) => (
-                    <label key={option.id} className="question-option">
+                    <Field key={option.id} className="question-choice-field"><FieldLabel className="question-option choice-card" data-selected={option.id === "__custom" ? draft.custom : draft.ids.includes(option.id)}>
                       <input
                         type={
                           form.input_type === "single_choice"
@@ -239,6 +245,8 @@ export function QuestionActions({
                             : "checkbox"
                         }
                         name={key}
+                        aria-labelledby={`choice-${q.id}-${option.id}-label`}
+                        aria-describedby={option.impact || option.assumptions?.length ? `choice-${q.id}-${option.id}-description` : undefined}
                         checked={
                           option.id === "__custom"
                             ? draft.custom
@@ -274,10 +282,13 @@ export function QuestionActions({
                             });
                         }}
                       />
-                      {option.label}
-                    </label>
+                      <span className="choice-copy"><span className="choice-heading"><span id={`choice-${q.id}-${option.id}-label`}>{option.label}</span>{form.recommendation?.option_ids.includes(option.id) && <Badge variant="outline" className="choice-recommended" aria-hidden><LightbulbIcon size={14} />추천</Badge>}{(option.id === "__custom" ? draft.custom : draft.ids.includes(option.id)) && <span className="choice-selected" aria-hidden>선택됨</span>}</span>
+                        {(option.impact || !!option.assumptions?.length) && <span id={`choice-${q.id}-${option.id}-description`} className="choice-description">{option.impact && <FieldDescription>{option.impact}</FieldDescription>}{option.assumptions?.map((assumption, n) => <span className="choice-assumption" key={n}>전제: {assumption}</span>)}</span>}
+                      </span>
+                    </FieldLabel></Field>
                   ),
                 )}
+              {form && form.input_type !== "text" && form.recommendation !== undefined && (form.recommendation ? <Alert className="question-recommendation" role="note" aria-label="추천 이유와 전제"><LightbulbIcon size={19} aria-hidden /><AlertTitle>추천 이유 · 모델 안내</AlertTitle><AlertDescription><p>{form.recommendation.option_ids.map(id => form.options.find(option => option.id === id)?.label).filter(Boolean).join(" + ")}</p><p>{form.recommendation.reason}</p>{form.recommendation.assumptions.map((assumption, n) => <p key={n}>추천 전제: {assumption}</p>)}<p className="recommendation-boundary">추천과 전제는 안내입니다. 직접 선택하고 답변을 제출해야 결정됩니다.</p></AlertDescription></Alert> : <p className="question-recommendation-unavailable">현재 정보로는 추천을 정하기 어렵습니다</p>)}
               {(!form || form.input_type === "text" || draft.custom) && (
                 <InputGroup><InputGroupTextarea
                   aria-label={`${form?.question || q.label}${form ? " · 직접 입력" : ""}`}
@@ -292,11 +303,11 @@ export function QuestionActions({
                   }
                 /></InputGroup>
               )}
-            </fieldset>
+            </FieldSet>
           );
         })}
         <ServiceStatusNotice inline />
-        <Notice>{error}</Notice>
+        {error && <FieldError>{error}</FieldError>}
         <Button
           className="primary"
           disabled={disabled}
