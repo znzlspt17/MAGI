@@ -34,6 +34,7 @@ ARTIFACT_PATHS = (
 
 def is_artifact_path(relative):
     return (relative in ARTIFACT_PATHS
+            or re.fullmatch(r"draft_versions/[0-9a-f]{64}\.md", relative) is not None
             or re.fullmatch(r"completed/[0-9a-f]{64}\.json", relative) is not None
             or re.fullmatch(r"history/[0-9a-f]{32}\.md", relative) is not None
             or re.fullmatch(r"(?:candidate_snapshots|change_reviews)/[0-9a-f]{64}\.json", relative) is not None
@@ -46,6 +47,10 @@ def read_artifacts(root):
     root = Path(root).resolve()
     result = {}
     paths = list(ARTIFACT_PATHS)
+    versions = root / "draft_versions"
+    if versions.is_dir() and not any(p.is_symlink() for p in (versions, *versions.parents)):
+        paths.extend("draft_versions/" + p.name for p in versions.iterdir()
+                     if not p.is_symlink() and re.fullmatch(r"[0-9a-f]{64}\.md", p.name))
     for name in ("candidate_snapshots", "change_reviews", "impact_requests"):
         directory = root / name
         if directory.is_dir() and not any(p.is_symlink() for p in (directory, *directory.parents)):
@@ -339,13 +344,13 @@ class RunKnowledge:
             buffered = stage_history(self.root, artifacts, self.job["execution_id"], stage, merged)
             artifacts.update(buffered)
         from backend.services.workflow_recovery import CHECKPOINT_PATH, STAGES, checkpoint_artifact
-        if stage in STAGES:
+        if stage in STAGES and not merged.get("workflow_schema"):
             checkpoint = checkpoint_artifact(merged, artifacts, stage, self.job["execution_id"])
             merged["resume_stage"] = checkpoint["state"]["resume_stage"]
             artifacts["state/state.json"] = json.dumps(merged, ensure_ascii=False)
             artifacts[CHECKPOINT_PATH] = json.dumps(checkpoint, ensure_ascii=False)
         self.service.store.commit_stage(self.job, self.job["execution_id"], stage, merged, artifacts)
-        if stage in STAGES:
+        if stage in STAGES and not merged.get("workflow_schema"):
             restore_artifacts(self.root, {"state/state.json": artifacts["state/state.json"],
                                          CHECKPOINT_PATH: artifacts[CHECKPOINT_PATH]})
         if stage == "review_resolution" and merged.get("resolution_history"):

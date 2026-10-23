@@ -10,6 +10,7 @@ import { conversationTurns } from "./conversation-data";
 import { QuestionActions, questionDetails } from "./QuestionActions";
 import { Button, Notice, formatTime, statusLabel } from "./UI";
 import type { Job } from "./types";
+import { AgentPlan, AgentComposer } from "./AgentPlan";
 
 export function Conversation({ job, select, onAction, busy }: { job: Job; select: (stepId: string, requirements?: boolean) => void; onAction: (action: string, payload: unknown) => Promise<void>; busy: boolean }) {
   const [controlsTarget, setControlsTarget] = useState<HTMLDivElement | null>(null);
@@ -57,6 +58,7 @@ export function Conversation({ job, select, onAction, busy }: { job: Job; select
                 </MessageContent>
               </Message>
             </MessageScrollerItem>)}
+            <MessageScrollerItem messageId="current-plan"><AgentPlan job={job} onDocument={select} /></MessageScrollerItem>
             <MessageScrollerItem messageId="current-state"><Trace className="chat-task"><TraceCollapsible defaultOpen={running || failed}>
               <TraceCollapsibleTrigger><TraceLine status={running ? "running" : failed ? "error" : undefined}><TraceIcon><StatusIcon size={17} aria-hidden /></TraceIcon><TraceTitle>{statusLabel(job.status)}</TraceTitle></TraceLine></TraceCollapsibleTrigger>
               <TraceCollapsibleContent><p>{job.message || (waiting ? "아래에서 답변할 항목을 선택하고 작성해주세요." : "저장된 현재 작업 상태입니다.")}</p></TraceCollapsibleContent>
@@ -68,5 +70,6 @@ export function Conversation({ job, select, onAction, busy }: { job: Job; select
       </MessageScroller>
     </MessageScrollerProvider>
     <div className="chat-actions" ref={setControlsTarget} />
+    {job.state?.plan && <AgentComposer key={job.id} job={job} onAction={onAction} busy={busy} />}
   </section>;
 }

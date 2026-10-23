@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import logging
+from contextvars import ContextVar
 import re
 from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any
 
-from backend.infrastructure.conversation_state import ConversationState
+from backend.infrastructure.conversation_state import POLICY
 from backend.models import STAGE_SCHEMAS
 from backend.infrastructure.output_language import LANGUAGE_RULES, language_issues, OutputLanguageError
 
@@ -23,7 +24,8 @@ from backend.errors import RequirementNormalizationError, ReviewValidationError,
 
 LOGGER = logging.getLogger("backend.server")
 _USAGE_PATH = "state/provider_usage.json"
-_CACHE_KEY_VERSION = "v2"
+_CACHE_KEY_VERSION = "v3"
+WORKFLOW_MESSAGES = ContextVar("workflow_messages", default=None)
 
 
 def complete_with_usage(writer, provider, messages, *, model, stage, temperature=0):
@@ -137,32 +139,25 @@ def _complete_once(
     started = perf_counter()
     try:
         schema = isolated_schema or STAGE_SCHEMAS.get(stage)
-        conversation = ConversationState(writer) if schema and isolated_schema is None else None
-        extra = {"text_format": isolated_schema} if isolated_schema else {}
-        if conversation:
-            is_new = not conversation.conversation_id
-            if is_new and any(item.get("run_id") == attempt["run_id"] and item.get("conversation_event") in {"started", "continued"} for item in attempts[:-1]):
-                from backend.errors import ConversationUnavailableError
-                raise ConversationUnavailableError("Conversation state is missing. Start a new generation.")
-            conversation.ensure(provider)
-            instructions, inputs, fingerprints = conversation.prepare(messages, stage)
-            extra = dict(instructions=instructions + "\n\n" + LANGUAGE_RULES[stage], text_format=schema,
-                         conversation_id=conversation.conversation_id)
-            conversation.begin()
-        else:
-            inputs = messages
+        instructions = "\n\n".join([POLICY, *(item["content"] for item in messages if item.get("role") == "system"), LANGUAGE_RULES.get(stage, "")])
+        recorder = WORKFLOW_MESSAGES.get()
+        if recorder is not None:
+            recorder[stage] = [{"role": "system", "content": instructions},
+                               *(item for item in messages if item.get("role") != "system")]
         result = provider.complete_result(
-            inputs, model=model, temperature=temperature, cache_key=_cache_key(stage),
-            comparison_response_id=attempt["comparison_response_id"], **extra,
+            messages, model=model, temperature=temperature, cache_key=_cache_key(stage),
+            instructions=instructions, text_format=schema,
         )
-        if conversation:
-            if not isinstance(result.parsed, schema):
-                raise TypeError("Provider structured result is invalid.")
-            conversation.commit(result.response_id, fingerprints, model=model, stage=stage)
-            attempt["conversation_event"] = "started" if is_new else "continued"
+        if schema is not None and not isinstance(result.parsed, schema):
+            raise TypeError("Provider structured result is invalid.")
         if not isinstance(result, CompletionResult):
             raise TypeError("Provider completion result is invalid.")
-    except Exception:
+    except Exception as exc:
+        failed_result = getattr(exc, "completion", None)
+        if isinstance(failed_result, CompletionResult):
+            attempt.update(input_tokens=_count(failed_result.input_tokens),
+                           output_tokens=_count(failed_result.output_tokens),
+                           cached_tokens=_count(failed_result.cached_tokens))
         attempt.update(status="failed", elapsed_ms=_elapsed_ms(started))
         _record_usage(writer, usage)
         LOGGER.info(

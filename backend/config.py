@@ -15,6 +15,7 @@ from backend.model_policy import MODEL, require_model
 
 
 AGENT_KEYS = [
+    "planner",
     "interviewer",
     "critic",
     "compiler",

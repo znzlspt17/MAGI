@@ -1,89 +1,14 @@
-"""v2 LangGraph workflow builder — SpecForge pipeline."""
+"""단계 실행·진행 이벤트와 이전 자료의 분기 해석."""
 
 from __future__ import annotations
 
-from typing import Callable, Literal
+from typing import Literal
 from copy import deepcopy
 from backend.infrastructure.stage_retry import CURRENT_RETRY, MAX_RETRIES
 
-from langgraph.graph import END, START, StateGraph
 
 from backend.models import count_unresolved_required, parse_issue_list
 from backend.models import WorkflowState
-from backend.pipeline.workflow_nodes import WorkflowNodes
-
-
-def build_v2_workflow(
-    nodes: WorkflowNodes,
-    *,
-    on_progress: Callable[[dict[str, str]], None] | None = None,
-    checkpoint=None,
-):
-    """Build the v2 SpecForge pipeline graph."""
-    graph = StateGraph(WorkflowState)
-
-    def stage(name, node):
-        return _stage(name, node, on_progress, checkpoint=checkpoint)
-
-    graph.add_node("project_context", stage("project_context", nodes.project_context))
-    graph.add_node("web_research", stage("web_research", nodes.web_research))
-    graph.add_node("interview", stage("interview", nodes.interview))
-    graph.add_node("await_user", stage("await_user", nodes.await_user))
-    graph.add_node("requirement_lock_stage", stage("requirement_lock", nodes.requirement_lock_stage))
-    graph.add_node("spec_compile", stage("spec_compile", nodes.spec_compile))
-    graph.add_node("checklist_critic", stage("checklist_critic", nodes.checklist_critic_node))
-    graph.add_node("review_resolution", stage("review_resolution", nodes.review_resolution))
-    graph.add_node("compose_candidate", stage("compose_candidate", nodes.compose_candidate))
-    graph.add_node("critical_report", stage("critical_report", nodes.critical_report))
-
-    graph.add_conditional_edges(
-        START,
-        route_from_start,
-        {
-            "project_context": "project_context",
-            "web_research": "web_research",
-            "await_user": "await_user",
-            "checklist_critic": "checklist_critic",
-            "review_resolution": "review_resolution",
-            "compose_candidate": "compose_candidate",
-            "critical_report": "critical_report",
-            "interview": "interview",
-            "requirement_lock_stage": "requirement_lock_stage",
-            "spec_compile": "spec_compile",
-        },
-    )
-    graph.add_edge("project_context", "web_research")
-    graph.add_edge("web_research", "interview")
-
-    graph.add_conditional_edges(
-        "interview",
-        route_after_interview,
-        {
-            "requirement_lock_stage": "requirement_lock_stage",
-            "await_user": "await_user",
-        },
-    )
-
-    graph.add_edge("await_user", END)
-    graph.add_edge("requirement_lock_stage", "spec_compile")
-    graph.add_edge("spec_compile", "checklist_critic")
-
-    graph.add_edge("checklist_critic", "review_resolution")
-    graph.add_conditional_edges(
-        "review_resolution",
-        route_after_resolution,
-        {
-            "compose_candidate": "compose_candidate",
-            "spec_compile": "spec_compile",
-            "critical_report": "critical_report",
-            "await_user": "await_user",
-        },
-    )
-
-    graph.add_edge("compose_candidate", END)
-    graph.add_edge("critical_report", END)
-
-    return graph.compile()
 
 
 def _stage(name: str, node, callback, *, checkpoint=None):
@@ -169,18 +94,6 @@ def route_after_interview(
     if state.get("blocking_questions") and state.get("_interview_direction_changing"):
         return "await_user"
     return "requirement_lock_stage"
-
-
-def route_from_start(
-    state: WorkflowState,
-) -> str:
-    """Resume only the stages that need to be recomputed."""
-    stage = state.get("resume_stage")
-    if stage in {"project_context", "web_research", "interview", "requirement_lock_stage",
-                 "spec_compile", "checklist_critic", "review_resolution", "compose_candidate",
-                 "critical_report", "await_user"}:
-        return stage
-    return "project_context"
 
 
 def route_after_resolution(

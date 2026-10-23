@@ -134,3 +134,25 @@
 @media (prefers-reduced-motion: reduce) { .chat-workspace *, .expanded-editor * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 .research-result dl { display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px 14px;font-size:13px; }
 .research-result dd { margin:0;white-space:pre-wrap; }
+.agent-plan {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid #e7e4ec;
+  background: #f7f5fc;
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.agent-plan summary, .agent-plan-trigger { cursor: pointer; font-weight: 600; }
+.agent-plan-trigger { text-align: left; width: 100%; padding: 0; border: 0; background: transparent; color: #5636a8; font: inherit; font-weight: 600; line-height: 1.6; }
+.agent-plan-body { padding-top: 8px; font-size: .9rem; }
+.agent-plan-body p { margin: 8px 0; }
+.agent-plan-body ol { padding-left: 22px; }
+.agent-plan-body li + li { margin-top: 8px; }
+.agent-plan-body li span { font-size: .8rem; opacity: .7; }
+.agent-composer { flex: 0 0 auto; padding: 8px 20px 16px; }
+.agent-composer > p { font-size: .8rem; margin-top: 6px; }
+.agent-composer textarea { font-family: inherit; }
+@media (max-width: 600px) {
+  .agent-composer { padding: 8px 10px 12px; }
+}

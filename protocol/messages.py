@@ -14,6 +14,7 @@ METHODS |= {"cleanup.catalog", "cleanup.preview", "cleanup.execute"}
 METHODS |= {"projects.decisions", "projects.decisions.register", "projects.decisions.deactivate", "projects.decision_candidates", "projects.reused_decisions"}
 METHODS.update({"continue", "retry"})
 METHODS.add("requirement.review")
+METHODS.add("message")
 METHODS |= {"implementation.package", "implementation.package.file"}
 METHODS.add("health.check")
 METHODS |= {"knowledge.impact", "knowledge.impact.analyse"}

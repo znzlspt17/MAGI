@@ -75,7 +75,7 @@ class ReviewResolutionStage:
                 "awaiting_input_reason": "review" if pending else None, "created_artifacts": created}
 
         from backend.knowledge.runtime import CURRENT
-        if CURRENT.get() is None and state.get("run_id"):
+        if CURRENT.get() is None and state.get("run_id") and not state.get("workflow_schema"):
             from backend.models import State
             checkpoint = State.from_workflow_state({**state, **result})
             checkpoint.resume_stage = "spec_compile" if record["action"] == "repair" else None

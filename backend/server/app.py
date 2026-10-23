@@ -241,8 +241,9 @@ class Server:
             elif method == "retry":
                 job = self.manager.retry(_ident(params), params.get("execution_id"))
                 payload = self.manager.summary(job["id"])
-            elif method in {"answer", "revise", "approve"}:
-                job = self.manager.action(_ident(params), method, params.get("payload"))
+            elif method in {"answer", "revise", "approve", "message"}:
+                job = self.manager.action(_ident(params), method, params.get("payload"),
+                                          expected_execution_id=params.get("execution_id"))
                 payload = self.manager.summary(job["id"])
             elif method == "download":
                 ident = _ident(params)

@@ -387,6 +387,21 @@ class State:
     revision_feedback: str = ""
     revision_history: list[str] = field(default_factory=list)
     created_artifacts: list[str] = field(default_factory=list)
+    workflow_schema: int = 0
+    revision: int = 0
+    plan: dict[str, Any] = field(default_factory=dict)
+    plan_history: list[dict[str, Any]] = field(default_factory=list)
+    task_results: list[dict[str, Any]] = field(default_factory=list)
+    task_messages: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    knowledge_context: dict[str, Any] = field(default_factory=dict)
+    completed_tasks: list[str] = field(default_factory=list)
+    segment_steps: int = 0
+    execution_segment: int = 0
+    wait_reason: str = ""
+    allowed_actions: list[str] = field(default_factory=list)
+    candidate_hash: str = ""
+    document_versions: list[dict[str, Any]] = field(default_factory=list)
+    pending_input: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -838,6 +853,21 @@ def assemble_spec_draft(draft, sheet, task_plan=None):
 
 
 class WorkflowState(TypedDict, total=False):
+    workflow_schema: int
+    revision: int
+    plan: dict[str, Any]
+    plan_history: list[dict[str, Any]]
+    task_results: list[dict[str, Any]]
+    task_messages: dict[str, list[dict[str, Any]]]
+    knowledge_context: dict[str, Any]
+    completed_tasks: list[str]
+    segment_steps: int
+    execution_segment: int
+    wait_reason: str
+    allowed_actions: list[str]
+    candidate_hash: str
+    document_versions: list[dict[str, Any]]
+    pending_input: dict[str, Any]
     run_id: str
     status: str
     user_request: str

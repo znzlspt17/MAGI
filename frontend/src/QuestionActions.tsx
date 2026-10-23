@@ -376,7 +376,7 @@ export function QuestionActions({
         setFeedback(value); sessionStorage.setItem(prefix + "feedback", value);
         document.getElementById(`feedback-${job.id}`)?.focus();
       }} />}
-      {controls(<div className="chat-feedback-controls"><label htmlFor={`feedback-${job.id}`}>{job.can_continue ? "추가 요청 내용" : "수정 의견 보내기"}</label>
+      {!job.state?.plan && controls(<div className="chat-feedback-controls"><label htmlFor={`feedback-${job.id}`}>{job.can_continue ? "추가 요청 내용" : "수정 의견 보내기"}</label>
       <PromptInput
         id={`feedback-${job.id}`}
         label={job.can_continue ? "추가 요청 내용" : "수정 의견 보내기"}

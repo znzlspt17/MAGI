@@ -45,7 +45,7 @@ _ENGINE = {
     "FINALIZED",
 }
 _JOB = _ENGINE | _ACTIVE | {"error", "interrupted"}
-_ACTIONS = {"generate", "answer", "revise", "approve", "retry"}
+_ACTIONS = {"generate", "answer", "revise", "approve", "retry", "message"}
 _PROVIDERS = {"openai"}
 _NORMALIZATION_ERROR_CODES = {
     "REQUIREMENT_NORMALIZATION_FAILED",
@@ -63,6 +63,7 @@ _NORMALIZATION_RECOVERY_STATES = {
     "REJECTED_BY_USER",
 }
 _PROGRESS_STAGES = {
+    "planner", "knowledge_search", "review_resolution",
     "project_context",
     "web_research",
     "interview",
@@ -77,8 +78,9 @@ _PROGRESS_STAGES = {
 }
 _PROGRESS_STATES = {"started", "retrying", "completed", "failed"}
 _GUARDS = {
+    "message": {"NEEDS_USER_INPUT", "PASS_PENDING_USER_APPROVAL", "CRITICAL_BLOCKED", "FINALIZED"},
     "answer": {"NEEDS_USER_INPUT"},
-    "revise": {"PASS_PENDING_USER_APPROVAL", "CRITICAL_BLOCKED"},
+    "revise": {"NEEDS_USER_INPUT", "PASS_PENDING_USER_APPROVAL", "CRITICAL_BLOCKED"},
     "approve": {"PASS_PENDING_USER_APPROVAL"},
 }
 
@@ -235,14 +237,20 @@ class JobManager:
             self.knowledge.store.commit_stage(job, job["execution_id"], "completion_archive", state.to_dict(), read_artifacts(writer.output_dir))
         return self.action(ident, "revise", payload, continuation=True)
 
-    def action(self, ident: str, action: str, payload: object, *, continuation=False) -> dict:
+    def action(self, ident: str, action: str, payload: object, *, continuation=False, expected_execution_id=None) -> dict:
         if action not in _ACTIONS - {"generate", "retry"}:
             raise KeyError(ident)
         with self.lock:
             self._require_open()
             job = self._get_locked(ident)
+            if action == "message" and expected_execution_id != job.get("execution_id"):
+                raise CleanupConflict("작업 상태가 바뀌었습니다. 최신 대화를 확인해주세요.")
             previous = self._snapshot(job)
             effective = self._effective_status_locked(job)
+            if action == "message" and job["status"] in {"error", "interrupted"}:
+                saved = self._read_json(self.artifact(ident, "state/state.json")) or {}
+                if saved.get("workflow_schema"):
+                    effective = "CRITICAL_BLOCKED"
             self._validate_payload(
                 action, payload, self._pending_questions_locked(ident),
                 (self._read_json(self.artifact(ident, "state/state.json")) or {}).get("question_forms", {})
@@ -307,6 +315,12 @@ class JobManager:
 
     def _retry_plan_locked(self, job):
         from backend.services.workflow_recovery import CHECKPOINT_PATH, checkpoint_artifact, validate_checkpoint
+        current_state = Engine()._load_state(ArtifactWriter(self._job_root(job["id"])))
+        if current_state.workflow_schema and job["status"] in {"error", "interrupted", "CRITICAL_BLOCKED"}:
+            if current_state.wait_reason and "retry" not in current_state.allowed_actions:
+                raise ValueError("이전 호출의 완료 여부를 먼저 확인해야 합니다.")
+            return {"mode": "graph", "original_action": job.get("action", "generate"),
+                    "source_execution_id": job.get("execution_id")}
         if job["status"] not in {"error", "interrupted"}:
             raise ValueError("실패하거나 중단된 작업만 다시 시도할 수 있습니다.")
         original = job.get("retry_original_action", job["action"]) if job["action"] == "retry" else job["action"]
@@ -488,7 +502,8 @@ class JobManager:
             if state:
                 public_state = {
                     key: state[key]
-                    for key in ("status", "blocking_questions", "critic_pass_count", "awaiting_input_reason", "review_questions", "question_forms")
+                    for key in ("status", "blocking_questions", "critic_pass_count", "awaiting_input_reason", "review_questions", "question_forms",
+                                "plan", "wait_reason", "allowed_actions", "revision", "document_versions", "task_results")
                     if key in state
                 }
                 pending_questions = state.get("blocking_questions")
@@ -550,6 +565,8 @@ class JobManager:
                 ("final/FINAL_AGENT_SPEC.md", "final"),
                 ("critical/CRITICAL_REPORT.ko.md", "critical"),
             ):
+                if key == "critical" and state and state.get("workflow_schema") and not state.get("critical_report"):
+                    continue
                 text = self._read_text(self.artifact(ident, relative))
                 if text is not None:
                     job[key] = text
@@ -1124,7 +1141,7 @@ class JobManager:
             token = CURRENT.set(runtime)
             if runtime is not None and action != "approve":
                 latest = ""
-                if action == "revise":
+                if action in {"revise", "message"}:
                     latest = str(payload)
                 elif action == "answer":
                     latest = "\n".join(item["answer"] for item in payload)
@@ -1132,7 +1149,9 @@ class JobManager:
             engine = self._engine_for_provider(provider)
             run_action = payload["original_action"] if action == "retry" and payload["mode"] == "replay" else action
             run_payload = payload.get("input") if action == "retry" else payload
-            if action == "retry" and payload["mode"] == "resume":
+            if action == "retry" and payload["mode"] == "graph":
+                result = engine.resume(str(root), on_progress=lambda event: self._engine_progress(ident, event))
+            elif action == "retry" and payload["mode"] == "resume":
                 result = engine.retry(str(root), checkpoint=payload["checkpoint"],
                                       on_progress=lambda event: self._engine_progress(ident, event))
             elif run_action == "generate":
@@ -1149,6 +1168,9 @@ class JobManager:
                     answers=run_payload,
                     on_progress=lambda event: self._engine_progress(ident, event),
                 )
+            elif run_action == "message":
+                result = engine.message(str(root), text=run_payload,
+                                        on_progress=lambda event: self._engine_progress(ident, event))
             elif run_action == "revise":
                 feedback = self.artifact(ident, "raw/web_feedback.md")
                 feedback.parent.mkdir(parents=True, exist_ok=True)
@@ -1687,7 +1709,7 @@ class JobManager:
                     _validate_answers(payload, questions, forms)
                 except InvalidStateError as error:
                     raise ValueError(str(error)) from error
-        elif action == "revise":
+        elif action in {"revise", "message"}:
             if (
                 not isinstance(payload, str)
                 or not payload.strip()

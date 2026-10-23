@@ -51,7 +51,7 @@ def action_sources(records):
     result = {}
     for record in records:
         action, payload = record.get("action"), record.get("input")
-        if action in {"generate", "revise"} and isinstance(payload, str):
+        if action in {"generate", "revise", "message"} and isinstance(payload, str):
             add_source(result, "user_request" if action == "generate" else "user_feedback", payload)
         elif action == "answer" and isinstance(payload, list):
             for answer in payload:
@@ -75,7 +75,7 @@ def confirmed_sources(state, artifacts):
             for answer in node.get("result", {}).get("answers", []):
                 if answer.get("question_id") and isinstance(answer.get("answer"), str):
                     add_source(result, "user_answer:" + answer["question_id"], answer["answer"])
-        elif node.get("action") == "revise" and isinstance(node.get("result", {}).get("feedback"), str):
+        elif node.get("action") in {"revise", "message"} and isinstance(node.get("result", {}).get("feedback"), str):
             add_source(result, "user_feedback", node["result"]["feedback"])
     return result
 

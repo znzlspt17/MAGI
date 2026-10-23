@@ -13,7 +13,7 @@ from backend.config import Config, VALID_WEB_SEARCH_MODES
 from backend.errors import InvalidStateError, Error
 from backend.infrastructure.artifact_writer import ArtifactWriter
 from backend.infrastructure.evidence_registry import EvidenceRegistry
-from backend.infrastructure.heartbeat import HEARTBEAT_PATH, RunHeartbeat
+from backend.infrastructure.heartbeat import HEARTBEAT_PATH
 from backend.models import (
     STATUS_FINALIZED,
     STATUS_NEEDS_USER_INPUT,
@@ -23,7 +23,6 @@ from backend.models import (
 )
 from backend.models import Result
 from backend.pipeline.workflow_nodes import WorkflowNodes
-from backend.pipeline.builder import build_v2_workflow
 from backend.providers.llm_provider import OpenAIProvider
 from backend.services.saved_answers import saved_answers
 from backend.services.skill_registry import build_default_skill_registry
@@ -38,9 +37,11 @@ class Engine:
         *,
         config: Config | None = None,
         provider: OpenAIProvider | None = None,
+        workflow_store_factory=None,
     ) -> None:
         self.config = config or Config.default()
         self.provider = provider or OpenAIProvider()
+        self.workflow_store_factory = workflow_store_factory
 
     def generate_from_file(
         self,
@@ -131,7 +132,21 @@ class Engine:
         self._persist_state(writer, state)
         return self._run_workflow(state, writer, evidence, on_progress=on_progress)
 
-    def approve(
+    def approve(self, output_dir: str, *, on_progress=None) -> Result:
+        writer = ArtifactWriter(output_dir, allow_overwrite=True)
+        state = self._load_state(writer)
+        if state.status != STATUS_PASS_PENDING_USER_APPROVAL:
+            raise InvalidStateError("검토를 통과한 승인 후보가 필요합니다.")
+        candidate = writer.path("draft/approval_candidate_spec.en.md")
+        self._validate_candidate_for_approval(candidate, state)
+        if state.workflow_schema:
+            import hashlib
+            if hashlib.sha256(candidate.read_text(encoding="utf-8").encode()).hexdigest() != state.candidate_hash:
+                raise InvalidStateError("승인 후보가 변경되었습니다. 다시 검토해야 합니다.")
+        evidence = EvidenceRegistry.from_dict(writer.read_json("evidence/evidence_registry.json"))
+        return self._run_workflow(state, writer, evidence, on_progress=on_progress, action="approve")
+
+    def _finalize(
         self,
         output_dir: str,
         *,
@@ -220,8 +235,10 @@ class Engine:
         self._persist_state(writer, state)
         workflow_state = copy.deepcopy(state)
         workflow_state.final_agent_spec = None
+        workflow_state.blocking_questions = []
+        workflow_state.awaiting_input_reason = None
         return self._run_workflow(
-            workflow_state, writer, evidence, on_progress=on_progress
+            workflow_state, writer, evidence, on_progress=on_progress, action="revise"
         )
 
     def answer(
@@ -306,8 +323,8 @@ class Engine:
                 overwrite=True,
             )
             self._persist_state(writer, state)
-            _notify_progress(on_progress, "await_user", "completed")
-            return self._result_from_state(state)
+            evidence = EvidenceRegistry.from_dict(writer.read_json("evidence/evidence_registry.json"))
+            return self._run_workflow(state, writer, evidence, on_progress=on_progress, action="answer")
         writer.write_json(
             "analysis/requirement_lock_sheet.json", sheet.to_dict(), overwrite=True
         )
@@ -342,7 +359,7 @@ class Engine:
             output_dir,
         )
         return self._run_workflow(
-            workflow_state, writer, evidence, on_progress=on_progress
+            workflow_state, writer, evidence, on_progress=on_progress, action="answer"
         )
 
     def status(self, output_dir: str) -> Result:
@@ -355,8 +372,11 @@ class Engine:
         from backend.knowledge.runtime import restore_artifacts
         from backend.services.workflow_recovery import validate_checkpoint
         from backend.services.completed_specs import require_conversation
-        value = validate_checkpoint(checkpoint)
         writer = ArtifactWriter(output_dir, allow_overwrite=True)
+        current = self._load_state(writer)
+        if current.workflow_schema:
+            return self.resume(output_dir, on_progress=on_progress)
+        value = validate_checkpoint(checkpoint)
         require_conversation(writer)
         state_data = {**value["state"], "output_dir": str(writer.output_dir)}
         artifacts = {**value["artifacts"], "state/state.json": json.dumps(state_data, ensure_ascii=False)}
@@ -367,85 +387,38 @@ class Engine:
             _notify_progress(on_progress, value["stage"], "completed")
             return self._result_from_state(state)
         evidence = EvidenceRegistry.from_dict(writer.read_json("evidence/evidence_registry.json"))
-        return self._run_workflow(state, writer, evidence, on_progress=on_progress)
+        return self._run_workflow(state, writer, evidence, on_progress=on_progress, action="retry")
 
-    def _run_workflow(
-        self,
-        state: State,
-        writer: ArtifactWriter,
-        evidence: EvidenceRegistry,
-        *,
-        on_progress: Callable[[dict[str, str]], None] | None = None,
-    ) -> Result:
-        skills = build_default_skill_registry()
-        nodes = WorkflowNodes(
-            writer=writer,
-            config=self.config,
-            provider=self.provider,
-            skills=skills,
-            evidence=evidence,
-        )
-        from backend.services.workflow_recovery import save_checkpoint
-        save_checkpoint(writer, evidence, "workflow_entry", state.to_workflow_state(), {})
-        workflow = build_v2_workflow(nodes, on_progress=on_progress,
-                                    checkpoint=lambda stage, before, result: save_checkpoint(
-                                        writer, evidence, stage, before, result))
+    def _run_workflow(self, state: State, writer: ArtifactWriter, evidence: EvidenceRegistry,
+                      *, on_progress=None, action="generate") -> Result:
+        from backend.pipeline.agent_workflow import AgentWorkflow
+        from backend.services.project_decisions import CURRENT_REUSE
+        nodes = WorkflowNodes(writer=writer, config=self.config, provider=self.provider,
+                              skills=build_default_skill_registry(), evidence=evidence)
+        token = CURRENT_REUSE.set(state.reused_decisions)
+        try:
+            return AgentWorkflow(self, nodes, writer, evidence, on_progress).run(state, action=action)
+        finally:
+            CURRENT_REUSE.reset(token)
 
-        if HEARTBEAT_PATH not in state.created_artifacts:
-            state.created_artifacts.append(HEARTBEAT_PATH)
-        previous_draft: str | None = None
-        draft_path = "draft/approval_candidate_spec.en.md"
-        try:
-            previous_draft = writer.read_text(draft_path)
-        except Exception:
-            pass
-        heartbeat = RunHeartbeat(writer=writer, state=state)
-        heartbeat.start()
-        try:
-            from backend.services.project_decisions import CURRENT_REUSE
-            reuse_token = CURRENT_REUSE.set(state.reused_decisions)
-            try:
-                final_state = State.from_workflow_state(workflow.invoke(state.to_workflow_state()))
-            finally:
-                CURRENT_REUSE.reset(reuse_token)
-            heartbeat.stop(final_status=final_state.status)
-        except Exception as exc:
-            # 저장을 마친 해결 판단과 연결된 최신 초안은 실패 시에도 보존한다.
-            committed_draft = False
-            recovery_draft = previous_draft
-            try:
-                from backend.knowledge.runtime import CURRENT
-                from backend.services.review_resolution import text_hash
-                runtime = CURRENT.get()
-                records = writer.read_json("state/state.json").get("resolution_history", [])
-                saved_hash = runtime.resolved_draft_hash if runtime is not None else records[-1]["draft_hash"] if records else None
-                committed_draft = saved_hash == text_hash(writer.read_text(draft_path))
-                if not committed_draft and saved_hash:
-                    resolved_draft = writer.read_text("review/resolved_draft.en.md")
-                    if text_hash(resolved_draft) == saved_hash:
-                        recovery_draft = resolved_draft
-            except (Error, OSError, ValueError, KeyError, TypeError):
-                pass
-            if recovery_draft is not None and not committed_draft:
-                try:
-                    writer.write_text(draft_path, recovery_draft, overwrite=True)
-                except Exception:
-                    pass
-            heartbeat.stop(exc=exc)
-            _notify_progress(on_progress, "workflow", "failed")
-            raise
-        writer.write_json(
-            "evidence/evidence_registry.json", evidence.to_dict(), overwrite=True
-        )
-        if "evidence/evidence_registry.json" not in final_state.created_artifacts:
-            final_state.created_artifacts.append("evidence/evidence_registry.json")
-        final_state.evidence_registry_path = str(
-            writer.path("evidence/evidence_registry.json")
-        )
-        final_state.resume_stage = None
-        self._persist_state(writer, final_state)
-        _notify_progress(on_progress, "workflow", "completed")
-        return self._result_from_state(final_state)
+    def message(self, output_dir: str, *, text: str, on_progress=None) -> Result:
+        if not isinstance(text, str) or not text.strip():
+            raise InvalidStateError("수정 의견을 입력해주세요.")
+        writer = ArtifactWriter(output_dir, allow_overwrite=True)
+        state = self._load_state(writer)
+        if state.status not in {STATUS_NEEDS_USER_INPUT, STATUS_PASS_PENDING_USER_APPROVAL,
+                                "CRITICAL_BLOCKED", STATUS_FINALIZED} and not (
+                                    state.workflow_schema and "message" in state.allowed_actions):
+            raise InvalidStateError("대기 중인 작업에만 수정 의견을 제출할 수 있습니다.")
+        feedback = writer.path("raw/web_feedback.md")
+        writer.write_text("raw/web_feedback.md", text.strip(), overwrite=True)
+        return self.revise(output_dir=output_dir, feedback_path=str(feedback), on_progress=on_progress)
+
+    def resume(self, output_dir: str, *, on_progress=None) -> Result:
+        writer = ArtifactWriter(output_dir, allow_overwrite=True)
+        state = self._load_state(writer)
+        evidence = EvidenceRegistry.from_dict(writer.read_json("evidence/evidence_registry.json"))
+        return self._run_workflow(state, writer, evidence, on_progress=on_progress, action="retry")
 
     def _persist_state(self, writer: ArtifactWriter, state: State) -> None:
         if "state/state.json" not in state.created_artifacts:

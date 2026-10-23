@@ -53,6 +53,7 @@ class WorkflowNodes:
                 config=config, provider=provider, skills=skills, evidence=evidence
             ),
         )
+        self.context = context
         self.project_context = ProjectContextStage(context)
         self.web_research = WebResearchStage(context)
         self.interview = InterviewStage(context)

@@ -17,11 +17,12 @@ LOGGER = logging.getLogger("backend.server")
 _HISTORY_PATH = "state/execution_history.json"
 _MAX_SUMMARY = 600
 _STAGES = {
-    "generate", "answer", "revise", "approve", "retry", "project_context", "web_research",
+    "generate", "answer", "revise", "approve", "retry", "message", "planner", "knowledge_search", "project_context", "web_research",
     "interview", "await_user", "requirement_lock", "spec_compile",
     "checklist_critic", "review_resolution", "compose_candidate", "critical_report",
 }
 _TITLES = {
+    "message": "수정 의견", "planner": "작업 계획", "knowledge_search": "기존 근거 확인",
     "generate": "요청 접수", "answer": "답변 제출", "revise": "수정 의견 제출",
     "approve": "승인", "retry": "다시 시도", "project_context": "요청 분석", "web_research": "조사",
     "interview": "요구사항 확인", "await_user": "요구사항 확인 필요",
@@ -43,7 +44,7 @@ class ExecutionHistory:
         result = []
         for execution in data["executions"]:
             nodes = [n for n in data["nodes"] if n.get("execution_id") == execution["id"]]
-            user = next((n for n in nodes if n.get("action") in {"generate", "answer", "revise", "approve"}), {})
+            user = next((n for n in nodes if n.get("action") in {"generate", "answer", "revise", "approve", "message"}), {})
             payload = user.get("result", {})
             document = next((n for n in reversed(nodes) if n.get("has_document")), {})
             questions = next((n.get("result", {}).get("blocking_questions") for n in reversed(nodes)
@@ -450,7 +451,7 @@ def _visible_nodes(nodes: list[dict]) -> tuple[list[dict], dict[str, str]]:
 
 def _node(stage: str, execution_id: str, status: str, *, summary: str = "") -> dict:
     now = _now()
-    return {"id": uuid4().hex, "execution_id": execution_id, "action": stage if stage in {"generate", "answer", "revise", "approve"} else "", "stage": stage, "title": _TITLES.get(stage, stage), "status": status, "started_at": now, "completed_at": None, "duration_ms": None, "summary": summary, "issue_counts": {"blocking": 0, "major": 0, "minor": 0}, "has_document": False, "has_issues": False, "detail_available": True}
+    return {"id": uuid4().hex, "execution_id": execution_id, "action": stage if stage in {"generate", "answer", "revise", "approve", "message"} else "", "stage": stage, "title": _TITLES.get(stage, stage), "status": status, "started_at": now, "completed_at": None, "duration_ms": None, "summary": summary, "issue_counts": {"blocking": 0, "major": 0, "minor": 0}, "has_document": False, "has_issues": False, "detail_available": True}
 
 
 def _summary_node(node: dict) -> dict:
@@ -473,7 +474,7 @@ def _user_action_result(action: str, value: object) -> dict:
             if isinstance(item, dict)
         ]
         return {"answers": answers}
-    if action == "revise" and isinstance(value, str):
+    if action in {"revise", "message"} and isinstance(value, str):
         return {"feedback": value}
     return {}
 

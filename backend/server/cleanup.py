@@ -188,6 +188,9 @@ class Cleanup:
     def finish(self, operation):
         folder = self.root / operation["id"]
         try:
+            if self.store:
+                from backend.infrastructure.workflow_store import delete_workflow_threads
+                delete_workflow_threads(self.store, operation["targets"])
             if folder.exists():
                 # 삭제 직전에도 격리 루트와 하위 링크를 재확인한다.
                 if (self.root.is_symlink() or self.root.resolve().parent != self.manager.data_dir

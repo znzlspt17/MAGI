@@ -357,7 +357,7 @@ export default function Workspace() {
         refresh();
       }
     } catch (e) {
-      auth.setNotice((e as Error).message);
+      if (action !== "message") auth.setNotice((e as Error).message);
       throw e;
     } finally {
       mutating.current = false;

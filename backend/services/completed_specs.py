@@ -40,12 +40,12 @@ def archive_completed(writer, state, content=None):
 
 
 def require_conversation(writer):
-    from backend.infrastructure.conversation_state import ConversationState
-    from backend.errors import ConversationUnavailableError
-    conversation = ConversationState(writer)
-    if not conversation.conversation_id:
-        raise ConversationUnavailableError("Conversation state is missing. Start a new generation.")
-    return conversation
+    """기존 작업도 저장된 사용자 원문에서 문맥을 재구성한다."""
+    from backend.models import State
+    state = State.from_dict(writer.read_json("state/state.json"))
+    if not (state.original_user_request or state.user_request).strip():
+        raise InvalidStateError("작업의 사용자 원문이 없어 확인이 필요합니다.")
+    return state
 
 
 def completed_references(state):
