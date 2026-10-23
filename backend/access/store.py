@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+import logging
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -9,6 +10,9 @@ from decimal import Decimal
 from uuid import uuid4
 
 from backend.access.context import AccessError
+
+
+LOGGER = logging.getLogger('backend.server')
 
 
 def digest(value):
@@ -192,14 +196,14 @@ class AccessStore:
             row = self.lease(c)
             if row['job_id'] != jid or row['generation'] != generation:
                 return
-            uncertain=c.execute("SELECT 1 FROM cost_calls WHERE job_id=%s AND state='uncertain' LIMIT 1",(jid,)).fetchone()
-            if uncertain:
-                c.execute("UPDATE service_lease SET phase='recovery',deadline=NULL WHERE singleton=1")
-                return
+            uncertain=c.execute("SELECT count(*) AS count FROM cost_calls WHERE job_id=%s AND state='uncertain'",(jid,)).fetchone()['count']
+            # 비용 예약은 유지하고, 종료가 확인된 실행의 사용권만 정상적으로 반환한다.
             if waiting and not row['stopping']:
                 c.execute("UPDATE service_lease SET phase='waiting',deadline=%s WHERE singleton=1", (self.clock()+180,))
             else:
                 self.clear(c)
+        if uncertain:
+            LOGGER.warning('billing settlement pending job_id=%s count=%s', jid, uncertain)
 
     def status(self, uid):
         with self.store.transaction() as c:
