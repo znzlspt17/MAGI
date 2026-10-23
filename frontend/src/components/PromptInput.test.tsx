@@ -1,10 +1,16 @@
 import {useState} from 'react';
-import {afterEach,expect,it,vi} from 'vitest';
+import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import {cleanup,fireEvent,render,screen} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {PromptInput,ExpandableTextarea} from './PromptInput';
-afterEach(cleanup);
+// jsdom에는 Radix Tooltip의 크기 관찰에 필요한 브라우저 API가 없다.
+beforeEach(()=>vi.stubGlobal('ResizeObserver',class {
+ observe(){}
+ unobserve(){}
+ disconnect(){}
+}));
+afterEach(()=>{cleanup();vi.unstubAllGlobals();});
 function Editor({send=()=>{}}:{send?:()=>void}){const [value,setValue]=useState('');return <PromptInput label="답변" buttonLabel="제출" value={value} onChange={e=>setValue(e.target.value)} onSend={send}/>;}
 it('크게 쓰기 초안을 동기화하고 닫으면 포커스를 돌려준다',async()=>{
  const user=userEvent.setup(),send=vi.fn();render(<Editor send={send}/>);
