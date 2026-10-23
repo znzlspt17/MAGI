@@ -122,3 +122,19 @@ describe('대화 입력과 승인',()=>{
  });
 });
 
+
+it('대화 본문에 질문을 유지하고 하단에는 작성 수와 제출 버튼만 표시한다', async()=>{
+ const footer=document.createElement('div'); document.body.appendChild(footer);
+ const action=vi.fn().mockResolvedValue(undefined);
+ try {
+  const view=render(<QuestionActions job={job()} onAction={action} busy={false} conversational controlsTarget={footer}/>);
+  expect(view.container.querySelectorAll('fieldset')).toHaveLength(3);
+  expect(footer.querySelector('fieldset')).toBeNull();
+  expect(within(footer).getByText('답변 0/3개 작성')).toBeTruthy();
+  fireEvent.click(group('운영체제').getByRole('radio',{name:'Windows'}));
+  expect(within(footer).getByText('답변 1/3개 작성')).toBeTruthy();
+  fireEvent.click(within(footer).getByRole('button',{name:'답변 제출'}));
+  await waitFor(()=>expect(action).toHaveBeenCalledOnce());
+  expect(action.mock.calls[0][1]).toHaveLength(1);
+ } finally { cleanup(); footer.remove(); }
+});

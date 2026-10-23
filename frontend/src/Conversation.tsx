@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 // shadcn/ui Radix AI Elements Chat / Task compositions (MIT), revision ba1503c64472b82256d9de95e2e62c5901a38e8b.
 import { ScalesIcon, FileTextIcon, CheckCircleIcon, WarningCircleIcon, CircleNotchIcon, ClockIcon, QuestionIcon, CaretDownIcon } from "@phosphor-icons/react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "./components/ui/collapsible";
@@ -11,6 +12,18 @@ import { Button, Notice, formatTime, statusLabel } from "./UI";
 import type { Job } from "./types";
 
 export function Conversation({ job, select, onAction, busy }: { job: Job; select: (stepId: string, requirements?: boolean) => void; onAction: (action: string, payload: unknown) => Promise<void>; busy: boolean }) {
+  const [controlsTarget, setControlsTarget] = useState<HTMLDivElement | null>(null);
+  const root = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const shell = root.current?.closest<HTMLElement>(".shell");
+    const viewport = window.visualViewport;
+    if (!shell || !viewport) return;
+    // 모바일 키보드가 열린 경우에도 제출 영역을 보이는 높이 안에 둔다.
+    const resize = () => shell.style.setProperty("--chat-viewport-height", `${viewport.height}px`);
+    resize();
+    viewport.addEventListener("resize", resize);
+    return () => { viewport.removeEventListener("resize", resize); shell.style.removeProperty("--chat-viewport-height"); };
+  }, []);
   const { turns, incomplete } = conversationTurns(job);
   const latestEventId = job.session_events?.at(-1)?.id;
   const waiting = ["NEEDS_USER_INPUT", "waiting"].includes(job.retry_status || job.state?.status || job.status);
@@ -18,7 +31,7 @@ export function Conversation({ job, select, onAction, busy }: { job: Job; select
   const failed = ["error", "failed", "interrupted", "CRITICAL_BLOCKED", "blocked"].includes(job.status);
   const StatusIcon = running ? CircleNotchIcon : failed ? WarningCircleIcon : ["FINALIZED", "completed"].includes(job.status) ? CheckCircleIcon : waiting || ["PASS_PENDING_USER_APPROVAL", "waiting_approval"].includes(job.status) ? QuestionIcon : ClockIcon;
   const reviewStep = [...(job.execution_graph?.nodes || [])].reverse().find((node) => node.has_document && (!job.execution_id || !node.execution_id || node.execution_id === job.execution_id))?.id;
-  return <section className="chat-workspace" aria-label="MAGI 대화">
+  return <section ref={root} className="chat-workspace" aria-label="MAGI 대화">
     <MessageScrollerProvider autoScroll defaultScrollPosition="end" scrollEdgeThreshold={48}>
       <MessageScroller className="chat-scroll-root">
         <MessageScrollerViewport className="chat-viewport" aria-label="대화 이력">
@@ -48,11 +61,12 @@ export function Conversation({ job, select, onAction, busy }: { job: Job; select
               <TraceCollapsibleTrigger><TraceLine status={running ? "running" : failed ? "error" : undefined}><TraceIcon><StatusIcon size={17} aria-hidden /></TraceIcon><TraceTitle>{statusLabel(job.status)}</TraceTitle></TraceLine></TraceCollapsibleTrigger>
               <TraceCollapsibleContent><p>{job.message || (waiting ? "아래에서 답변할 항목을 선택하고 작성해주세요." : "저장된 현재 작업 상태입니다.")}</p></TraceCollapsibleContent>
             </TraceCollapsible></Trace></MessageScrollerItem>
+            <MessageScrollerItem messageId="current-actions"><Message align="start" className="chat-turn magi"><MessageContent><QuestionActions key={job.id} job={job} onAction={onAction} busy={busy} conversational controlsTarget={controlsTarget} onReview={reviewStep ? () => select(reviewStep) : undefined} onRequirementReview={reviewStep ? () => select(reviewStep, true) : undefined} /></MessageContent></Message></MessageScrollerItem>
           </MessageScrollerContent>
         </MessageScrollerViewport>
         <MessageScrollerButton size="sm" className="chat-latest">최신 메시지로 이동</MessageScrollerButton>
       </MessageScroller>
     </MessageScrollerProvider>
-    <div className="chat-actions"><QuestionActions key={job.id} job={job} onAction={onAction} busy={busy} conversational onReview={reviewStep ? () => select(reviewStep) : undefined} onRequirementReview={reviewStep ? () => select(reviewStep, true) : undefined} /></div>
+    <div className="chat-actions" ref={setControlsTarget} />
   </section>;
 }

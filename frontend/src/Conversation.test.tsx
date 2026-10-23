@@ -4,7 +4,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Conversation } from "./Conversation";
 
-vi.mock("./QuestionActions", () => ({ QuestionActions: () => null, questionDetails: (label: string) => ({ label }) }));
+vi.mock("./Auth", () => ({ useAuth: () => ({ publicMode: false, user: null, status: {} }) }));
 afterEach(cleanup);
 
 it("답변 아래 질문 참조를 독립적으로 클릭과 키보드로 펼친다", async () => {
@@ -30,4 +30,19 @@ it("답변 아래 질문 참조를 독립적으로 클릭과 키보드로 펼친
   expect(within(triggers[1].parentElement!).getByText("둘째 질문 원문")).toBeVisible();
   await user.keyboard(" ");
   expect(triggers[1]).toHaveAttribute("aria-expanded", "false");
+});
+
+it('현재 질문은 대화 안에 한 번만 표시하고 제출 컨트롤은 하단에 둔다',async()=>{
+ const user=userEvent.setup();
+ const job={id:'inline-questions',status:'NEEDS_USER_INPUT',state:{blocking_questions:['[A] 사용할 사람','[B] 사용할 환경']},session_events:[{id:'e',action:'generate',summary:'두 가지를 확인해주세요.',questions:['[A] 사용할 사람','[B] 사용할 환경']}]};
+ const view=render(<Conversation job={job} select={vi.fn()} onAction={vi.fn()} busy={false}/>);
+ const body=view.container.querySelector('.chat-viewport') as HTMLElement;
+ const footer=view.container.querySelector('.chat-actions') as HTMLElement;
+ expect(within(body).getAllByRole('textbox')).toHaveLength(2);
+ expect(within(footer).queryByRole('textbox')).toBeNull();
+ expect(within(footer).getByRole('button',{name:'답변 제출'})).toBeVisible();
+ await user.type(within(body).getByRole('textbox',{name:'사용할 사람'}),'팀원');
+ expect(within(footer).getByText('답변 1/2개 작성')).toBeVisible();
+ view.rerender(<Conversation job={{...job,message:'새로운 상태'}} select={vi.fn()} onAction={vi.fn()} busy={false}/>);
+ expect(screen.getByRole('textbox',{name:'사용할 사람'})).toHaveValue('팀원');
 });

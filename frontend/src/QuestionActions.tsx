@@ -2,7 +2,9 @@ import { ServiceStatusNotice, serviceState } from "./ServiceStatus";
 import { ChangeReview } from "./ChangeReview";
 import { RequirementReview } from "./RequirementReview";
 import { PromptInput, isSubmitShortcut } from "./components/PromptInput";
-import { InputGroup, InputGroupTextarea } from "./components/ui/input-group";
+import { ExpandableTextarea } from "./components/PromptInput";
+import { createPortal } from "react-dom";
+import type { ReactNode } from "react";
 import { Item, ItemContent, ItemTitle, ItemDescription, ItemActions } from "./components/ui/item";
 import { SealCheckIcon, LightbulbIcon } from "@phosphor-icons/react";
 import { Field, FieldSet, FieldLegend, FieldLabel, FieldDescription, FieldError } from "./components/ui/field";
@@ -67,11 +69,13 @@ export function QuestionActions({
   conversational = false,
   onReview,
   onRequirementReview,
+  controlsTarget,
 }: {
   job: Job;
   onAction: (action: string, payload: unknown) => Promise<void>;
   busy: boolean;
   conversational?: boolean;
+  controlsTarget?: HTMLElement | null;
   onReview?: () => void;
   onRequirementReview?: () => void;
 }) {
@@ -90,6 +94,13 @@ export function QuestionActions({
   const executionKey = `${job.id}:${job.execution_id || "legacy"}:${job.status}`;
   const disabled = busy || pending || approvedExecution === executionKey || serviceState(publicMode, status).blocked;
   const actionClass = conversational ? "action-card conversation-action" : "action-card";
+  // 상태는 본문에 유지하고 하단 컨트롤만 포털로 옮긴다.
+  const controls = (content: ReactNode) => controlsTarget === undefined ? content : (controlsTarget ? createPortal(content, controlsTarget) : null);
+  const answeredCount = questions.filter((raw, index) => {
+    const q = questionDetails(raw, index), form = forms[q.id];
+    const draft = drafts[`${q.id}:${form?.form_version || "text"}`] || initial(form);
+    return draft.ids.length > 0 || ((!form || form.input_type === "text" || draft.custom) && !!draft.text.trim());
+  }).length;
   async function perform(action: string, payload: unknown) {
     if (disabled || submitting.current) return false;
     submitting.current = true;
@@ -229,8 +240,8 @@ export function QuestionActions({
               <FieldLegend>
                 {index + 1}. {form?.question || q.label}
               </FieldLegend>
-              <div id={`question-context-${q.id}`}>
-                <ReviewContext record={context} />
+              <div id={`question-context-${q.id}`} hidden={!context}>
+                <Collapsible defaultOpen={!conversational}><CollapsibleTrigger className="question-evidence-trigger">검토 배경 보기</CollapsibleTrigger><CollapsibleContent><ReviewContext record={context} /></CollapsibleContent></Collapsible>
               </div>
               {form && form.input_type !== "text" && (form.recommendation !== undefined || form.options.some(option => option.impact)) && <p className="question-guidance-notice">영향과 전제는 모델의 안내입니다. 선택한 항목과 직접 입력한 내용만 답변으로 제출됩니다.</p>}
               {form &&
@@ -288,10 +299,11 @@ export function QuestionActions({
                     </FieldLabel></Field>
                   ),
                 )}
-              {form && form.input_type !== "text" && form.recommendation !== undefined && (form.recommendation ? <Alert className="question-recommendation" role="note" aria-label="추천 이유와 전제"><LightbulbIcon size={19} aria-hidden /><AlertTitle>추천 이유 · 모델 안내</AlertTitle><AlertDescription><p>{form.recommendation.option_ids.map(id => form.options.find(option => option.id === id)?.label).filter(Boolean).join(" + ")}</p><p>{form.recommendation.reason}</p>{form.recommendation.assumptions.map((assumption, n) => <p key={n}>추천 전제: {assumption}</p>)}<p className="recommendation-boundary">추천과 전제는 안내입니다. 직접 선택하고 답변을 제출해야 결정됩니다.</p></AlertDescription></Alert> : <p className="question-recommendation-unavailable">현재 정보로는 추천을 정하기 어렵습니다</p>)}
+              {form && form.input_type !== "text" && form.recommendation !== undefined && (form.recommendation ? <Collapsible defaultOpen={!conversational}><CollapsibleTrigger className="question-evidence-trigger">추천 이유와 전제 · 모델 안내</CollapsibleTrigger><CollapsibleContent><Alert className="question-recommendation" role="note" aria-label="추천 이유와 전제"><LightbulbIcon size={19} aria-hidden /><AlertTitle>추천 이유 · 모델 안내</AlertTitle><AlertDescription><p>{form.recommendation.option_ids.map(id => form.options.find(option => option.id === id)?.label).filter(Boolean).join(" + ")}</p><p>{form.recommendation.reason}</p>{form.recommendation.assumptions.map((assumption, n) => <p key={n}>추천 전제: {assumption}</p>)}<p className="recommendation-boundary">추천과 전제는 안내입니다. 직접 선택하고 답변을 제출해야 결정됩니다.</p></AlertDescription></Alert></CollapsibleContent></Collapsible> : <p className="question-recommendation-unavailable">현재 정보로는 추천을 정하기 어렵습니다</p>)}
               {(!form || form.input_type === "text" || draft.custom) && (
-                <InputGroup><InputGroupTextarea
-                  aria-label={`${form?.question || q.label}${form ? " · 직접 입력" : ""}`}
+                <ExpandableTextarea
+                  disabled={busy || pending}
+                  label={`${form?.question || q.label}${form ? " · 직접 입력" : ""}`}
                   aria-describedby={
                     context ? `question-context-${q.id}` : undefined
                   }
@@ -301,20 +313,20 @@ export function QuestionActions({
                   onChange={(e) =>
                     change(key, { ...draft, text: e.target.value })
                   }
-                /></InputGroup>
+                />
               )}
             </FieldSet>
           );
         })}
         <ServiceStatusNotice inline />
         {error && <FieldError>{error}</FieldError>}
-        <Button
+        {controls(<div className="chat-answer-controls"><span role="status">답변 {answeredCount}/{questions.length}개 작성</span><Button
           className="primary"
           disabled={disabled}
           onClick={() => void submit().catch(() => {})}
         >
           답변 제출
-        </Button>
+        </Button></div>)}
       </section>
     );
   const recovery =
@@ -349,7 +361,7 @@ export function QuestionActions({
         setFeedback(value); sessionStorage.setItem(prefix + "feedback", value);
         document.getElementById(`feedback-${job.id}`)?.focus();
       }} />}
-      <label htmlFor={`feedback-${job.id}`}>{job.can_continue ? "추가 요청 내용" : "수정 의견 보내기"}</label>
+      {controls(<div className="chat-feedback-controls"><label htmlFor={`feedback-${job.id}`}>{job.can_continue ? "추가 요청 내용" : "수정 의견 보내기"}</label>
       <PromptInput
         id={`feedback-${job.id}`}
         label={job.can_continue ? "추가 요청 내용" : "수정 의견 보내기"}
@@ -366,7 +378,7 @@ export function QuestionActions({
           }).catch(() => {});
         }}
       />
-      <Notice>{error}</Notice>
+      <Notice>{error}</Notice></div>)}
       {approval && (
         <Item variant="outline" size="sm" className="spec-confirmation">
           <SealCheckIcon weight="duotone" size={25} aria-hidden />
