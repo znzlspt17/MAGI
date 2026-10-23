@@ -238,6 +238,9 @@ class Server:
             elif method == "continue":
                 job = self.manager.continue_session(_ident(params), params.get("payload"), params.get("execution_id"))
                 payload = self.manager.summary(job["id"])
+            elif method == "retry":
+                job = self.manager.retry(_ident(params), params.get("execution_id"))
+                payload = self.manager.summary(job["id"])
             elif method in {"answer", "revise", "approve"}:
                 job = self.manager.action(_ident(params), method, params.get("payload"))
                 payload = self.manager.summary(job["id"])

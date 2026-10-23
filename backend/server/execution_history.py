@@ -17,13 +17,13 @@ LOGGER = logging.getLogger("backend.server")
 _HISTORY_PATH = "state/execution_history.json"
 _MAX_SUMMARY = 600
 _STAGES = {
-    "generate", "answer", "revise", "approve", "project_context", "web_research",
+    "generate", "answer", "revise", "approve", "retry", "project_context", "web_research",
     "interview", "await_user", "requirement_lock", "spec_compile",
     "checklist_critic", "review_resolution", "compose_candidate", "critical_report",
 }
 _TITLES = {
     "generate": "요청 접수", "answer": "답변 제출", "revise": "수정 의견 제출",
-    "approve": "승인", "project_context": "요청 분석", "web_research": "조사",
+    "approve": "승인", "retry": "다시 시도", "project_context": "요청 분석", "web_research": "조사",
     "interview": "요구사항 확인", "await_user": "요구사항 확인 필요",
     "requirement_lock": "요구사항 확정", "spec_compile": "명세 생성",
     "checklist_critic": "명세 검토", "review_resolution": "해결 방법 판단", "compose_candidate": "승인 후보 준비",
@@ -49,6 +49,7 @@ class ExecutionHistory:
             questions = next((n.get("result", {}).get("blocking_questions") for n in reversed(nodes)
                               if isinstance(n.get("result", {}).get("blocking_questions"), list)), [])
             result.append({"id": execution["id"], "action": execution["action"],
+                           **({"retry_of": execution["retry_of"]} if execution.get("retry_of") else {}),
                            "input": {k: payload[k] for k in ("request", "feedback", "answers") if k in payload},
                            "status": execution.get("status", "running"), "started_at": execution.get("started_at"),
                            "document_step_id": document.get("id"),
@@ -73,6 +74,9 @@ class ExecutionHistory:
             node["result"] = user_result
         data["nodes"].append(node)
         data["executions"].append({"id": execution_id, "action": action, "started_at": _now()})
+        if action == "retry" and isinstance(input_data, dict) and isinstance(input_data.get("retry_of"), str):
+            data["executions"][-1]["retry_of"] = input_data["retry_of"]
+            node["summary"] = "저장된 작업을 다시 시도합니다."
         self._save(data)
         return execution_id
 

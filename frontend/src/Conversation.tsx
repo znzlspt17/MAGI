@@ -26,7 +26,7 @@ export function Conversation({ job, select, onAction, busy }: { job: Job; select
   }, []);
   const { turns, incomplete } = conversationTurns(job);
   const latestEventId = job.session_events?.at(-1)?.id;
-  const waiting = ["NEEDS_USER_INPUT", "waiting"].includes(job.retry_status || job.state?.status || job.status);
+  const waiting = !["error", "interrupted"].includes(job.status) && ["NEEDS_USER_INPUT", "waiting"].includes(job.state?.status || job.status);
   const running = ["queued", "running"].includes(job.status);
   const failed = ["error", "failed", "interrupted", "CRITICAL_BLOCKED", "blocked"].includes(job.status);
   const StatusIcon = running ? CircleNotchIcon : failed ? WarningCircleIcon : ["FINALIZED", "completed"].includes(job.status) ? CheckCircleIcon : waiting || ["PASS_PENDING_USER_APPROVAL", "waiting_approval"].includes(job.status) ? QuestionIcon : ClockIcon;

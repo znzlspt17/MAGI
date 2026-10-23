@@ -93,6 +93,7 @@ export function QuestionActions({
   const submitting = useRef(false);
   const executionKey = `${job.id}:${job.execution_id || "legacy"}:${job.status}`;
   const disabled = busy || pending || approvedExecution === executionKey || serviceState(publicMode, status).blocked;
+  const retryApproval = job.action === "approve" && job.retry_status === "PASS_PENDING_USER_APPROVAL" && !job.read_only;
   const actionClass = conversational ? "action-card conversation-action" : "action-card";
   // 상태는 본문에 유지하고 하단 컨트롤만 포털로 옮긴다.
   const controls = (content: ReactNode) => controlsTarget === undefined ? content : (controlsTarget ? createPortal(content, controlsTarget) : null);
@@ -189,6 +190,20 @@ export function QuestionActions({
       });
     }
   }
+  if (["error", "interrupted"].includes(job.status))
+    return (
+      <section className={actionClass} id="job-actions">
+        <h3>작업이 중단되었습니다</h3>
+        <p>{retryApproval ? "검토가 완료된 명세의 승인을 다시 저장할 수 있습니다." : job.can_retry
+          ? "저장된 답변을 유지하고 마지막 저장 지점부터 다시 시도합니다."
+          : job.retry_unavailable_reason || job.continuation_error || "저장된 처리 상태를 복원할 수 없어 다시 시도할 수 없습니다."}</p>
+        <ServiceStatusNotice inline />
+        {(job.can_retry || retryApproval) && controls(<div className="chat-answer-controls"><Button
+          className="primary" disabled={disabled}
+          onClick={() => void perform(retryApproval ? "approve" : "retry", null).catch(() => {})}
+        >{pending ? "재시도 요청 중…" : retryApproval ? "승인 다시 저장" : "다시 시도"}</Button></div>)}
+      </section>
+    );
   if (job.read_only || (job.status === "FINALIZED" && !job.can_continue))
     return (
       <Notice>
@@ -209,7 +224,7 @@ export function QuestionActions({
     ["REQUIREMENT_NORMALIZATION_FAILED", "SOURCE_COVERAGE_MISSING"].includes(
       job.error_code,
     );
-  if (["NEEDS_USER_INPUT", "waiting"].includes(effective))
+  if (["NEEDS_USER_INPUT", "waiting"].includes(effective) && questions.length > 0)
     return (
       <section className={actionClass} id="job-actions" onKeyDown={(event) => {
         if (event.target instanceof HTMLTextAreaElement && isSubmitShortcut(event)) {

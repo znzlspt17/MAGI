@@ -274,6 +274,20 @@ class KnowledgeStore(ChunkStore, CleanupStore, ProjectDecisionStore):
             artifacts["state/state.json"] = json.dumps(latest["state"], ensure_ascii=False)
             return artifacts
 
+    def workflow_recovery(self, job_id, execution_id):
+        """기존 실행에서 마지막으로 커밋한 단계와 같은 스냅샷의 자료를 반환한다."""
+        from backend.services.workflow_recovery import STAGES
+        with self.transaction(mode='read') as conn:
+            row = conn.execute("SELECT id,stage,state FROM snapshots WHERE job_id=%s AND execution_id=%s "
+                               "AND stage=ANY(%s) ORDER BY sequence DESC LIMIT 1",
+                               (job_id, execution_id, list(STAGES))).fetchone()
+            if row is None:
+                return None
+            artifacts = {item["path"]: item["content"] for item in conn.execute(
+                "SELECT path,content FROM artifacts WHERE snapshot_id=%s", (row["id"],)).fetchall()}
+            from backend.services.workflow_recovery import checkpoint_artifact
+            return checkpoint_artifact(row["state"], artifacts, row["stage"], execution_id)
+
     def node(self, ident):
         with self.transaction(mode='read') as conn:
             node = conn.execute("SELECT n.*,j.project_id FROM nodes n JOIN jobs j ON j.id=n.job_id WHERE n.id=%s", (ident,)).fetchone()

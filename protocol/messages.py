@@ -12,7 +12,7 @@ METHODS |= {"projects.list", "projects.create", "projects.assign", "knowledge.se
             "knowledge.graph", "knowledge.node", "knowledge.document", "knowledge.retry"}
 METHODS |= {"cleanup.catalog", "cleanup.preview", "cleanup.execute"}
 METHODS |= {"projects.decisions", "projects.decisions.register", "projects.decisions.deactivate", "projects.decision_candidates", "projects.reused_decisions"}
-METHODS.add("continue")
+METHODS.update({"continue", "retry"})
 METHODS.add("requirement.review")
 METHODS |= {"implementation.package", "implementation.package.file"}
 METHODS.add("health.check")

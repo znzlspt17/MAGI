@@ -45,7 +45,7 @@ _ENGINE = {
     "FINALIZED",
 }
 _JOB = _ENGINE | _ACTIVE | {"error", "interrupted"}
-_ACTIONS = {"generate", "answer", "revise", "approve"}
+_ACTIONS = {"generate", "answer", "revise", "approve", "retry"}
 _PROVIDERS = {"openai"}
 _NORMALIZATION_ERROR_CODES = {
     "REQUIREMENT_NORMALIZATION_FAILED",
@@ -236,7 +236,7 @@ class JobManager:
         return self.action(ident, "revise", payload, continuation=True)
 
     def action(self, ident: str, action: str, payload: object, *, continuation=False) -> dict:
-        if action not in _ACTIONS - {"generate"}:
+        if action not in _ACTIONS - {"generate", "retry"}:
             raise KeyError(ident)
         with self.lock:
             self._require_open()
@@ -269,7 +269,11 @@ class JobManager:
                 queued_at=now,
                 updated_at=now,
                 queue_order=self._new_order(),
+                last_input=copy.deepcopy(payload),
             )
+            job.pop("retry_blocked", None)
+            for key in ("retry_of", "retry_checkpoint_execution_id", "retry_original_action", "retry_source_execution_id"):
+                job.pop(key, None)
             job.pop("execution_id", None)
             job.pop("recoverable_status", None)
             self._clear_error_metadata(job)
@@ -300,6 +304,96 @@ class JobManager:
     def get(self, ident: str) -> dict:
         with self.lock:
             return self._snapshot(self._get_locked(ident))
+
+    def _retry_plan_locked(self, job):
+        from backend.services.workflow_recovery import CHECKPOINT_PATH, checkpoint_artifact, validate_checkpoint
+        if job["status"] not in {"error", "interrupted"}:
+            raise ValueError("실패하거나 중단된 작업만 다시 시도할 수 있습니다.")
+        original = job.get("retry_original_action", job["action"]) if job["action"] == "retry" else job["action"]
+        if original not in {"generate", "answer", "revise"}:
+            raise ValueError("저장 또는 승인 상태를 먼저 복구해야 합니다. LLM 요청을 다시 실행하지 않았습니다.")
+        from backend.services.completed_specs import require_conversation
+        writer = ArtifactWriter(self._job_root(job["id"]))
+        require_conversation(writer)
+        state = Engine()._load_state(writer)
+        source_id = job.get("retry_source_execution_id", job.get("execution_id")) if job["action"] == "retry" else job.get("execution_id")
+        accepted = {job.get("execution_id"), source_id, job.get("retry_checkpoint_execution_id")}
+        def resume_plan(checkpoint):
+            value = validate_checkpoint(checkpoint)
+            if job.get("retry_blocked") and value["state"].get("resume_stage") is not None:
+                raise ValueError("완료된 처리 결과의 저장 상태를 먼저 복구해야 합니다.")
+            return {"mode": "resume", "checkpoint": value, "original_action": original,
+                    "source_execution_id": source_id}
+        checkpoint_path = writer.path(CHECKPOINT_PATH)
+        if checkpoint_path.is_file():
+            checkpoint = writer.read_json(CHECKPOINT_PATH)
+            if not isinstance(checkpoint, dict):
+                raise ValueError("저장된 재시도 자료가 손상되었습니다.")
+            if checkpoint.get("execution_id") in accepted:
+                return resume_plan(checkpoint)
+        if self.knowledge is not None:
+            for execution in dict.fromkeys([job.get("execution_id"), job.get("retry_checkpoint_execution_id"), source_id]):
+                if execution is None:
+                    continue
+                checkpoint = self.knowledge.store.workflow_recovery(job["id"], execution)
+                if checkpoint is not None:
+                    return resume_plan(checkpoint)
+            records = self.knowledge.store.action_records(job["id"])
+            record = next((r for r in records if r["id"] == source_id and r["action"] == original), None)
+            payload = record.get("input") if record else None
+        else:
+            payload = job.get("last_input")
+        if job.get("retry_blocked"):
+            raise ValueError("완료된 처리 결과의 저장 상태를 먼저 복구해야 합니다.")
+        if original == "generate":
+            from backend.knowledge.runtime import read_artifacts
+            checkpoint = checkpoint_artifact(state.to_dict(), read_artifacts(writer.output_dir), "workflow_entry", source_id)
+            return {"mode": "resume", "checkpoint": checkpoint, "original_action": original,
+                    "source_execution_id": source_id}
+        if not payload:
+            raise ValueError("마지막 요청의 저장된 입력을 복원할 수 없어 다시 시도할 수 없습니다.")
+        from backend.services.workflow_recovery import applied_input_checkpoint
+        checkpoint = applied_input_checkpoint(state, original, payload, writer, source_id)
+        if checkpoint is not None:
+            return resume_plan(checkpoint)
+        return {"mode": "replay", "original_action": original, "input": copy.deepcopy(payload),
+                "source_execution_id": source_id}
+
+    def retry(self, ident, execution_id):
+        with self.lock:
+            self._require_open()
+            job = self._get_locked(ident)
+            if not isinstance(execution_id, str) or execution_id != job.get("execution_id"):
+                raise CleanupConflict("작업 상태가 변경되었습니다. 최신 상태를 확인하세요.")
+            if job["status"] in _ACTIVE or self._activities.get(ident):
+                raise CleanupConflict("이미 실행·번역·저장 중인 세션입니다.")
+            if sum(item["status"] in _ACTIVE for item in self.jobs.values()) >= 20:
+                raise CleanupConflict("작업 큐가 가득 찼습니다.")
+            plan = self._retry_plan_locked(job)
+            plan["retry_of"] = execution_id
+            previous = self._snapshot(job)
+            now = _utc_now()
+            job.update(status="queued", message="작업 대기 중", action="retry", queued_at=now, updated_at=now,
+                       queue_order=self._new_order(), retry_of=execution_id,
+                       retry_checkpoint_execution_id=plan.get("checkpoint", {}).get("execution_id"),
+                       retry_original_action=plan["original_action"], retry_source_execution_id=plan["source_execution_id"])
+            job.pop("recoverable_status", None)
+            job.pop("progress", None)
+            job.pop("retry_blocked", None)
+            self._clear_error_metadata(job)
+            job["execution_id"] = self._start_history_execution_locked(ident, "retry", input_data={"retry_of": execution_id})
+            if not self._save_action_locked(job, plan):
+                self.jobs[ident] = previous
+                raise RuntimeError("재시도 요청을 저장할 수 없습니다.")
+            try:
+                self._submit_locked(ident, "retry", plan)
+            except RuntimeError:
+                self.jobs[ident] = previous
+                self._save_locked(previous)
+                raise
+            snapshot = self._snapshot(job)
+        self._notify(snapshot)
+        return snapshot
 
     def root(self, ident: str) -> Path:
         with self.lock:
@@ -346,6 +440,12 @@ class JobManager:
                 retry_status = source.get("recoverable_status")
                 if isinstance(retry_status, str):
                     result["retry_status"] = retry_status
+                try:
+                    self._retry_plan_locked(source)
+                    result["can_retry"] = True
+                except Exception:
+                    result["can_retry"] = False
+                    result["retry_unavailable_reason"] = "저장된 처리 상태 또는 대화 연결을 복원할 수 없어 다시 시도할 수 없습니다."
             if self._normalization_retry_allowed_locked(source, "revise"):
                 result["retry_action"] = "revise"
             if source["status"] == "queued":
@@ -814,12 +914,16 @@ class JobManager:
             LOGGER.warning("execution history recovery failed exception_type=%s", type(exc).__name__)
         state = self._persisted_state_status_locked(job["id"])
         action = job["action"]
+        checkpoint = self._read_json(self.artifact(job["id"], "state/retry_checkpoint.json")) or {}
+        saved_state = self._read_json(self.artifact(job["id"], "state/state.json")) or {}
+        pending_checkpoint = (checkpoint.get("execution_id") == job.get("execution_id")
+                              and bool(saved_state.get("resume_stage")))
         if state in {
             "NEEDS_USER_INPUT",
             "PASS_PENDING_USER_APPROVAL",
             "CRITICAL_BLOCKED",
             "FINALIZED",
-        } and self._state_was_updated_after_queue_locked(job):
+        } and self._state_was_updated_after_queue_locked(job) and not pending_checkpoint:
             job.update(
                 status=state,
                 message=_message_for_status(state),
@@ -829,7 +933,7 @@ class JobManager:
             return
         job.update(
             status="interrupted",
-            message="작업이 중단되었습니다. 이전 저장 상태로 돌아왔습니다. 수정 또는 답변을 다시 제출하세요.",
+            message="작업이 중단되었습니다. 저장된 상태에서 다시 시도할 수 있는지 확인해주세요.",
             updated_at=_utc_now(),
         )
         if self._can_resume_action(action, state):
@@ -1026,7 +1130,12 @@ class JobManager:
                     latest = "\n".join(item["answer"] for item in payload)
                 runtime.refresh((latest + "\n" + request_text).strip()[:20000])
             engine = self._engine_for_provider(provider)
-            if action == "generate":
+            run_action = payload["original_action"] if action == "retry" and payload["mode"] == "replay" else action
+            run_payload = payload.get("input") if action == "retry" else payload
+            if action == "retry" and payload["mode"] == "resume":
+                result = engine.retry(str(root), checkpoint=payload["checkpoint"],
+                                      on_progress=lambda event: self._engine_progress(ident, event))
+            elif run_action == "generate":
                 result = engine.generate_from_text(
                     text=request_text,
                     reused_decisions=job.get("reused_decisions", []),
@@ -1034,16 +1143,16 @@ class JobManager:
                     web_search_mode="off",
                     on_progress=lambda event: self._engine_progress(ident, event),
                 )
-            elif action == "answer":
+            elif run_action == "answer":
                 result = engine.answer(
                     str(root),
-                    answers=payload,
+                    answers=run_payload,
                     on_progress=lambda event: self._engine_progress(ident, event),
                 )
-            elif action == "revise":
+            elif run_action == "revise":
                 feedback = self.artifact(ident, "raw/web_feedback.md")
                 feedback.parent.mkdir(parents=True, exist_ok=True)
-                feedback.write_text(str(payload).strip() + "\n", encoding="utf-8")
+                feedback.write_text(str(run_payload).strip() + "\n", encoding="utf-8")
                 result = engine.revise(
                     output_dir=str(root),
                     feedback_path=str(feedback),
@@ -1057,6 +1166,8 @@ class JobManager:
             status = result.status if result.status in _ENGINE else "error"
             message = _message_for_status(status)
         except Exception as exc:
+            from backend.services.workflow_recovery import CheckpointPersistenceError
+            retry_blocked = isinstance(exc, CheckpointPersistenceError)
             if self.knowledge is not None:
                 try:
                     from backend.knowledge.runtime import restore_artifacts
@@ -1083,6 +1194,7 @@ class JobManager:
             job.pop("resume_status", None)
             if diagnostic is not None:
                 self._set_error_metadata(job, diagnostic)
+                job["retry_blocked"] = retry_blocked
             else:
                 self._clear_error_metadata(job)
             if status != "error":
@@ -1092,7 +1204,7 @@ class JobManager:
             else:
                 job.pop("recoverable_status", None)
             if not self._save_locked(job):
-                job.update(status="error", message="DB에 작업 결과를 저장하지 못했습니다.")
+                job.update(status="error", message="DB에 작업 결과를 저장하지 못했습니다.", retry_blocked=True)
                 status = "error"
             snapshot = self._snapshot(job)
             execution_id = job.get("execution_id")
@@ -1114,7 +1226,7 @@ class JobManager:
                 RunKnowledge(self.knowledge, job, self._job_root(ident)).commit("terminal", {})
             except RuntimeError:
                 with self.lock:
-                    job.update(status="error", message="DB에 실행 이력을 저장하지 못했습니다.")
+                    job.update(status="error", message="DB에 실행 이력을 저장하지 못했습니다.", retry_blocked=True)
                     snapshot = self._snapshot(job)
                     status = "error"
         self._notify(snapshot)

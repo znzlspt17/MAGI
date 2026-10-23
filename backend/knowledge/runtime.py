@@ -18,6 +18,7 @@ ARTIFACT_PATHS = (
     "state/execution_history.json", "state/provider_usage.json",
     "state/conversation_state.json", "state/prompt_references.json",
     "state/private_model_assignments.json",
+    "state/retry_checkpoint.json",
     "context/project_manifest.json", "context/project_summary.ko.md",
     "analysis/requirement_lock_sheet.json", "analysis/requirement_lock_sheet.ko.md",
     "analysis/spec_trace.json", "review/checklist_issues.json", "review/resolution.json", "review/resolved_draft.en.md",
@@ -337,7 +338,16 @@ class RunKnowledge:
                      "spec_compile", "checklist_critic", "review_resolution", "compose_candidate", "critical_report", "approve"}:
             buffered = stage_history(self.root, artifacts, self.job["execution_id"], stage, merged)
             artifacts.update(buffered)
+        from backend.services.workflow_recovery import CHECKPOINT_PATH, STAGES, checkpoint_artifact
+        if stage in STAGES:
+            checkpoint = checkpoint_artifact(merged, artifacts, stage, self.job["execution_id"])
+            merged["resume_stage"] = checkpoint["state"]["resume_stage"]
+            artifacts["state/state.json"] = json.dumps(merged, ensure_ascii=False)
+            artifacts[CHECKPOINT_PATH] = json.dumps(checkpoint, ensure_ascii=False)
         self.service.store.commit_stage(self.job, self.job["execution_id"], stage, merged, artifacts)
+        if stage in STAGES:
+            restore_artifacts(self.root, {"state/state.json": artifacts["state/state.json"],
+                                         CHECKPOINT_PATH: artifacts[CHECKPOINT_PATH]})
         if stage == "review_resolution" and merged.get("resolution_history"):
             self.resolved_draft_hash = merged["resolution_history"][-1]["draft_hash"]
         if buffered is not None:

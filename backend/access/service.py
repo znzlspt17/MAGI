@@ -22,6 +22,7 @@ PUBLIC_FIELDS.update('research search_method mode performed outcome result_count
 PUBLIC_FIELDS.update('change_review before_id after_id before_hash after_hash before after item_id start end line meaning relation evidence analysed remaining calls diff'.split())
 PUBLIC_FIELDS.update('review_snapshot_id review_status rows unlinked unlinked_total specification acceptance verification spec_status acceptance_status verification_status test_status spec_linked acceptance_linked verification_linked group shared category specification_total acceptance_total verification_total'.split())
 PUBLIC_FIELDS.update('impact recommendation option_ids'.split())
+PUBLIC_FIELDS.update('can_retry retry_unavailable_reason retry_of'.split())
 PUBLIC_FIELDS.update('reused_decisions reused_decision_count source_available registry_id decision_reuse'.split())
 PUBLIC_FIELDS.update('completed_id bundle_id format_version files size sha256 completeness korean_included task_count available total_size file_limit total_limit eof'.split())
 PUBLIC_FIELDS.update('basis node recorded paths path_total inferred topic included omitted recorded_total recorded_included stale change_kind proposal limitations quote'.split())
@@ -87,7 +88,7 @@ class PublicService:
         self.access.throttle(actor['id'])
         if request.get('csrf') is not None and not hmac.compare_digest(str(request['csrf']), actor['csrf']):
             raise AccessError('요청 확인 값이 올바르지 않습니다.')
-        mutations = {'generate','answer','revise','approve','continue','lease.keep','lease.release','lease.resume','auth.logout','knowledge.impact.analyse','projects.create','projects.decisions.register','projects.decisions.deactivate'}
+        mutations = {'generate','answer','revise','approve','continue','retry','lease.keep','lease.release','lease.resume','auth.logout','knowledge.impact.analyse','projects.create','projects.decisions.register','projects.decisions.deactivate'}
         if (method in mutations or method.startswith(('cleanup.','admin.')) or method == 'knowledge.retry' or method == 'document') and method != 'cleanup.catalog':
             if not hmac.compare_digest(str(request.get('csrf','')), actor['csrf']):
                 raise AccessError('요청 확인 값이 필요합니다.')
@@ -164,7 +165,7 @@ class PublicService:
                 if not SAFE_DOC.fullmatch(str(result.get('attrs',{}).get('artifact_path',''))):
                     result.pop('document',None)
                 return user_payload(result)
-            if method in {'generate','answer','revise','approve','continue','lease.resume'}:
+            if method in {'generate','answer','revise','approve','continue','retry','lease.resume'}:
                 return self.admit(actor, request, dispatch)
             if method == 'document':
                 self.manager.get(params.get('id'))

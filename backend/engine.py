@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import os
 from pathlib import Path
 from typing import Callable
@@ -349,6 +350,25 @@ class Engine:
         state = self._load_state(writer)
         return self._result_from_state(state)
 
+    def retry(self, output_dir: str, *, checkpoint: dict, on_progress=None) -> Result:
+        """저장된 단계 결과를 복원하고 다음 단계부터 재개한다."""
+        from backend.knowledge.runtime import restore_artifacts
+        from backend.services.workflow_recovery import validate_checkpoint
+        from backend.services.completed_specs import require_conversation
+        value = validate_checkpoint(checkpoint)
+        writer = ArtifactWriter(output_dir, allow_overwrite=True)
+        require_conversation(writer)
+        state_data = {**value["state"], "output_dir": str(writer.output_dir)}
+        artifacts = {**value["artifacts"], "state/state.json": json.dumps(state_data, ensure_ascii=False)}
+        restore_artifacts(writer.output_dir, artifacts)
+        state = self._load_state(writer)
+        if state.resume_stage is None:
+            self._persist_state(writer, state)
+            _notify_progress(on_progress, value["stage"], "completed")
+            return self._result_from_state(state)
+        evidence = EvidenceRegistry.from_dict(writer.read_json("evidence/evidence_registry.json"))
+        return self._run_workflow(state, writer, evidence, on_progress=on_progress)
+
     def _run_workflow(
         self,
         state: State,
@@ -365,7 +385,11 @@ class Engine:
             skills=skills,
             evidence=evidence,
         )
-        workflow = build_v2_workflow(nodes, on_progress=on_progress)
+        from backend.services.workflow_recovery import save_checkpoint
+        save_checkpoint(writer, evidence, "workflow_entry", state.to_workflow_state(), {})
+        workflow = build_v2_workflow(nodes, on_progress=on_progress,
+                                    checkpoint=lambda stage, before, result: save_checkpoint(
+                                        writer, evidence, stage, before, result))
 
         if HEARTBEAT_PATH not in state.created_artifacts:
             state.created_artifacts.append(HEARTBEAT_PATH)

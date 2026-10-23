@@ -4,7 +4,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./component
 import { Button, formatTime, statusLabel } from "./UI";
 import type { Job, Step } from "./types";
 
-const actions: Record<string, string> = { generate: "최초 요청", answer: "질문에 답변", revise: "수정 요청", approve: "명세 승인" };
+const actions: Record<string, string> = { generate: "최초 요청", answer: "질문에 답변", revise: "수정 요청", approve: "명세 승인", retry: "다시 시도" };
 const meaningful = (text?: string) => text && !["단계를 완료했습니다.", "사용자 작업을 접수했습니다."].includes(text) ? text : "상세 결과 기록 없음";
 
 export function ExecutionTimeline({ job, nodes, selected, select }: { job: Job; nodes: Step[]; selected: string; select: (id: string) => void }) {
@@ -26,7 +26,8 @@ export function ExecutionTimeline({ job, nodes, selected, select }: { job: Job; 
           {event?.input?.request && <p>{event.input.request}</p>}{event?.input?.feedback && <p>{event.input.feedback}</p>}
           {event?.input?.answers?.map((answer, i) => <div className="execution-answer" key={i}><h4>질문</h4><p>{answer.question || "질문 원문 기록 없음"}</p><h4>답변</h4><p>{answer.answer || "답변 기록 없음"}</p>{answer.question_id && <details><summary>질문 참조</summary><code>{answer.question_id}</code></details>}</div>)}
           {event?.action === "approve" && <p>사용자가 명세를 승인했습니다.</p>}
-          {!event?.input?.request && !event?.input?.feedback && !event?.input?.answers?.length && event?.action !== "approve" && <p>저장된 사용자 입력이 없습니다.</p>}
+          {event?.action === "retry" && <p>이전에 저장된 입력과 처리 결과를 이어서 사용합니다.</p>}
+          {!event?.input?.request && !event?.input?.feedback && !event?.input?.answers?.length && !["approve", "retry"].includes(event?.action || "") && <p>저장된 사용자 입력이 없습니다.</p>}
         </section>
         {!!questions.length && <section><h3>요구사항 확인 {steps.some(n => n.status === "waiting") ? "· 답변 대기" : ""}</h3><ol>{questions.map((q, i) => <li key={i}>{q.replace(/^\[[^\]]+\]\s*/, "")}</li>)}</ol></section>}
         <Collapsible className="execution-steps"><CollapsibleTrigger className="execution-detail-trigger">하위 처리 단계 {steps.length}개<CaretDownIcon size={14} aria-hidden /></CollapsibleTrigger><CollapsibleContent>

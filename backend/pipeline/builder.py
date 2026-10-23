@@ -17,26 +17,36 @@ def build_v2_workflow(
     nodes: WorkflowNodes,
     *,
     on_progress: Callable[[dict[str, str]], None] | None = None,
+    checkpoint=None,
 ):
     """Build the v2 SpecForge pipeline graph."""
     graph = StateGraph(WorkflowState)
 
-    graph.add_node("project_context", _stage("project_context", nodes.project_context, on_progress))
-    graph.add_node("web_research", _stage("web_research", nodes.web_research, on_progress))
-    graph.add_node("interview", _stage("interview", nodes.interview, on_progress))
-    graph.add_node("await_user", _stage("await_user", nodes.await_user, on_progress))
-    graph.add_node("requirement_lock_stage", _stage("requirement_lock", nodes.requirement_lock_stage, on_progress))
-    graph.add_node("spec_compile", _stage("spec_compile", nodes.spec_compile, on_progress))
-    graph.add_node("checklist_critic", _stage("checklist_critic", nodes.checklist_critic_node, on_progress))
-    graph.add_node("review_resolution", _stage("review_resolution", nodes.review_resolution, on_progress))
-    graph.add_node("compose_candidate", _stage("compose_candidate", nodes.compose_candidate, on_progress))
-    graph.add_node("critical_report", _stage("critical_report", nodes.critical_report, on_progress))
+    def stage(name, node):
+        return _stage(name, node, on_progress, checkpoint=checkpoint)
+
+    graph.add_node("project_context", stage("project_context", nodes.project_context))
+    graph.add_node("web_research", stage("web_research", nodes.web_research))
+    graph.add_node("interview", stage("interview", nodes.interview))
+    graph.add_node("await_user", stage("await_user", nodes.await_user))
+    graph.add_node("requirement_lock_stage", stage("requirement_lock", nodes.requirement_lock_stage))
+    graph.add_node("spec_compile", stage("spec_compile", nodes.spec_compile))
+    graph.add_node("checklist_critic", stage("checklist_critic", nodes.checklist_critic_node))
+    graph.add_node("review_resolution", stage("review_resolution", nodes.review_resolution))
+    graph.add_node("compose_candidate", stage("compose_candidate", nodes.compose_candidate))
+    graph.add_node("critical_report", stage("critical_report", nodes.critical_report))
 
     graph.add_conditional_edges(
         START,
         route_from_start,
         {
             "project_context": "project_context",
+            "web_research": "web_research",
+            "await_user": "await_user",
+            "checklist_critic": "checklist_critic",
+            "review_resolution": "review_resolution",
+            "compose_candidate": "compose_candidate",
+            "critical_report": "critical_report",
             "interview": "interview",
             "requirement_lock_stage": "requirement_lock_stage",
             "spec_compile": "spec_compile",
@@ -76,7 +86,7 @@ def build_v2_workflow(
     return graph.compile()
 
 
-def _stage(name: str, node, callback):
+def _stage(name: str, node, callback, *, checkpoint=None):
     def wrapped(state):
         _progress(callback, name, "started")
         error = None
@@ -102,7 +112,9 @@ def _stage(name: str, node, callback):
                 CURRENT_RETRY.reset(token)
         from backend.knowledge.runtime import CURRENT
         runtime = CURRENT.get()
-        if runtime is not None:
+        if checkpoint is not None:
+            checkpoint(name, state, result)
+        elif runtime is not None:
             runtime.commit(name, state, result)
         _progress(callback, name, "completed", result, state)
         return result
@@ -161,10 +173,12 @@ def route_after_interview(
 
 def route_from_start(
     state: WorkflowState,
-) -> Literal["project_context", "interview", "requirement_lock_stage", "spec_compile"]:
+) -> str:
     """Resume only the stages that need to be recomputed."""
     stage = state.get("resume_stage")
-    if stage in {"interview", "requirement_lock_stage", "spec_compile"}:
+    if stage in {"project_context", "web_research", "interview", "requirement_lock_stage",
+                 "spec_compile", "checklist_critic", "review_resolution", "compose_candidate",
+                 "critical_report", "await_user"}:
         return stage
     return "project_context"
 

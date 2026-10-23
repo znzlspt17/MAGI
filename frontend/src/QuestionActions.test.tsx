@@ -15,6 +15,29 @@ const forms={
 const job=(id='first'):Job=>({id,status:'NEEDS_USER_INPUT',state:{blocking_questions:['[S] 운영체제','[M] 기능','[T] 추가 설명'],question_forms:forms,saved_answers:[]}});
 const group=(name:string)=>within(screen.getByRole('group',{name:new RegExp(name)}));
 describe('질문 답변',()=>{
+ it('오류 상태에서는 질문 0개 제출 대신 재시도하며 연속 클릭을 막는다',async()=>{
+  let resolve!:()=>void;
+  const action=vi.fn(()=>new Promise<void>(done=>{resolve=done;}));
+  render(<QuestionActions job={{id:'failed',status:'error',execution_id:'e1',can_retry:true,retry_status:'NEEDS_USER_INPUT',state:{status:'NEEDS_USER_INPUT',blocking_questions:[]}}} onAction={action} busy={false}/>);
+  expect(screen.queryByRole('button',{name:'답변 제출'})).toBeNull();
+  const button=screen.getByRole('button',{name:'다시 시도'});
+  fireEvent.click(button); fireEvent.click(button);
+  expect(action).toHaveBeenCalledExactlyOnceWith('retry',null);
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+  await act(async()=>resolve());
+ });
+ it('복구 불가능한 오류는 이유를 표시하고 빈 제출 영역을 만들지 않는다',()=>{
+  render(<QuestionActions job={{id:'failed',status:'error',can_retry:false,retry_unavailable_reason:'복구 자료가 없습니다.',state:{status:'NEEDS_USER_INPUT',blocking_questions:[]}}} onAction={vi.fn()} busy={false}/>);
+  expect(screen.getByText('복구 자료가 없습니다.')).toBeTruthy();
+  expect(screen.queryByRole('button',{name:'답변 제출'})).toBeNull();
+  expect(screen.queryByRole('button',{name:'다시 시도'})).toBeNull();
+ });
+ it('승인 저장 실패는 기존 승인 경로로 복구하고 LLM 재시도를 보내지 않는다',async()=>{
+  const action=vi.fn().mockResolvedValue(undefined);
+  render(<QuestionActions job={{id:'approval',status:'error',action:'approve',can_retry:false,retry_status:'PASS_PENDING_USER_APPROVAL'}} onAction={action} busy={false}/>);
+  await act(async()=>fireEvent.click(screen.getByRole('button',{name:'승인 다시 저장'})));
+  expect(action).toHaveBeenCalledExactlyOnceWith('approve',null);
+ });
  it('변경 검토 실패에도 승인을 허용하며 확인 질문을 기존 수정 의견에 추가한다',()=>{
   const action=vi.fn();
   const value:Job={id:'review',status:'PASS_PENDING_USER_APPROVAL',change_review:{status:'failed',after_hash:'hash',analysed:0,remaining:1,sources:[],changes:[{

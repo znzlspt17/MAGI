@@ -314,7 +314,7 @@ def create_app(config: dict | None = None) -> Flask:
 
     @app.post("/api/jobs/<ident>/<action>")
     def action(ident, action):
-        if action not in {"answer", "revise", "approve", "continue"}:
+        if action not in {"answer", "revise", "approve", "continue", "retry"}:
             abort(404)
         data = _json()
         try:

@@ -55,6 +55,8 @@ export interface Job extends RecordData {
   request?: string;
   status: string;
   execution_id?: string;
+  can_retry?: boolean;
+  retry_unavailable_reason?: string;
   state?: RecordData;
   change_review?: ChangeReviewData;
   session_events?: SessionEvent[];
@@ -90,6 +92,7 @@ export interface ChangeReviewData {
 export interface SessionEvent {
   id: string;
   action: string;
+  retry_of?: string;
   input?: {
     request?: string;
     feedback?: string;
