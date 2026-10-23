@@ -55,9 +55,9 @@
 .chat-workspace .eyebrow { display: none; }
 .chat-workspace .conversation-action h3 { margin: 0 0 8px; font-size: 14px; letter-spacing: -.2px; }
 .chat-workspace .action-card > p { margin: 0 0 14px; font-size: 12px; }
-.chat-workspace .question-form { margin: 16px 0; border: 1px solid #e7e4ec; background: #fff; border-radius: 12px; padding: 15px; }
-.chat-workspace .question-form legend { padding: 0 5px; font-size: 14px; }
-.chat-workspace .question-form textarea { background: #fff; min-height: 85px; padding: 12px; border: 0; }
+.chat-workspace .question-form { margin: 10px 0; border: 0; background: transparent; border-radius: 0; padding: 0; }
+.chat-workspace .question-form legend { padding: 0; margin-bottom: 4px; font-size: 13px; }
+.chat-workspace .question-form textarea { background: #fff; border: 0; }
 .chat-workspace .question-option { font-size: 14px; line-height: 1.7; }
 .chat-workspace .question-hint { color: #6d687b; font-size: 12px; }
 .chat-workspace .action-card > .button { width: auto; min-width: 120px; margin-top: 4px; }
@@ -119,6 +119,8 @@
 .chat-feedback-controls > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .expandable-input { position: relative; width: 100%; min-width: 0; }
 .chat-prompt .expandable-input textarea, .question-form .expandable-input textarea { min-height: 0; max-height: none; resize: none; padding: 12px 44px 12px 14px; line-height: 27px; field-sizing: fixed; }
+.chat-workspace .question-form .expandable-input textarea { min-height: 44px; padding: 9px 48px 9px 12px; line-height: 24px; border: 1px solid #e7e4ec; border-radius: 8px; }
+.chat-workspace .question-form .expand-input { top: 2px; right: 0; }
 .expand-input { position: absolute; right: 7px; top: 7px; color: #6d687b; }
 .expanded-editor { width: min(760px, calc(100vw - 24px)); height: min(680px, calc(100dvh - 24px)); background: #fafaf9; border: 1px solid #ded8e9; border-radius: 18px; padding: 24px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 20px 60px #26243430; }
 .expanded-editor [data-slot="dialog-title"] { padding-right: 24px; font-size: 18px; line-height: 1.5; margin: 0; }
