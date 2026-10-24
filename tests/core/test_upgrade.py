@@ -4,6 +4,19 @@ import pytest
 
 from backend.knowledge.projection import digest
 from backend.knowledge.upgrade import migrate_business, install
+from backend.knowledge.config import KnowledgeError
+
+
+def test_legacy_state_validation_has_safe_cli_reason(legacy_store):
+    with legacy_store.transaction() as conn:
+        conn.execute("SET LOCAL search_path TO public")
+        conn.execute("INSERT INTO projects(id,name) VALUES ('p','검증')")
+        conn.execute("INSERT INTO jobs(id,project_id,data) VALUES ('j','p','{}')")
+        conn.execute(
+            "INSERT INTO snapshots(id,job_id,execution_id,stage,state) VALUES ('s','j','e','spec_compile','{}')"
+        )
+    with pytest.raises(KnowledgeError, match="현재 실행 형식으로 전환되지 않은 과거 상태"):
+        migrate_business(legacy_store)
 
 
 def test_business_upgrade_preserves_all_original_versions_and_rejects_drift(

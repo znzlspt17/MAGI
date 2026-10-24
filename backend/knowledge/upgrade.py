@@ -65,7 +65,7 @@ def migrate_business(store):
         if conn.execute(
             "SELECT 1 FROM public.snapshots WHERE state->>'workflow_schema' IS DISTINCT FROM '1' LIMIT 1"
         ).fetchone():
-            raise ValueError("현재 실행 형식으로 전환되지 않은 과거 상태가 있습니다.")
+            raise KnowledgeError("현재 실행 형식으로 전환되지 않은 과거 상태가 있습니다.")
         if conn.execute(
             "SELECT to_regclass('core.installation') AS name"
         ).fetchone()["name"]:
@@ -112,7 +112,7 @@ def migrate_business(store):
         for row in rows:
             checksum = content_hash(row["content"])
             if checksum != row["content_hash"]:
-                raise ValueError("원본 문서 해시가 일치하지 않습니다.")
+                raise KnowledgeError("원본 문서 해시가 일치하지 않습니다.")
             conn.execute(
                 "INSERT INTO document_bodies(job_id,hash,content) VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
                 (row["job_id"], checksum, row["content"]),
@@ -131,7 +131,7 @@ def migrate_business(store):
             if row["path"].endswith("state/provider_usage.json"):
                 usage = json.loads(row["content"])
                 if not isinstance(usage.get("attempts"), list):
-                    raise ValueError("관측 사용량 형식을 확인할 수 없습니다.")
+                    raise KnowledgeError("관측 사용량 형식을 확인할 수 없습니다.")
                 scope = row["path"][: -len("state/provider_usage.json")]
                 conn.execute(
                     "INSERT INTO model_usage(job_id,scope,data) VALUES (%s,%s,%s) ON CONFLICT(job_id,scope) DO UPDATE SET data=EXCLUDED.data",
@@ -160,7 +160,7 @@ def migrate_business(store):
                         (jid, document.pop("ref")),
                     ).fetchone()
                     if not version:
-                        raise ValueError("실행 이력의 문서 참조가 없습니다.")
+                        raise KnowledgeError("실행 이력의 문서 참조가 없습니다.")
                     document["version_id"] = version["id"]
                 conn.execute(
                     "INSERT INTO execution_events(id,job_id,execution_id,data) VALUES (%s,%s,%s,%s) "
@@ -330,7 +330,7 @@ def convert_checkpoints(store):
             graph = AgentWorkflow(None, None, docs, None).build(saver)
             snapshot = graph.get_state(config)
             if not snapshot.values or snapshot.values.get("workflow_schema") != 1:
-                raise ValueError(
+                raise KnowledgeError(
                     "전환할 공식 checkpoint가 없거나 실행 버전이 다릅니다."
                 )
             previous = snapshot.values
@@ -342,7 +342,7 @@ def convert_checkpoints(store):
             ]:
                 if state.get(key):
                     if not docs.exists(name):
-                        raise ValueError("실행 상태가 가리키는 문서가 없습니다.")
+                        raise KnowledgeError("실행 상태가 가리키는 문서가 없습니다.")
                     state[key] = name
             if state.get("status") == "FINALIZED" and not snapshot.next:
                 graph.update_state(config, state, as_node="finalize")
@@ -355,15 +355,15 @@ def convert_checkpoints(store):
                 if graph.get_state(config).next != ("wait",) or not any(
                     t.interrupts for t in graph.get_state(config).tasks
                 ):
-                    raise ValueError("질문·승인 대기를 복원하지 못했습니다.")
+                    raise KnowledgeError("질문·승인 대기를 복원하지 못했습니다.")
             elif snapshot.next:
                 # 실패한 노드는 사용자 재개까지 그대로 보존한다.
                 if any(k not in allowed for k in previous):
-                    raise ValueError(
+                    raise KnowledgeError(
                         "실패 checkpoint에 지원하지 않는 상태가 남았습니다. 별도 확인이 필요합니다."
                     )
             else:
-                raise ValueError("완료·대기·실패 중 어느 상태인지 확인할 수 없습니다.")
+                raise KnowledgeError("완료·대기·실패 중 어느 상태인지 확인할 수 없습니다.")
             after = graph.get_state(config)
             for key in (
                 "original_user_request",
@@ -372,7 +372,7 @@ def convert_checkpoints(store):
                 "user_approval_status",
             ):
                 if previous.get(key) != after.values.get(key):
-                    raise ValueError("원문·요구사항·승인 상태가 변경되었습니다.")
+                    raise KnowledgeError("원문·요구사항·승인 상태가 변경되었습니다.")
             records = saver.conn.execute(
                 "SELECT task_id,payload FROM workflow_task_results WHERE thread_id=%s AND status='completed'",
                 (job["id"],),
@@ -444,7 +444,7 @@ def verify_and_enable(store, *, application_role):
             (application_role,),
         ).fetchone()
         if not service or service["rolsuper"] or service["rolbypassrls"]:
-            raise ValueError("일반 서비스 DB 역할을 지정하세요.")
+            raise KnowledgeError("일반 서비스 DB 역할을 지정하세요.")
         role = sql.Identifier(application_role)
         conn.execute(
             sql.SQL(

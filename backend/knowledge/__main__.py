@@ -17,6 +17,7 @@ def main():
     if config is None:
         parser.error("PostgreSQL 설정이 필요합니다.")
     store = KnowledgeStore(config)
+    phase = args.command
     try:
         if args.command == "install":
             from backend.knowledge.upgrade import install
@@ -30,8 +31,11 @@ def main():
                 convert_checkpoints,
             )
 
+            phase = "migrate_business"
             counts = migrate_business(store)
+            phase = "initialize_checkpoints"
             initialize_checkpoints(store)
+            phase = "convert_checkpoints"
             converted = convert_checkpoints(store)
             result = {
                 "phase": "converted",
@@ -55,11 +59,11 @@ def main():
                 service.close()
         print(json.dumps(result, ensure_ascii=False))
     except KnowledgeError as exc:
-        parser.exit(1, str(exc) + "\n")
+        parser.exit(1, "단계: " + phase + " — " + str(exc) + "\n")
     except Exception as exc:
         parser.exit(
             1,
-            "설치·전환을 완료하지 못했습니다. 오류 유형: " + type(exc).__name__ + "\n",
+            "설치·전환을 완료하지 못했습니다. 단계: " + phase + " 오류 유형: " + type(exc).__name__ + "\n",
         )
 
 
