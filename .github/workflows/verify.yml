@@ -2,7 +2,6 @@ name: Verify MAGI
 
 on:
   pull_request:
-  push:
   workflow_call:
 
 permissions:
