@@ -49,4 +49,4 @@ FROM runtime AS backend
 COPY --from=backend-deps /app/.venv /app/.venv
 COPY backend ./backend
 COPY protocol ./protocol
-CMD ["python", "-m", "backend.server"]
+CMD ["python", "-m", "protocol.container", "python", "-m", "backend.server"]
