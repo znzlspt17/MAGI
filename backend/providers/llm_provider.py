@@ -21,8 +21,8 @@ from backend.infrastructure.model_usage import UsageObservation
 class ChatModelProvider:
     provider_name = "openai"
 
-    def __init__(self, api_key: str | None = None) -> None:
-        self.api_key = api_key
+    def __init__(self, api_key: str | None = None, *, meter=None) -> None:
+        self.api_key, self.meter = api_key, meter
 
     def validate_credentials(self) -> None:
         # 키의 해석과 접속은 공식 통합이 담당한다. 검증 중 외부 호출은 하지 않는다.
@@ -30,18 +30,15 @@ class ChatModelProvider:
         if not self.api_key and not os.environ.get("OPENAI_API_KEY"):
             raise MissingCredentialError("OPENAI_API_KEY is not set for MAGI runtime.")
 
-    def complete(self, messages: list[dict], **kwargs) -> str:
-        return self.complete_result(messages, **kwargs).text
 
     def complete_result(
         self, messages: list[dict], *, model: str,
         temperature: float | None = None, instructions: str | None = None,
         text_format: type[BaseModel] | None = None,
-        cache_key: str | None = None, comparison_response_id: str | None = None,
+        cache_key: str | None = None,
     ) -> CompletionResult:
         require_model(model)
-        from backend.access.context import METER
-        meter = METER.get()
+        meter = self.meter
         options: dict[str, Any] = {
             "model_provider": "openai", "use_responses_api": True,
             "use_previous_response_id": False, "max_retries": 0,
@@ -128,7 +125,3 @@ def completion_result(message: AIMessage, parsed=None) -> CompletionResult:
 
 def _count(value):
     return value if type(value) is int and 0 <= value <= 2**63 - 1 else None
-
-
-# 기존 Python API 주입 지점을 보존한다. SDK 구현은 포함하지 않는다.
-OpenAIProvider = ChatModelProvider

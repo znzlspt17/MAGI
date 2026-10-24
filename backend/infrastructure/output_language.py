@@ -3,7 +3,7 @@
 import re
 
 from backend.errors import Error
-from backend.models import InterviewResponse, LockResponse, ReviewResponse, SpecResponse, SpecDraftResponse, ReportResponse
+from backend.models import InterviewResponse, LockResponse, ReviewResponse, SpecResponse, SpecDraftResponse
 from backend.models import ReviewResolutionResponse
 from backend.models import SpecTranslationResponse
 from backend.models import QuestionFormSpec
@@ -16,7 +16,6 @@ LANGUAGE_RULES = {
     "spec_compile": "All section prose: English. Preserve code, paths, product names and necessary original quotations. Put original-language quotations in <original_quote>...</original_quote> blocks or Markdown blockquotes; code belongs in code spans or fenced blocks.",
     "review_resolution": "resolution_reason, missing_information, decision_question, required_change: Korean. Quote proposed English specification wording verbatim. Keep IDs and basis_refs unchanged.",
     "checklist_critic": "problem, required_change and decision_question explanations: Korean. Proposed sentences to insert into the specification: English, quoted or in code blocks. Preserve evidence.quote and identifiers verbatim.",
-    "critical_reporter": "summary, blocking_causes, required_user_decisions and resume_conditions: Korean. Preserve quoted evidence, code, paths and technical identifiers verbatim.",
 }
 
 
@@ -116,11 +115,6 @@ def language_issues(value):
         guidance(value, "form")
     elif isinstance(value, SpecTranslationResponse):
         field("content", value.content, "ko")
-    elif isinstance(value, ReportResponse):
-        field("summary", value.summary, "ko")
-        for name in ("blocking_causes", "required_user_decisions", "resume_conditions"):
-            for index, text in enumerate(getattr(value, name)):
-                field(f"{name}[{index}]", text, "ko")
     return checks
 
 

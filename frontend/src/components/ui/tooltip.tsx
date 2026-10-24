@@ -1,9 +1,9 @@
 // shadcn/ui MIT; adapted from ba1503c64472b82256d9de95e2e62c5901a38e8b
 "use client"
 
+import * as TooltipPrimitive from "@radix-ui/react-tooltip"
 import * as React from "react"
 import { cn } from "../../lib/utils"
-import * as TooltipPrimitive from "@radix-ui/react-tooltip"
 
 function TooltipProvider({
   delayDuration = 0,
@@ -54,4 +54,4 @@ function TooltipContent({
   )
 }
 
-export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider }
+export { Tooltip,TooltipContent,TooltipProvider,TooltipTrigger }

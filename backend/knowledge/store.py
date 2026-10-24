@@ -18,7 +18,7 @@ WRITE_LOCK = 72410636
 
 from backend.knowledge.chunk_store import ChunkStore
 from backend.knowledge.cleanup import CleanupStore, MAINTENANCE_LOCK
-from backend.access.context import ACTOR, TRANSACTION, METER, AccessError
+from backend.access.context import ACTOR, TRANSACTION, AccessError
 
 
 from backend.knowledge.project_decisions import ProjectDecisionStore
@@ -55,6 +55,7 @@ class KnowledgeStore(ChunkStore, CleanupStore, ProjectDecisionStore):
                     if mode == "read":
                         # 여러 쿼리로 구성된 그래프·문서 조회는 같은 버전을 읽는다.
                         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                    conn.execute("SET LOCAL search_path TO core,public")
                     stage = "statement_timeout"
                     conn.execute("SET LOCAL statement_timeout = '15s'")
                     stage = "maintenance_lock"
@@ -87,10 +88,6 @@ class KnowledgeStore(ChunkStore, CleanupStore, ProjectDecisionStore):
             )
             raise KnowledgeError("DB 작업에 실패했습니다. 연결·권한·스키마 상태를 확인하세요.") from None
 
-    def migrate(self):
-        from backend.knowledge.schema import migrate
-        return migrate(self)
-
     @staticmethod
     def _json(value):
         from psycopg.types.json import Jsonb
@@ -109,15 +106,14 @@ class KnowledgeStore(ChunkStore, CleanupStore, ProjectDecisionStore):
             conn.execute("INSERT INTO projects(id,name,owner_id) VALUES (%s,%s,%s) ON CONFLICT(id) DO NOTHING", (ident, name.strip(), ACTOR.get()['id'] if ACTOR.get() else None))
             return conn.execute("SELECT id,name FROM projects WHERE id=%s", (ident,)).fetchone()
 
-    def save_job(self, job):
+    def save_job(self, job, *, expected_generation=None):
         with self.transaction() as conn:
-            self._save_job(conn, job)
+            self._save_job(conn, job, expected_generation=expected_generation)
 
-    def _save_job(self, conn, job):
-        meter=METER.get()
-        if meter is not None and job['id']==meter.jid:
+    def _save_job(self, conn, job, *, expected_generation=None):
+        if expected_generation is not None:
             lease=conn.execute('SELECT job_id,generation,phase FROM service_lease WHERE singleton=1').fetchone()
-            if lease['job_id']!=meter.jid or lease['generation']!=meter.generation or lease['phase']!='running':
+            if lease['job_id']!=job['id'] or lease['generation']!=expected_generation or lease['phase']!='running':
                 raise AccessError('이전 작업의 저장을 차단했습니다.', 'busy')
         if conn.execute("SELECT 1 FROM deleted_jobs WHERE id=%s", (job["id"],)).fetchone():
             raise ValueError("삭제된 작업은 다시 저장할 수 없습니다.")
@@ -130,7 +126,7 @@ class KnowledgeStore(ChunkStore, CleanupStore, ProjectDecisionStore):
 
     def jobs(self):
         with self.transaction(mode='read') as conn:
-            return [row["data"] for row in conn.execute("SELECT data FROM jobs ORDER BY id").fetchall()]
+            return [{**row["data"], "owner_id":row["owner_id"]} for row in conn.execute("SELECT data,owner_id FROM jobs ORDER BY id").fetchall()]
 
     def accept_job(self, job, payload):
         # 내부 프로젝트와 최초 요청을 하나의 트랜잭션으로 접수한다.
@@ -160,33 +156,13 @@ class KnowledgeStore(ChunkStore, CleanupStore, ProjectDecisionStore):
 
     def commit_stage(self, job, execution, stage, state, artifacts, *, connection=None):
         nodes, edges = ([], []) if stage == "impact_review" else project(job["id"], state, artifacts, stage)
-        # 실행·단계·내용을 포함하므로 동일 재전송은 멱등이고 후속 버전은 보존된다.
-        supplements = ("translations/", "impact_reviews/", "impact_requests/")
-        identity_artifacts = artifacts if stage in {"import", "translation", "impact_review"} else {
-            path: content for path, content in artifacts.items() if not path.startswith(supplements)}
-        snapshot = digest([job["id"], execution, stage, state, identity_artifacts])
+        snapshot = digest([job["id"], execution, stage, nodes, edges])
         with (self.transaction() if connection is None else nullcontext(connection)) as conn:
             conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (job["id"],))
-            if conn.execute("SELECT id FROM snapshots WHERE id=%s", (snapshot,)).fetchone():
-                return snapshot
-            if stage not in {"import", "translation", "impact_review"}:
-                durable = conn.execute("SELECT path,content FROM artifacts WHERE snapshot_id="
-                    "(SELECT id FROM snapshots WHERE job_id=%s ORDER BY sequence DESC LIMIT 1) "
-                    "AND (path LIKE 'translations/%%' OR path LIKE 'impact_reviews/%%' OR path LIKE 'impact_requests/%%')",
-                    (job["id"],)).fetchall()
-                artifacts = {path: content for path, content in artifacts.items() if not path.startswith(supplements)}
-                artifacts.update({row["path"]: row["content"] for row in durable})
-            self._save_job(conn, job)
-            conn.execute("INSERT INTO executions(id,job_id,data) VALUES (%s,%s,%s) "
-                         "ON CONFLICT(id) DO UPDATE SET data=executions.data || EXCLUDED.data",
-                         (execution, job["id"], self._json({"stage": stage, "status": state.get("status")})))
-            inserted = conn.execute("INSERT INTO snapshots(id,job_id,execution_id,stage,state) VALUES (%s,%s,%s,%s,%s) "
-                                    "ON CONFLICT DO NOTHING RETURNING id", (snapshot, job["id"], execution, stage, self._json(state))).fetchone()
+            inserted = conn.execute("INSERT INTO projection_commits(id,job_id) VALUES (%s,%s) "
+                                    "ON CONFLICT DO NOTHING RETURNING id", (snapshot,job["id"])).fetchone()
             if not inserted:
                 return snapshot
-            for path, content in artifacts.items():
-                conn.execute("INSERT INTO artifacts(id,job_id,snapshot_id,path,content,content_hash) VALUES (%s,%s,%s,%s,%s,%s)",
-                             (digest([snapshot, path]), job["id"], snapshot, path, content, digest(content)))
             owned = {"requirement_lock": ("requirement", "decision"), "spec_compile": ("spec", "decision"),
                      "checklist_critic": ("review",), "review_resolution": ("review",)}.get(stage, ())
             for kind in owned:
@@ -228,34 +204,18 @@ class KnowledgeStore(ChunkStore, CleanupStore, ProjectDecisionStore):
                 self._edge(conn, source, node_ids[edge["target"]], edge["kind"], edge["attrs"])
         return snapshot
 
-    def save_prompt_references(self, job_id, content):
-        """원격 호출 전에 대응표만 최신 스냅샷에 원자적으로 첨부한다."""
-        self._save_supplement(job_id, {"state/prompt_references.json": content}, "prompt_references")
+    def documents(self, job_id):
+        from backend.knowledge.core import Documents
+        return Documents(self, job_id)
 
-    def save_translation(self, job_id, translated):
-        from backend.knowledge.runtime import is_artifact_path
-        if not translated or any(not path.startswith("translations/") or not is_artifact_path(path) for path in translated):
-            raise ValueError("번역 산출물 경로가 올바르지 않습니다.")
-        self._save_supplement(job_id, translated, "translation")
+    def state(self, job_id):
+        return dict(self.documents(job_id).workflow_snapshot().values)
 
-    def save_impact(self, job_id, artifacts):
-        from backend.knowledge.runtime import is_artifact_path
-        if not artifacts or any(not path.startswith(("impact_reviews/", "impact_requests/")) or not is_artifact_path(path) for path in artifacts):
-            raise ValueError("영향 분석 산출물 경로가 올바르지 않습니다.")
-        self._save_supplement(job_id, artifacts, "impact_review")
-
-    def _save_supplement(self, job_id, translated, stage):
-        with self.transaction() as conn:
-            conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (job_id,))
-            job = conn.execute("SELECT data FROM jobs WHERE id=%s", (job_id,)).fetchone()
-            latest = conn.execute("SELECT id,state,execution_id FROM snapshots WHERE job_id=%s ORDER BY sequence DESC LIMIT 1", (job_id,)).fetchone()
-            if job is None or latest is None:
-                raise KeyError(job_id)
-            rows = conn.execute("SELECT path,content FROM artifacts WHERE snapshot_id=%s", (latest["id"],)).fetchall()
-            artifacts = {row["path"]: row["content"] for row in rows}
-            artifacts.update(translated)
-            # 실행 중인 작업의 최신 상태를 잠근 채 부가 산출물만 추가한다.
-            self.commit_stage(job["data"], latest["execution_id"], stage, latest["state"], artifacts, connection=conn)
+    def require_ready(self):
+        with self.transaction(mode="read") as conn:
+            row = conn.execute("SELECT version,verified FROM core.installation WHERE singleton").fetchone()
+            if not row or row["version"] != 2 or not row["verified"]:
+                raise KnowledgeError("업무 저장소 전환 검증을 먼저 완료하세요.")
 
     def _edge(self, conn, source, target, kind, attrs=None):
         # 다른 작업의 생성 중 원본이 정리되면 본문은 보존하고 끊긴 재사용 연결만 생략한다.
@@ -263,30 +223,6 @@ class KnowledgeStore(ChunkStore, CleanupStore, ProjectDecisionStore):
             return
         conn.execute("INSERT INTO edges(id,source,target,kind,attrs) VALUES (%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
                      (digest([source, target, kind]), source, target, kind, self._json(attrs or {})))
-
-    def restore(self, job_id):
-        with self.transaction(mode='read') as conn:
-            latest = conn.execute("SELECT id,state FROM snapshots WHERE job_id=%s ORDER BY sequence DESC LIMIT 1", (job_id,)).fetchone()
-            if latest is None:
-                return {}
-            rows = conn.execute("SELECT path,content FROM artifacts WHERE snapshot_id=%s", (latest["id"],)).fetchall()
-            artifacts = {row["path"]: row["content"] for row in rows}
-            artifacts["state/state.json"] = json.dumps(latest["state"], ensure_ascii=False)
-            return artifacts
-
-    def workflow_recovery(self, job_id, execution_id):
-        """기존 실행에서 마지막으로 커밋한 단계와 같은 스냅샷의 자료를 반환한다."""
-        from backend.services.workflow_recovery import STAGES
-        with self.transaction(mode='read') as conn:
-            row = conn.execute("SELECT id,stage,state FROM snapshots WHERE job_id=%s AND execution_id=%s "
-                               "AND stage=ANY(%s) ORDER BY sequence DESC LIMIT 1",
-                               (job_id, execution_id, list(STAGES))).fetchone()
-            if row is None:
-                return None
-            artifacts = {item["path"]: item["content"] for item in conn.execute(
-                "SELECT path,content FROM artifacts WHERE snapshot_id=%s", (row["id"],)).fetchall()}
-            from backend.services.workflow_recovery import checkpoint_artifact
-            return checkpoint_artifact(row["state"], artifacts, row["stage"], execution_id)
 
     def node(self, ident):
         with self.transaction(mode='read') as conn:
@@ -300,7 +236,7 @@ class KnowledgeStore(ChunkStore, CleanupStore, ProjectDecisionStore):
             path = node["attrs"].get("artifact_path")
             content_hash = node["attrs"].get("artifact_hash")
             if path and content_hash:
-                doc = conn.execute("SELECT content FROM artifacts WHERE job_id=%s AND path=%s AND content_hash=%s LIMIT 1",
+                doc = conn.execute("SELECT b.content FROM document_versions d JOIN document_bodies b ON (b.job_id,b.hash)=(d.job_id,d.content_hash) WHERE d.job_id=%s AND d.name=%s AND d.content_hash=%s LIMIT 1",
                                    (node["job_id"], path, content_hash)).fetchone()
                 if doc:
                     # 전송 한도를 지키고 전체 문서는 별도 페이지로 제공한다.
@@ -319,7 +255,7 @@ class KnowledgeStore(ChunkStore, CleanupStore, ProjectDecisionStore):
         if type(offset) is not int or offset < 0:
             raise ValueError("문서 위치가 올바르지 않습니다.")
         with self.transaction(mode='read') as conn:
-            row = conn.execute("SELECT content FROM artifacts WHERE job_id=%s AND path=%s AND content_hash=%s LIMIT 1",
+            row = conn.execute("SELECT b.content FROM document_versions d JOIN document_bodies b ON (b.job_id,b.hash)=(d.job_id,d.content_hash) WHERE d.job_id=%s AND d.name=%s AND d.content_hash=%s LIMIT 1",
                                (job_id, path, content_hash)).fetchone()
             if not row:
                 raise KeyError(path)

@@ -28,10 +28,6 @@ class PermissionDeniedError(Error):
     """Raised when an agent tries to use a skill outside its permission set."""
 
 
-class ConversationUnavailableError(Error):
-    """Conversations 상태를 사용할 수 없어 새 생성이 필요할 때 발생한다."""
-
-
 class ReviewValidationError(Error):
     """검토 응답 오류를 제품 명세 결함과 구분한다."""
 

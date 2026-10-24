@@ -1,4 +1,4 @@
-"""Loopback Flask compatibility API and browser event relay."""
+"""Loopback Flask API and browser event relay."""
 
 from __future__ import annotations
 
@@ -198,27 +198,12 @@ def create_app(config: dict | None = None) -> Flask:
         except ClientError as exc:
             return _client_error(exc)
 
-    @app.post("/api/jobs")
-    def create():
-        data = _json()
-        request_text = data.get("request")
-        demo = data.get("demo")
-        provider = data.get("provider")
-        if (
-            not isinstance(request_text, str)
-            or (demo is not None and not isinstance(demo, bool))
-            or (provider is not None and not isinstance(provider, str))
-        ):
-            return jsonify(error="입력 형식이 올바르지 않습니다."), 400
+    @app.post("/api/commands")
+    def job_command():
         try:
-            return jsonify(
-                client().call(
-                    "generate",
-                    {"request": request_text, "demo": demo, "provider": provider, "project_id": data.get("project_id"), "decision_reuse": data.get("decision_reuse")},
-                )
-            ), 202
+            return jsonify(client().call("job.command", _json())), 202
         except ClientError as exc:
-            return _client_error(exc, mutation=True)
+            return _client_error(exc)
 
     @app.route("/api/projects", methods=["GET", "POST"])
     def projects():
@@ -272,9 +257,6 @@ def create_app(config: dict | None = None) -> Flask:
             response.headers["Cache-Control"] = "no-store"
         return response
 
-    @app.put("/api/jobs/<ident>/project")
-    def assign_project(ident):
-        return jsonify(error="프로젝트 이동은 지원이 종료되었습니다. 대화 세션을 사용하세요."), 410
 
     @app.get("/api/knowledge/<action>")
     def knowledge(action):
@@ -309,16 +291,6 @@ def create_app(config: dict | None = None) -> Flask:
             response = jsonify(client().call("knowledge.impact.analyse", payload))
             response.headers["Cache-Control"] = "no-store"
             return response
-        except ClientError as exc:
-            return _client_error(exc, mutation=True)
-
-    @app.post("/api/jobs/<ident>/<action>")
-    def action(ident, action):
-        if action not in {"answer", "revise", "approve", "continue", "retry", "message"}:
-            abort(404)
-        data = _json()
-        try:
-            return jsonify(client().call(action, {"id": ident, "payload": data.get("payload"), "execution_id": data.get("execution_id")})), 202
         except ClientError as exc:
             return _client_error(exc, mutation=True)
 

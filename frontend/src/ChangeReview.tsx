@@ -41,7 +41,6 @@ export function ChangeReview({ review, onQuestion }: { review?: ChangeReviewData
       {review.remaining === null ? <p role="status">변경 범위를 확인하지 못했습니다.</p> : review.status === "unchanged" ? <p>비교 가능한 본문 변경이 없습니다. 의미의 안전성을 보증하는 결과는 아닙니다.</p> :
         <p role="status">본문 변경 {review.changes.length}건 중 {review.analysed}건 분석 · {review.remaining === null ? "남은 범위 확인 불가" : `${review.remaining}건 미분석`}</p>}
       {["failed", "partial", "running"].includes(review.status) && <p className="change-warning">일부 또는 전체 변경 분석을 완료하지 못했습니다. 원문을 확인한 후 승인할 수 있습니다.</p>}
-      {review.legacy && <p className="subtle">일부 후보에 전체 블록 자료가 없어 원문 섹션으로 비교했습니다.</p>}
       {requested.length > 0 && <section><h4>요청 반영</h4><ul>{requested.map(item => <ChangeItem key={item.id} item={item} review={review} />)}</ul></section>}
       {other.length > 0 && <section><h4>함께 달라진 내용</h4><ul>{other.map(item => <ChangeItem key={item.id} item={item} review={review} />)}</ul></section>}
       {questions.length > 0 && <section><h4>확인할 사항</h4><ul>{questions.map(item => <li key={item.id}><p>{item.question}</p>

@@ -31,7 +31,7 @@ class CleanupStore:
         counts = {}
         for table, (where, values) in clauses.items():
             counts[table] = conn.execute(f"SELECT count(*) AS total FROM {table} WHERE {where}", (values,)).fetchone()["total"]
-        for table in ("nodes", "artifacts", "snapshots", "executions"):
+        for table in ("nodes", "document_versions", "document_bodies", "execution_events", "model_usage", "history_archive", "projection_commits", "executions"):
             counts[table] = conn.execute(f"SELECT count(*) AS total FROM {table} WHERE job_id=ANY(%s)", (job_ids,)).fetchone()["total"]
         edges = conn.execute(f"SELECT id,source,target FROM edges WHERE source IN ({nodes}) OR target IN ({nodes}) ORDER BY id", (job_ids, job_ids)).fetchall()
         owned = {r["id"] for r in conn.execute(nodes, (job_ids,)).fetchall()}
@@ -55,7 +55,7 @@ class CleanupStore:
         conn.execute(f"DELETE FROM chunk_vectors WHERE chunk_id IN (SELECT id FROM chunks WHERE node_id IN ({nodes}))", (ids,))
         for table in ("chunks", "chunk_sets", "embeddings", "embedding_queue"):
             conn.execute(f"DELETE FROM {table} WHERE node_id IN ({nodes})", (ids,))
-        for table in ("nodes", "artifacts", "snapshots", "executions"):
+        for table in ("nodes", "document_versions", "document_bodies", "execution_events", "model_usage", "history_archive", "projection_commits", "executions"):
             conn.execute(f"DELETE FROM {table} WHERE job_id=ANY(%s)", (ids,))
         conn.execute("DELETE FROM jobs WHERE id=ANY(%s)", (ids,))
         conn.execute("DELETE FROM projects WHERE id=ANY(%s)", ([p["id"] for p in inventory["projects"]],))

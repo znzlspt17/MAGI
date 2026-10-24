@@ -13,7 +13,6 @@ from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
 from backend.knowledge.trace import DecisionTrace, SpecLink
 
 
-
 STATUS_ANALYZING = "ANALYZING"
 STATUS_APPROVED = "APPROVED"
 STATUS_COMPILING = "COMPILING"
@@ -331,28 +330,13 @@ class LockResponse(ResponseModel):
 
 
 @dataclass(slots=True)
-class Result:
-    status: str
-    output_dir: str
-    approval_candidate_path: str | None = None
-    final_spec_path: str | None = None
-    critical_report_path: str | None = None
-    state_path: str | None = None
-    heartbeat_path: str | None = None
-    questions_path: str | None = None
-
-
-@dataclass(slots=True)
 class State:
     run_id: str
     status: str
     user_request: str
-    input_source: str
-    project_dir: str | None
-    output_dir: str
     original_user_request: str = ""
     web_search_mode: str = "auto"
-    pipeline_version: str = "v2"
+    research: dict[str, Any] = field(default_factory=dict)
     # interview stage
     request_type: str = ""
     assumptions: list[str] = field(default_factory=list)
@@ -375,19 +359,16 @@ class State:
     critic_pass_count: int = 0
     max_critic_passes: int = 3
     # artifact tracking
-    evidence_registry_path: str = ""
-    project_manifest_path: str | None = None
-    web_sources_path: str | None = None
     approval_candidate_spec: str | None = None
     final_agent_spec: str | None = None
     latest_completed: dict[str, str] | None = None
     critical_report: str | None = None
     user_approval_status: str = "PENDING"
-    resume_stage: str | None = None
     revision_feedback: str = ""
     revision_history: list[str] = field(default_factory=list)
     created_artifacts: list[str] = field(default_factory=list)
-    workflow_schema: int = 0
+    workflow_schema: int = 1
+    migration_origin: dict[str, Any] = field(default_factory=dict)
     revision: int = 0
     plan: dict[str, Any] = field(default_factory=dict)
     plan_history: list[dict[str, Any]] = field(default_factory=list)
@@ -462,21 +443,6 @@ class Question:
     text: str
     direction_changing: bool
     applies_to: tuple[str, ...]
-
-
-class ReportResponse(ResponseModel):
-    summary: str = Field(description='Korean report summary.')
-    blocking_causes: list[str] = Field(description='Korean explanations of blocking causes.')
-    required_user_decisions: list[str] = Field(description='Korean requests for user decisions.')
-    resume_conditions: list[str] = Field(description='Korean observable conditions for resuming.')
-
-    def markdown(self) -> str:
-        sections = ["# 명세 생성 차단 보고서", self.summary]
-        for title, values in (("차단 원인", self.blocking_causes),
-                              ("필요한 사용자 결정", self.required_user_decisions),
-                              ("재개 조건", self.resume_conditions)):
-            sections.append("## " + title + "\n\n" + ("\n".join("- " + value for value in values) or "- 없음"))
-        return "\n\n".join(sections) + "\n"
 
 
 @dataclass(slots=True)
@@ -852,62 +818,9 @@ def assemble_spec_draft(draft, sheet, task_plan=None):
     return SpecResponse(decisions=draft.decisions, spec_links=links, **sections)
 
 
-class WorkflowState(TypedDict, total=False):
-    workflow_schema: int
-    revision: int
-    plan: dict[str, Any]
-    plan_history: list[dict[str, Any]]
-    task_results: list[dict[str, Any]]
-    task_messages: dict[str, list[dict[str, Any]]]
-    knowledge_context: dict[str, Any]
-    completed_tasks: list[str]
-    segment_steps: int
-    execution_segment: int
-    wait_reason: str
-    allowed_actions: list[str]
-    candidate_hash: str
-    document_versions: list[dict[str, Any]]
-    pending_input: dict[str, Any]
-    run_id: str
-    status: str
-    user_request: str
-    original_user_request: str
-    input_source: str
-    project_dir: str | None
-    output_dir: str
-    web_search_mode: str
-    pipeline_version: str
-    request_type: str
-    assumptions: list[str]
-    question_forms: dict[str, Any]
-    blocking_questions: list[str]
-    awaiting_input_reason: Literal["interview", "review"] | None
-    review_questions: list[dict[str, Any]]
-    review_history: list[dict[str, Any]]
-    resolution_history: list[dict[str, Any]]
-    diagnosed_keys: list[str]
-    resolution_stop: bool
-    confirmed_user_sources: dict[str, str]
-    reused_decisions: list[dict[str, Any]]
-    interview_pre_answers: list[dict[str, Any]]
-    _interview_direction_changing: bool
-    requirement_lock: str
-    requirement_lock_sheet: dict[str, Any] | None
-    structured_issues: list[dict[str, Any]]
-    critic_pass_count: int
-    max_critic_passes: int
-    evidence_registry_path: str
-    project_manifest_path: str | None
-    web_sources_path: str | None
-    approval_candidate_spec: str | None
-    final_agent_spec: str | None
-    latest_completed: dict[str, str] | None
-    critical_report: str | None
-    user_approval_status: str
-    created_artifacts: list[str]
-    resume_stage: str | None
-    revision_feedback: str
-    revision_history: list[str]
+# 실행 상태의 필드 목록은 State 한 곳에서 정의한다.
+from typing import get_type_hints
+WorkflowState = TypedDict("WorkflowState", {**get_type_hints(State), "_interview_direction_changing": bool}, total=False)
 
 
 STAGE_SCHEMAS = {
@@ -917,7 +830,6 @@ STAGE_SCHEMAS = {
     "spec_compile": SpecDraftResponse,
     "checklist_critic": ReviewResponse,
     "review_resolution": ReviewResolutionResponse,
-    "critical_reporter": ReportResponse,
 }
 
 

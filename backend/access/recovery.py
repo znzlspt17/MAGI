@@ -6,7 +6,7 @@ from decimal import Decimal
 import logging
 import threading
 
-from backend.access.context import ACTOR, METER
+from backend.access.context import ACTOR
 from backend.server.execution_history import ExecutionHistory
 
 
@@ -66,7 +66,6 @@ class WorkerRecovery:
             return
         # 요청·작업자 문맥으로 정리 권한이나 비용 계측을 상속하지 않는다.
         actor_token = ACTOR.set(None)
-        meter_token = METER.set(None)
         try:
             with self.lock:
                 failures = list(self.pending.values())
@@ -81,7 +80,6 @@ class WorkerRecovery:
                         if self.pending.get(failure.execution) is failure:
                             self.pending.pop(failure.execution)
         finally:
-            METER.reset(meter_token)
             ACTOR.reset(actor_token)
             self.retry_lock.release()
 
@@ -111,9 +109,6 @@ class WorkerRecovery:
                     updated.pop('_initial_reservation', None)
                     updated.update(status='error', message='작업 실행에 실패했습니다. 입력과 기록은 보존됩니다.',
                                    updated_at=datetime.now(UTC).isoformat())
-                    resume = updated.get('resume_status')
-                    if not failure.entered and manager._can_resume_action(updated['action'], resume):
-                        updated['recoverable_status'] = resume
                     # 메모리 상태는 COMMIT이 성공한 뒤에만 바꾼다.
                     service.store._save_job(c, updated)
                     c.execute('UPDATE executions SET data=data || %s WHERE id=%s AND job_id=%s',
@@ -131,9 +126,8 @@ class WorkerRecovery:
             else:
                 job.clear()
                 job.update(updated)
-            manager._export_job_locked(job)
             try:
-                ExecutionHistory(manager._job_root(execution.ident)).terminal(
+                ExecutionHistory(manager.workspace.documents(execution.ident)).terminal(
                     execution.execution_id, 'error', updated['message'])
             except Exception as exc:
                 LOGGER.warning('worker failure history unavailable exception_type=%s', type(exc).__name__)

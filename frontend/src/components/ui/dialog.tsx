@@ -1,12 +1,12 @@
 // shadcn/ui MIT; adapted from ba1503c64472b82256d9de95e2e62c5901a38e8b
 "use client"
 
+import * as DialogPrimitive from "@radix-ui/react-dialog"
 import * as React from "react"
 import { cn } from "../../lib/utils"
-import * as DialogPrimitive from "@radix-ui/react-dialog"
 
-import { Button } from "./button"
 import { XIcon } from "../../icons"
+import { Button } from "./button"
 
 function Dialog({
   ...props
@@ -26,11 +26,7 @@ function DialogPortal({
   return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
 }
 
-function DialogClose({
-  ...props
-}: React.ComponentProps<typeof DialogPrimitive.Close>) {
-  return <DialogPrimitive.Close data-slot="dialog-close" {...props} />
-}
+
 
 function DialogOverlay({
   className,
@@ -142,14 +138,13 @@ function DialogDescription({
 }
 
 export {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogOverlay,
-  DialogPortal,
-  DialogTitle,
-  DialogTrigger,
+Dialog,
+DialogContent,
+DialogDescription,
+DialogFooter,
+DialogHeader,
+DialogOverlay,
+DialogPortal,
+DialogTitle,
+DialogTrigger
 }

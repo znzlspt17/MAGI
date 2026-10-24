@@ -1,18 +1,10 @@
 // shadcn/ui MIT; adapted from ba1503c64472b82256d9de95e2e62c5901a38e8b
-import * as React from "react"
-import { cva, type VariantProps } from "class-variance-authority"
-import { cn } from "../../lib/utils"
 import * as Slot from "@radix-ui/react-slot"
+import { cva, type VariantProps } from "class-variance-authority"
+import * as React from "react"
+import { cn } from "../../lib/utils"
 
-function BubbleGroup({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="bubble-group"
-      className={cn("flex min-w-0 flex-col gap-2", className)}
-      {...props}
-    />
-  )
-}
+
 
 const bubbleVariants = cva(
   "group/bubble relative flex w-fit max-w-[80%] min-w-0 flex-col gap-1 group-data-[align=end]/message:self-end data-[align=end]:self-end data-[variant=ghost]:max-w-full",
@@ -102,24 +94,9 @@ const bubbleReactionsVariants = cva(
   }
 )
 
-function BubbleReactions({
-  side = "bottom",
-  align = "end",
-  className,
-  ...props
-}: React.ComponentProps<"div"> & {
-  align?: "start" | "end"
-  side?: "top" | "bottom"
-}) {
-  return (
-    <div
-      data-slot="bubble-reactions"
-      data-align={align}
-      data-side={side}
-      className={cn(bubbleReactionsVariants({ side, align }), className)}
-      {...props}
-    />
-  )
-}
 
-export { BubbleGroup, Bubble, BubbleContent, BubbleReactions }
+
+export {
+Bubble,
+BubbleContent
+}

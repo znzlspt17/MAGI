@@ -1,4 +1,4 @@
-"""Small synchronous client used by the Flask compatibility layer."""
+"""Synchronous client for the Flask gateway."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from uuid import uuid4
 from websockets.sync.client import connect
 
 from protocol.messages import MAX_MESSAGE_BYTES
+from protocol.errors import HTTP_STATUS, UNCERTAIN_METHODS, REJECTED_CODES
 
 
 class ClientError(RuntimeError):
@@ -42,7 +43,7 @@ class Client:
         except Exception as exc:
             raise ClientError(
                 "작업 서버에 연결할 수 없습니다. 서버 상태를 확인하세요.",
-                uncertain=method in {"generate", "answer", "revise", "approve", "continue", "cleanup.execute", "knowledge.impact.analyse"},
+                uncertain=method in UNCERTAIN_METHODS,
             ) from exc
         try:
             response = _response(raw, request_id)
@@ -50,21 +51,21 @@ class Client:
             raise ClientError(
                 str(exc),
                 status=exc.status,
-                uncertain=method in {"generate", "answer", "revise", "approve", "continue", "cleanup.execute", "knowledge.impact.analyse"},
+                uncertain=method in UNCERTAIN_METHODS,
             ) from exc
         if "error" in response:
             error = response["error"]
             if not isinstance(error, dict):
                 raise ClientError("작업 서버 응답을 확인할 수 없습니다.")
-            statuses = {"not_found": 404, "invalid": 400, "conflict": 409, "busy":409, 'quota':429, 'unauthorized':401,'forbidden':403,'configuration':503,"unavailable": 503, "translation_invalid": 502}
+
             code = error.get("code")
             raise ClientError(
                 error.get("message", "요청을 처리하지 못했습니다."),
-                status=statuses.get(code, 503),
+                status=HTTP_STATUS.get(code, 503),
                 response_received=True,
                 uncertain=(
-                    method in {"generate", "answer", "revise", "approve", "continue", "cleanup.execute", "knowledge.impact.analyse"}
-                    and code not in {"not_found", "invalid", "conflict",'busy','quota','unauthorized','forbidden','configuration'}
+                    method in UNCERTAIN_METHODS
+                    and code not in REJECTED_CODES
                 ),
             )
         return response.get("result")

@@ -69,7 +69,7 @@ def normalize(text):
 
 
 def read_json(writer, path, default=None):
-    return writer.read_json(path) if writer.path(path).is_file() else default
+    return writer.read_json(path) if writer.exists(path) else default
 
 
 def document_blocks(text, supplied=()):
@@ -180,7 +180,7 @@ def _change(before, after, kind):
 def _events(writer):
     from backend.server.execution_history import ExecutionHistory
     return [{"id": event["id"], "action": event["action"], "input": event["input"]}
-            for event in ExecutionHistory(writer.output_dir).conversation() if event.get("input")]
+            for event in ExecutionHistory(writer).conversation() if event.get("input")]
 
 
 def _snapshot(writer, spec, state):
@@ -191,7 +191,7 @@ def _snapshot(writer, spec, state):
     sheet = state.get("requirement_lock_sheet") or {}
     from backend.knowledge.trace import add_source, confirmed_sources
     # 복원 중 확장되는 출처 캐시 대신 불변 사용자 입력으로 동일한 출처 표를 만든다.
-    sources = confirmed_sources(state, {})
+    sources = confirmed_sources(state)
     for feedback in history:
         add_source(sources, "user_feedback", feedback)
     for event in events:
@@ -206,36 +206,13 @@ def _snapshot(writer, spec, state):
     data = {"content": normalize(spec), "blocks": document_blocks(spec, supplied),
             "requirements": sheet, "reused_decisions": state.get("reused_decisions", []), "decisions": read_json(writer, "analysis/spec_trace.json", {}),
             "events": events, "revision_history": history, "answers": sheet.get("user_answers", []),
-            "sources": sources, "compiled_blocks": supplied,
-            "legacy": not bool(supplied)}
+            "sources": sources, "compiled_blocks": supplied}
     from backend.services.implementation_plan import PATH, valid_plan
     plan = read_json(writer, PATH)
     if valid_plan(plan, spec):
         data["implementation_plan"] = plan
     data["id"] = digest(data)
     return data
-
-
-def _legacy_snapshot(writer):
-    from backend.server.execution_history import ExecutionHistory
-    history = ExecutionHistory(writer.output_dir)
-    raw = read_json(writer, "state/execution_history.json", {})
-    for node in reversed(raw.get("nodes", [])):
-        if node.get("stage") != "compose_candidate" or not node.get("has_document"):
-            continue
-        detail = history.detail(node["id"]) or {}
-        text = detail.get("document", {}).get("content")
-        if not text:
-            continue
-        events = _events(writer)
-        index = next((i for i, event in enumerate(events) if event["id"] == node.get("execution_id")), None)
-        data = {"content": normalize(text), "blocks": document_blocks(text), "legacy": True,
-                "events": events[:index + 1] if index is not None else [], "requirements": {},
-                "decisions": {}, "sources": {}, "revision_history": [], "answers": []}
-        data["legacy_step_id"] = node["id"]
-        data["id"] = digest(data)
-        return data
-    return None
 
 
 def _sources(before, after):
@@ -315,12 +292,7 @@ def _priority(change, sources, after):
 
 
 def _persist(writer, path, report, state):
-    writer.write_json_atomic(path, report)
-    # 호출 시작 기록도 DB 복원 시 사라지지 않도록 같은 산출물 경로로 커밋한다.
-    from backend.knowledge.runtime import CURRENT
-    runtime = CURRENT.get()
-    if runtime is not None:
-        runtime.commit("change_review", state)
+    writer.write_json(path, report)
 
 
 def _validate(value, batch, sources):
@@ -346,8 +318,8 @@ def review_candidate(context, state, spec):
     writer = context.writer
     after = _snapshot(writer, spec, state)
     snapshot_path = f"candidate_snapshots/{after['id']}.json"
-    if not writer.path(snapshot_path).exists():
-        writer.write_json_atomic(snapshot_path, after)
+    if not writer.exists(snapshot_path):
+        writer.write_json(snapshot_path, after)
     try:
         report = _review_snapshot(context, state, after)
     except Exception as exc:
@@ -356,8 +328,8 @@ def review_candidate(context, state, spec):
                   "after_id": after["id"], "after_hash": digest(after["content"]),
                   "changes": [], "sources": [], "analysed": 0, "remaining": None}
     # 분석 실패와 무관하게 이번에 준비된 후보를 다음 비교의 기준으로 보존한다.
-    writer.write_json_atomic(CURRENT_REVIEW, report)
-    writer.write_json_atomic(LATEST, {"id": after["id"]})
+    writer.write_json(CURRENT_REVIEW, report)
+    writer.write_json(LATEST, {"id": after["id"]})
     return report
 
 
@@ -379,12 +351,12 @@ def _review_snapshot(context, state, after):
         before = read_json(writer, f"candidate_snapshots/{baseline_id}.json") if baseline_id else None
     else:
         baseline_id = latest.get("id")
-        before = read_json(writer, f"candidate_snapshots/{baseline_id}.json") if baseline_id else _legacy_snapshot(writer)
+        before = read_json(writer, f"candidate_snapshots/{baseline_id}.json") if baseline_id else None
     if baseline_id and (not isinstance(before, dict) or before.get("id") != baseline_id
                         or digest({key: value for key, value in before.items() if key != "id"}) != baseline_id):
         raise ValueError("Candidate snapshot is missing or corrupt")
-    if before and not writer.path(f"candidate_snapshots/{before['id']}.json").exists():
-        writer.write_json_atomic(f"candidate_snapshots/{before['id']}.json", before)
+    if before and not writer.exists(f"candidate_snapshots/{before['id']}.json"):
+        writer.write_json(f"candidate_snapshots/{before['id']}.json", before)
     sources = _sources(before, after) if before else []
     key = digest([VERSION, before["id"] if before else None, after["id"], sources])
     cache_path = f"change_reviews/{key}.json"
@@ -393,7 +365,7 @@ def _review_snapshot(context, state, after):
         changes = collect_changes(before, after) if before else []
         report = {"version": VERSION, "before_id": before["id"] if before else None, "after_id": after["id"],
                   "before_hash": digest(before["content"]) if before else None, "after_hash": digest(after["content"]),
-                  "status": "running", "legacy": bool(before and before["legacy"]) or after["legacy"],
+                  "status": "running",
                   "sources": sources, "changes": changes, "calls": 0, "analysed": 0, "remaining": len(changes)}
         _persist(writer, cache_path, report, state)
         # 요청 원문과 연결된 변경을 먼저 보내되 나머지도 반드시 보존한다.
@@ -431,7 +403,7 @@ def _review_snapshot(context, state, after):
     report["status"] = ("no_baseline" if before is None else "unchanged" if not report["changes"] else
                         "partial" if report["remaining"] and report["analysed"] else
                         "failed" if report["remaining"] else "complete")
-    writer.write_json_atomic(cache_path, report)
+    writer.write_json(cache_path, report)
     return report
 
 

@@ -9,12 +9,9 @@ from typing import Any
 from uuid import uuid4
 
 from backend.errors import RequirementNormalizationError
-from backend.infrastructure.provider_output import extract_json_object
 from backend.models import LockResponse
 from backend.infrastructure.output_language import language_issues
 from backend.infrastructure.stage_retry import attempt_limit, retry_messages
-from backend.infrastructure.prompt_messages import complete as complete_messages
-from backend.infrastructure.prompt_messages import flatten
 from backend.infrastructure.prompt_messages import messages as build_messages
 from backend.infrastructure.prompts import load_prompt
 from backend.models import InterviewResult
@@ -37,9 +34,8 @@ class RequirementLockBuilder:
         manifest: dict[str, Any],
         interview: InterviewResult,
         *,
-        provider_complete_fn: Any | None = None,
-        provider_messages_fn: Any | None = None,
-        allow_fallback: bool = False,
+        runtime=None,
+        provider_messages_fn: Any,
     ) -> RequirementLockSheet:
         user_request = str(
             state.get("original_user_request") or state.get("user_request", "")
@@ -47,28 +43,21 @@ class RequirementLockBuilder:
         if state.get("requirement_lock_sheet") is not None:
             RequirementLockSheet.from_dict(state["requirement_lock_sheet"])
         payload = _build_messages(state, manifest, interview, user_request)
-        del allow_fallback
         original_payload = payload
         limit = attempt_limit()
         for attempt in range(limit):
             # 통신 오류는 검증 보정과 분리하고 그대로 전달한다.
-            raw = complete_messages(
-                payload,
-                provider_complete_fn=provider_complete_fn,
-                provider_messages_fn=provider_messages_fn,
-            )
+            raw = provider_messages_fn(payload)
             try:
-                try:
-                    parsed = raw.model_dump() if isinstance(raw, LockResponse) else extract_json_object(raw)
-                except (AttributeError, TypeError, ValueError):
-                    parsed = None
-                if isinstance(raw, LockResponse):
-                    details = language_issues(raw)
-                    if details:
-                        raise _normalization_error("language", details)
+                if not isinstance(raw, LockResponse):
+                    raise _response_validation_error(None)
+                parsed = raw.model_dump()
+                details = language_issues(raw)
+                if details:
+                    raise _normalization_error("language", details)
                 if not _valid_lock_response(parsed):
                     raise _response_validation_error(parsed)
-                sheet = _parse_sheet(parsed, interview=interview, user_request=user_request)
+                sheet = _parse_sheet(parsed, interview=interview)
                 from backend.services.workflow_constraints import validate_workflow, user_sources, validate_product_boundary
                 try:
                     validate_workflow(sheet.workflow_constraints, user_sources(state))
@@ -80,9 +69,7 @@ class RequirementLockBuilder:
                 actual_sources = user_sources(state)
                 _validate_decision_coverage(sheet, [answer for answer in interview.pre_answers
                     if "user_answer:" + answer.question_id in actual_sources], str(state.get("revision_feedback") or ""))
-                from backend.knowledge.runtime import CURRENT
                 from backend.knowledge.trace import validate_decisions
-                runtime = CURRENT.get()
                 retrieved = runtime.reusable_ids() if runtime else []
                 previous = (state.get("requirement_lock_sheet") or {}).get("decisions", [])
                 if runtime is not None:
@@ -92,7 +79,7 @@ class RequirementLockBuilder:
                     validate_decisions(sheet.decisions, sheet.to_dict(), retrieved,
                                        str(state.get("revision_feedback") or ""), user_request,
                                        runtime.confirmed_sources(state) if runtime else None,
-                                       previous)
+                                       previous, state.get("reused_decisions", []))
                 except ValueError:
                     raise _normalization_error("trace", ["Decision trace references are invalid."]) from None
                 from backend.services.project_decisions import validate_requirement_sources
@@ -143,84 +130,31 @@ def _build_messages(
     )
 
 
-def _build_prompt(
-    user_request: str,
-    interview: InterviewResult,
-    *,
-    previous_sheet: Any,
-    revision_feedback: str,
-) -> str:
-    """기존 문자열 콜백 검증용 호환 진입점이다."""
-    state = {
-        "user_request": user_request,
-        "original_user_request": user_request,
-        "requirement_lock_sheet": previous_sheet,
-        "revision_feedback": revision_feedback,
-        "revision_history": [revision_feedback] if revision_feedback else [],
-    }
-    return flatten(_build_messages(state, {}, interview, user_request))
-
 def _parse_sheet(
     parsed: dict[str, Any] | None,
     *,
     interview: InterviewResult,
-    user_request: str,
 ) -> RequirementLockSheet:
     if not isinstance(parsed, dict):
         raise RequirementNormalizationError("Requirement lock response is invalid.")
 
-    def _req_list(key: str, prefix: str) -> list[RequirementItem]:
-        raw = parsed.get(key, [])
-        if not isinstance(raw, list):
-            return []
-        result = []
-        for i, item in enumerate(raw):
-            if isinstance(item, dict):
-                result.append(RequirementItem.from_dict(item))
-            elif isinstance(item, str) and item.strip():
-                result.append(
-                    RequirementItem(
-                        id=f"{prefix}-{i + 1:03d}",
-                        text=item.strip(),
-                        source="user_request",
-                    )
-                )
-        return result
+    def _req_list(key: str) -> list[RequirementItem]:
+        return [RequirementItem.from_dict(item) for item in parsed[key]]
 
-    def _asm_list() -> list[AssumptionItem]:
-        raw = parsed.get("assumptions", [])
-        if not isinstance(raw, list):
-            return []
-        result = []
-        for i, item in enumerate(raw):
-            if isinstance(item, dict):
-                result.append(AssumptionItem.from_dict(item))
-            elif isinstance(item, str) and item.strip():
-                result.append(
-                    AssumptionItem(id=f"ASM-{i + 1:03d}", text=item.strip(), risk="low")
-                )
-        return result
-
-    def _str_list(key: str) -> list[str]:
-        raw = parsed.get(key, [])
-        if isinstance(raw, list):
-            return [str(s).strip() for s in raw if str(s).strip()]
-        return []
-
-    mandatory = _req_list("mandatory_requirements", "REQ")
+    mandatory = _req_list("mandatory_requirements")
     return RequirementLockSheet(
         lock_id=f"lock_{uuid4().hex[:8]}",
         request_type=interview.request_type,
-        request_summary=str(parsed.get("request_summary", user_request)),
+        request_summary=parsed["request_summary"],
         user_answers=list(interview.pre_answers),
         mandatory_requirements=mandatory,
-        recommended_requirements=_req_list("recommended_requirements", "REC"),
-        optional_requirements=_req_list("optional_requirements", "OPT"),
-        non_scope=_req_list("non_scope", "NS"),
-        assumptions=_asm_list(),
-        constraints=_req_list("constraints", "CON"),
-        workflow_constraints=_req_list("workflow_constraints", "WF"),
-        acceptance_criteria_seed=_str_list("acceptance_criteria_seed"),
+        recommended_requirements=_req_list("recommended_requirements"),
+        optional_requirements=_req_list("optional_requirements"),
+        non_scope=_req_list("non_scope"),
+        assumptions=[AssumptionItem.from_dict(item) for item in parsed["assumptions"]],
+        constraints=_req_list("constraints"),
+        workflow_constraints=_req_list("workflow_constraints"),
+        acceptance_criteria_seed=[item.strip() for item in parsed["acceptance_criteria_seed"] if item.strip()],
         unresolved_questions=[],
         source_refs=["raw/user_request.md", "context/project_summary.ko.md"],
         decisions=list(parsed.get("decisions", [])),
@@ -365,7 +299,6 @@ _REQUIREMENT_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*[A-Za-z0-9_]$")
 def _valid_source(value: str) -> bool:
     if value in {"user_request", "user_feedback"}:
         return True
-    from backend.services.project_decisions import CURRENT_REUSE, source_ref
-    if value in {source_ref(item) for item in CURRENT_REUSE.get()}:
+    if re.fullmatch(r"project_decision:[0-9a-f]{32}:[1-9][0-9]*", value):
         return True
     return bool(re.fullmatch(r"user_answer:[A-Za-z0-9_-]+", value))

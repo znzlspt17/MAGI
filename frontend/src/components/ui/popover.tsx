@@ -1,9 +1,9 @@
 // shadcn/ui MIT; adapted from ba1503c64472b82256d9de95e2e62c5901a38e8b
 "use client"
 
+import * as PopoverPrimitive from "@radix-ui/react-popover"
 import * as React from "react"
 import { cn } from "../../lib/utils"
-import * as PopoverPrimitive from "@radix-ui/react-popover"
 
 function Popover({
   ...props
@@ -39,51 +39,16 @@ function PopoverContent({
   )
 }
 
-function PopoverAnchor({
-  ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
-  return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />
-}
 
-function PopoverHeader({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="popover-header"
-      className={cn("cn-popover-header", className)}
-      {...props}
-    />
-  )
-}
 
-function PopoverTitle({ className, ...props }: React.ComponentProps<"h2">) {
-  return (
-    <div
-      data-slot="popover-title"
-      className={cn("cn-popover-title", className)}
-      {...props}
-    />
-  )
-}
 
-function PopoverDescription({
-  className,
-  ...props
-}: React.ComponentProps<"p">) {
-  return (
-    <p
-      data-slot="popover-description"
-      className={cn("cn-popover-description", className)}
-      {...props}
-    />
-  )
-}
+
+
+
+
 
 export {
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-  PopoverDescription,
-  PopoverHeader,
-  PopoverTitle,
-  PopoverTrigger,
+Popover,
+PopoverContent,
+PopoverTrigger
 }

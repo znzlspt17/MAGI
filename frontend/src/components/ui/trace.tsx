@@ -2,12 +2,12 @@
 import * as React from "react"
 import { cn } from "../../lib/utils"
 
+import { CaretRightIcon } from "@phosphor-icons/react"
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "./collapsible"
-import { CaretRightIcon } from "@phosphor-icons/react"
 
 function Trace({ className, ...props }: React.ComponentProps<"div">) {
   return (
@@ -69,21 +69,7 @@ function TraceTitle({ className, ...props }: React.ComponentProps<"span">) {
   )
 }
 
-function TraceDescription({
-  className,
-  ...props
-}: React.ComponentProps<"span">) {
-  return (
-    <span
-      data-slot="trace-description"
-      className={cn(
-        "cn-trace-description shrink-0 text-muted-foreground/70 tabular-nums",
-        className
-      )}
-      {...props}
-    />
-  )
-}
+
 
 function TraceCollapsible({
   className,
@@ -157,12 +143,5 @@ function TraceCollapsibleContent({
 }
 
 export {
-  Trace,
-  TraceLine,
-  TraceIcon,
-  TraceTitle,
-  TraceDescription,
-  TraceCollapsible,
-  TraceCollapsibleTrigger,
-  TraceCollapsibleContent,
+Trace,TraceCollapsible,TraceCollapsibleContent,TraceCollapsibleTrigger,TraceIcon,TraceLine,TraceTitle
 }

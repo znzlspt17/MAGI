@@ -10,16 +10,14 @@ from backend.config import Config
 from backend.errors import SpecCompilationError
 from backend.infrastructure.stage_retry import CURRENT_RETRY, attempt_limit
 from backend.infrastructure.output_language import OutputLanguageError
-from backend.infrastructure.evidence_registry import EvidenceRegistry
-from backend.infrastructure.artifact_writer import ArtifactWriter
-from backend.infrastructure.prompt_messages import flatten
+from backend.knowledge.core import Documents
 from backend.infrastructure.prompt_messages import messages as build_messages
-from backend.infrastructure.provider_call import complete_with_usage, complete_direct
+from backend.infrastructure.provider_call import complete_with_usage
 from backend.infrastructure.prompts import load_prompt
 from backend.models import SpecResponse, SpecDraftResponse, assemble_spec_draft
 from backend.models import IssuePacket
 from backend.models import RequirementLockSheet
-from backend.providers.llm_provider import OpenAIProvider
+from backend.providers.llm_provider import ChatModelProvider
 from backend.services.skill_registry import SkillRegistry
 
 
@@ -65,14 +63,12 @@ class SpecCompiler:
         self,
         *,
         config: Config,
-        provider: OpenAIProvider,
+        provider: ChatModelProvider,
         skills: SkillRegistry,
-        evidence: EvidenceRegistry,
     ) -> None:
         self.config = config
         self.provider = provider
         self.skills = skills
-        self.evidence = evidence
 
     def compile(
         self,
@@ -84,7 +80,7 @@ class SpecCompiler:
         previous_spec: str = "",
         revision_feedback: str = "",
         revision_history: list[str] | None = None,
-        writer: ArtifactWriter | None = None,
+        writer: Documents,
     ) -> str:
         """검증 진단을 단계의 공통 재시도 예산으로 전달한다."""
         sheet.require_validated()
@@ -99,13 +95,12 @@ class SpecCompiler:
                     revision_history=revision_history, writer=writer)
             except (SpecCompilationError, OutputLanguageError) as exc:
                 error = exc
-                if writer is not None:
-                    writer.write_json("analysis/spec_compile_validation.json", {
-                        "stage": "spec_compile", "attempt": (context or {"attempt": attempt})["attempt"] + 1,
-                        "validation_details": exc.validation_details,
-                        "phase": getattr(exc, "validation_phase", "trace"),
-                        "location": getattr(exc, "validation_location", None),
-                    }, overwrite=True)
+                writer.write_json("analysis/spec_compile_validation.json", {
+                    "stage": "spec_compile", "attempt": (context or {"attempt": attempt})["attempt"] + 1,
+                    "validation_details": exc.validation_details,
+                    "phase": getattr(exc, "validation_phase", "trace"),
+                    "location": getattr(exc, "validation_location", None),
+                }, overwrite=True)
                 if attempt + 1 == limit:
                     raise
             finally:
@@ -122,17 +117,16 @@ class SpecCompiler:
         previous_spec: str = "",
         revision_feedback: str = "",
         revision_history: list[str] | None = None,
-        writer: ArtifactWriter | None = None,
+        writer: Documents,
     ) -> str:
         """Compile a single English Markdown specification from the lock sheet."""
         self.skills.assert_allowed(self.agent_id, "compose_final_spec")
         route = self.config.model_routing[self.agent_id]
         provider = self.provider
         previous_trace = {}
-        if writer is not None and writer.path("analysis/spec_trace.json").is_file():
+        if writer.exists("analysis/spec_trace.json"):
             previous_trace = writer.read_json("analysis/spec_trace.json")
-        from backend.knowledge.runtime import CURRENT
-        runtime = CURRENT.get()
+        runtime = writer.runtime
         if runtime is not None:
             previous_trace["decisions"] = runtime.bind_decisions(previous_trace.get("decisions", []), previous_trace.get("decisions", []))
         messages = self._build_messages(
@@ -145,34 +139,20 @@ class SpecCompiler:
             revision_history=revision_history or [],
             previous_trace=previous_trace,
         )
-        if writer is None:
-            # 기존 Python API는 산출물 작성기 없이도 직접 호출할 수 있었다.
-            raw_output = complete_direct(provider, messages, model=route.model, stage="spec_compile")
-        else:
-            raw_output = complete_with_usage(
-                writer,
-                provider,
-                messages,
-                model=route.model,
-                stage="spec_compile",
-                temperature=0,
-            )
-        task_plan = None
-        if isinstance(raw_output, SpecDraftResponse):
-            from backend.services.implementation_plan import prepare_plan
-            task_plan = prepare_plan(raw_output, sheet)
-        draft_blocks = ([{"section": name, **block.model_dump()} for name in type(raw_output).model_fields
-                         if name != "decisions" for block in getattr(raw_output, name)]
-                        if isinstance(raw_output, SpecDraftResponse) else [])
-        if isinstance(raw_output, SpecDraftResponse):
-            draft_blocks = [b for b in draft_blocks if b["section"] != "implementation_order"] + [
-                {"section": "implementation_order", **t, "text": t["rendered"]} for t in task_plan["tasks"]]
-            raw_output = assemble_spec_draft(raw_output, sheet, task_plan)
-        if not isinstance(raw_output, SpecResponse):
-            raise SpecCompilationError(["Return the complete structured SpecResponse."])
-        from backend.knowledge.runtime import CURRENT
+        raw_output = complete_with_usage(
+            writer, provider, messages, model=route.model, stage="spec_compile", temperature=0,
+        )
+        if not isinstance(raw_output, SpecDraftResponse):
+            raise SpecCompilationError(["Return the complete structured SpecDraftResponse."])
+        from backend.services.implementation_plan import prepare_plan
+        task_plan = prepare_plan(raw_output, sheet)
+        draft_blocks = [{"section": name, **block.model_dump()} for name in type(raw_output).model_fields
+                        if name != "decisions" for block in getattr(raw_output, name)]
+        draft_blocks = [b for b in draft_blocks if b["section"] != "implementation_order"] + [
+            {"section": "implementation_order", **t, "text": t["rendered"]} for t in task_plan["tasks"]]
+        raw_output = assemble_spec_draft(raw_output, sheet, task_plan)
         from backend.knowledge.trace import validate_decisions, validate_links
-        runtime = CURRENT.get()
+        runtime = writer.runtime
         decisions = [item.model_dump() for item in raw_output.decisions]
         if runtime is not None:
             decisions = runtime.bind_decisions(decisions, previous_trace.get("decisions", []))
@@ -186,7 +166,7 @@ class SpecCompiler:
         retrieved = runtime.reusable_ids() if runtime else []
         _validate_trace(validate_decisions, decisions, sheet.to_dict(), retrieved, revision_feedback, user_request,
                            runtime.confirmed_sources({"user_request": user_request, "revision_feedback": revision_feedback}) if runtime else None,
-                           previous_trace.get("decisions", []))
+                           previous_trace.get("decisions", []), writer.state.get("reused_decisions", []))
         if {item["id"] for item in decisions} & {item["id"] for item in sheet.decisions}:
             raise SpecCompilationError(["decisions: reference existing lock decision IDs in spec_links without redeclaring them."])
         links = _anchor_links(links, raw_output.model_dump(), "response")
@@ -203,14 +183,13 @@ class SpecCompiler:
                 rendered = _rendered_sections(assembled)
                 links = _anchor_links(links, rendered, "assembled")
                 _validate_trace(validate_links, links, sheet.decisions + decisions, sheet.to_dict(), rendered)
-                if writer is not None:
-                    writer.write_json("analysis/spec_trace.json", {"decisions": decisions, "links": links}, overwrite=True)
-                    from backend.services.change_review import BLOCKS, digest, normalize
-                    if task_plan:
-                        from backend.services.implementation_plan import PATH
-                        writer.write_json(PATH, {**task_plan, "source_hash": digest(normalize(assembled))}, overwrite=True)
-                    writer.write_json(BLOCKS, {"source_hash": digest(normalize(assembled)),
-                        "blocks": draft_blocks or [{**link, "text": link["quote"]} for link in links]}, overwrite=True)
+                writer.write_json("analysis/spec_trace.json", {"decisions": decisions, "links": links}, overwrite=True)
+                from backend.services.change_review import BLOCKS, digest, normalize
+                if task_plan:
+                    from backend.services.implementation_plan import PATH
+                    writer.write_json(PATH, {**task_plan, "source_hash": digest(normalize(assembled))}, overwrite=True)
+                writer.write_json(BLOCKS, {"source_hash": digest(normalize(assembled)),
+                    "blocks": draft_blocks}, overwrite=True)
                 return assembled
         raise SpecCompilationError(["Return all required English section bodies in the supplied schema."])
 
@@ -254,29 +233,6 @@ class SpecCompiler:
             workflow_constraints=workflow,
         )
 
-    def _build_prompt(
-        self,
-        sheet: RequirementLockSheet,
-        manifest: dict[str, Any] | None,
-        issues: list[IssuePacket] | None,
-        *,
-        user_request: str = "",
-        previous_spec: str = "",
-    ) -> str:
-        """기존 문자열 기반 호출자의 호환용 프롬프트이다."""
-        return flatten(
-            self._build_messages(
-                sheet,
-                manifest,
-                issues,
-                user_request=user_request,
-                previous_spec=previous_spec,
-                revision_feedback="",
-                revision_history=[],
-            )
-        )
-
-    # ── fallback spec ─────────────────────────────────────────────────────────
 
     # ── static helpers (shared contract) ─────────────────────────────────────
 
@@ -290,7 +246,6 @@ class SpecCompiler:
         visible_text = _mask_fenced_code(text)
         positions = [_heading_position(visible_text, heading) for heading in REQUIRED_FINAL_SPEC_HEADINGS]
         return all(position is not None for position in positions) and positions == sorted(positions)
-
 
 
 def _rendered_sections(spec: str) -> dict[str, str]:

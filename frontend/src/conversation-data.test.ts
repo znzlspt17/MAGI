@@ -32,10 +32,9 @@ describe("공개 대화 projection", () => {
   it("실행 상태만으로 AI 답변·사고·도구 호출을 꾸며내지 않는다", () => {
     expect(conversationTurns(job([{ id: "e", action: "generate", status: "running", input: { request: "실제 입력" } }])).turns).toEqual([expect.objectContaining({ role: "user", text: "실제 입력" })]);
   });
-  it("이력 누락 시 원래 요청만 복원하고 누락을 알린다", () => {
+  it("이력이 없으면 가상 대화를 만들지 않고 누락을 알린다", () => {
     const value = conversationTurns(job([]));
     expect(value.incomplete).toBe(true);
-    expect(value.turns).toHaveLength(1);
-    expect(value.turns[0].text).toBe("요청");
+    expect(value.turns).toHaveLength(0);
   });
 });

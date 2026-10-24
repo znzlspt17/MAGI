@@ -10,7 +10,3 @@ class SkillRegistry:
             raise PermissionDeniedError(
                 f"Agent '{agent_id}' is not allowed to use skill '{capability_id}'."
             )
-
-
-def build_default_skill_registry() -> SkillRegistry:
-    return SkillRegistry()

@@ -1,8 +1,8 @@
 // shadcn/ui MIT; adapted from ba1503c64472b82256d9de95e2e62c5901a38e8b
 "use client"
 
-import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
+import * as React from "react"
 import { cn } from "../../lib/utils"
 
 import { Button } from "./button"
@@ -117,17 +117,7 @@ function InputGroupButton({
   )
 }
 
-function InputGroupText({ className, ...props }: React.ComponentProps<"span">) {
-  return (
-    <span
-      className={cn(
-        "flex items-center gap-2 text-sm text-muted-foreground [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4",
-        className
-      )}
-      {...props}
-    />
-  )
-}
+
 
 function InputGroupInput({
   className,
@@ -162,10 +152,9 @@ function InputGroupTextarea({
 }
 
 export {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupText,
-  InputGroupInput,
-  InputGroupTextarea,
+InputGroup,
+InputGroupAddon,
+InputGroupButton,
+InputGroupInput,
+InputGroupTextarea
 }

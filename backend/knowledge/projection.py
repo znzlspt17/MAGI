@@ -13,17 +13,15 @@ def digest(value):
 
 def project(job_id, state, artifacts, stage=None):
     nodes, edges, keys = [], [], {}
-    actual = confirmed_sources(state, artifacts)
+    actual = confirmed_sources(state)
     actual.update(state.get("confirmed_user_sources", {}))
-    requirements_stage = stage in {None, "import", "requirement_lock", "spec_compile", "checklist_critic", "review_resolution", "approve"}
-    spec_stage = stage in {None, "import", "spec_compile", "checklist_critic", "review_resolution", "approve"}
-    review_stage = stage in {None, "import", "checklist_critic", "review_resolution"}
+    requirements_stage = stage in {None, "requirement_lock", "spec_compile", "checklist_critic", "review_resolution", "approve"}
+    spec_stage = stage in {None, "spec_compile", "checklist_critic", "review_resolution", "approve"}
+    review_stage = stage in {None, "checklist_critic", "review_resolution"}
 
     def add(key, kind, body, **attrs):
         if kind in {"requirement", "decision", "spec"}:
             attrs["scope"] = "product"
-        if state.get("import_origin"):
-            attrs["origin"] = "demo" if state["import_origin"].get("demo") else "imported"
         ident = digest([job_id, key, body, attrs])
         nodes.append({"id": ident, "logical_key": key, "kind": kind, "body": body, "attrs": attrs})
         keys[key] = ident
@@ -41,8 +39,6 @@ def project(job_id, state, artifacts, stage=None):
     if feedback:
         add("user_feedback", "input", feedback, actor="user", status="confirmed")
     sheet = state.get("requirement_lock_sheet") or {}
-    if not sheet and "analysis/requirement_lock_sheet.json" in artifacts:
-        sheet = json.loads(artifacts["analysis/requirement_lock_sheet.json"])
     if sheet:
         from backend.models import RequirementLockSheet
         from backend.services.workflow_constraints import validate_product_boundary

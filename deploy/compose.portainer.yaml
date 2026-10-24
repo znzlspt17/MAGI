@@ -92,16 +92,10 @@ services:
       DB_USER: ${DB_USER:?MAGI 일반 서비스 계정을 입력하세요}
       DB_PASSWORD: ${DB_PASSWORD:?운영 환경에 DB 비밀번호를 주입하세요}
       DB_SSLMODE: ${DB_SSLMODE:-disable}
-      DATA_DIR: /data
       EMBEDDING_MODEL_PATH: /models/bge-m3
       EMBEDDING_DEVICE: cpu
     volumes:
       - *timezone-volume
-      - type: bind
-        source: ${DEPLOY_ROOT}/data
-        target: /data
-        bind:
-          create_host_path: false
       - type: bind
         source: ${MODEL_ROOT:?준비된 BGE-M3 모델의 Pi 절대 경로를 입력하세요}
         target: /models/bge-m3

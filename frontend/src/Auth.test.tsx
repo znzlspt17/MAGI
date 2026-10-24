@@ -3,7 +3,6 @@ import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/reac
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {AuthProvider,useAuth} from './Auth';
 import {api,configureAuth} from './api';
-import {migrateSessionKeys} from './storage-migration';
 vi.mock('./api',()=>({api:vi.fn(),post:vi.fn().mockResolvedValue({}),configureAuth:vi.fn(),clearRequests:vi.fn()}));
 function Account(){const auth=useAuth();return <><p>{auth.user?.id}</p><p>{auth.status.busy?'busy':'available'}</p><p>{auth.status.checkState}</p><p>{auth.status.mine?'mine':'not-mine'}</p><button onClick={()=>void auth.logout()}>logout</button></>;}
 beforeEach(()=>{vi.mocked(api).mockImplementation(async(path:string)=>path==='/api/auth/info'?{public:true,login_available:true}:path==='/api/me'?{id:'owner',role:'user',csrf:'fake-csrf'}:path==='/api/service/status'?{busy:false}:{runs:1,remaining_runs:3});sessionStorage.clear();});
@@ -21,11 +20,8 @@ it('StrictMode 재마운트에서도 인증과 상태 갱신을 유지하고 타
 it('인증 만료 시 계정 초안과 화면을 지우고 다른 계정의 초안은 보존한다',async()=>{
  render(<AuthProvider><Account/></AuthProvider>);await screen.findByText('owner');
  sessionStorage.setItem('draft:owner','request');sessionStorage.setItem('draft:owner:job:question:v1','answer');sessionStorage.setItem('draft:other','other draft');
- sessionStorage.setItem('magi:draft:owner','old conflicting draft');sessionStorage.setItem('magi:draft:other','old other draft');
  act(()=>window.dispatchEvent(new Event('signed-out')));
  expect(screen.queryByText('owner')).toBeNull();expect(sessionStorage.getItem('draft:owner')).toBeNull();expect(sessionStorage.getItem('draft:owner:job:question:v1')).toBeNull();expect(sessionStorage.getItem('draft:other')).toBe('other draft');
- expect(sessionStorage.getItem('magi:draft:owner')).toBeNull();expect(sessionStorage.getItem('magi:draft:other')).toBe('old other draft');
- migrateSessionKeys(sessionStorage);expect(sessionStorage.getItem('draft:owner')).toBeNull();
  expect(screen.getByRole('link',{name:'Google로 로그인'})).toBeTruthy();
 });
 it('로그아웃은 화면과 인증을 정리한다',async()=>{

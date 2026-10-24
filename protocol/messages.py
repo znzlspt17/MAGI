@@ -7,21 +7,61 @@ from decimal import Decimal
 
 
 MAX_MESSAGE_BYTES = 128 * 1024
-METHODS = {"list", "get", "generate", "answer", "revise", "approve", "download", "document", "subscribe"}
-METHODS |= {"projects.list", "projects.create", "projects.assign", "knowledge.search",
-            "knowledge.graph", "knowledge.node", "knowledge.document", "knowledge.retry"}
-METHODS |= {"cleanup.catalog", "cleanup.preview", "cleanup.execute"}
-METHODS |= {"projects.decisions", "projects.decisions.register", "projects.decisions.deactivate", "projects.decision_candidates", "projects.reused_decisions"}
-METHODS.update({"continue", "retry"})
-METHODS.add("requirement.review")
-METHODS.add("message")
-METHODS |= {"implementation.package", "implementation.package.file"}
-METHODS.add("health.check")
-METHODS |= {"knowledge.impact", "knowledge.impact.analyse"}
-METHODS |= {'admin.projects','admin.graph','admin.search','admin.node','admin.document','admin.jobs'}
-METHODS |= {'admin.usage','admin.usage.rows'}
-METHODS |= {'auth.info','auth.start','auth.callback','auth.me','auth.logout','service.status','usage',
-            'lease.keep','lease.release','lease.resume','admin.overview','admin.user','admin.claim','admin.stop','admin.job','admin.settle','admin.settings'}
+# None 항목은 인증 서비스 또는 구독·상태 경계에서 처리한다.
+RPC_METHODS = {
+    "list": "_list_jobs",
+    "get": "_get_job",
+    "document": "_document",
+    "download": "_download",
+    "requirement.review": "_requirement_review",
+    "implementation.package": "_implementation_package",
+    "implementation.package.file": "_implementation_package",
+    "knowledge.impact": "_impact",
+    "knowledge.impact.analyse": "_impact_analyse",
+    "projects.list": "_knowledge",
+    "projects.create": "_knowledge",
+    "projects.decisions": "_knowledge",
+    "projects.decisions.register": "_knowledge",
+    "projects.decisions.deactivate": "_knowledge",
+    "projects.decision_candidates": "_knowledge",
+    "projects.reused_decisions": "_knowledge",
+    "knowledge.search": "_knowledge",
+    "knowledge.graph": "_knowledge",
+    "knowledge.node": "_knowledge",
+    "knowledge.document": "_knowledge",
+    "job.command": None,
+    "health.check": None,
+    "subscribe": None,
+    "knowledge.retry": None,
+    "cleanup.catalog": None,
+    "cleanup.preview": None,
+    "cleanup.execute": None,
+    "admin.projects": None,
+    "admin.graph": None,
+    "admin.search": None,
+    "admin.node": None,
+    "admin.document": None,
+    "admin.jobs": None,
+    "admin.usage": None,
+    "admin.usage.rows": None,
+    "auth.info": None,
+    "auth.start": None,
+    "auth.callback": None,
+    "auth.me": None,
+    "auth.logout": None,
+    "service.status": None,
+    "usage": None,
+    "lease.keep": None,
+    "lease.release": None,
+    "lease.resume": None,
+    "admin.overview": None,
+    "admin.user": None,
+    "admin.claim": None,
+    "admin.stop": None,
+    "admin.job": None,
+    "admin.settle": None,
+    "admin.settings": None,
+}
 
 
 def parse_request(raw: object) -> dict | None:
@@ -38,25 +78,28 @@ def parse_request(raw: object) -> dict | None:
     params = data.get("params")
     if not isinstance(request_id, str) or not request_id or len(request_id) > 64:
         return None
-    if not isinstance(method, str) or method not in METHODS:
+    if not isinstance(method, str) or method not in RPC_METHODS:
         return None
     if not isinstance(params, dict):
         return None
     result = {"request_id": request_id, "method": method, "params": params}
-    for key in ('session','csrf','idempotency_key'):
+    for key in ("session", "csrf", "idempotency_key"):
         if key in data:
-            if not isinstance(data[key],str) or len(data[key])>512:
+            if not isinstance(data[key], str) or len(data[key]) > 512:
                 return None
-            result[key]=data[key]
+            result[key] = data[key]
     return result
 
 
 def result(request_id: str, value: object) -> str:
     def encode(item):
-        if isinstance(item,Decimal):
+        if isinstance(item, Decimal):
             return str(item)
-        raise TypeError('Unsupported protocol value')
-    return json.dumps({"request_id": request_id, "result": value}, ensure_ascii=False, default=encode)
+        raise TypeError("Unsupported protocol value")
+
+    return json.dumps(
+        {"request_id": request_id, "result": value}, ensure_ascii=False, default=encode
+    )
 
 
 def error(request_id: str, message: str, code: str = "internal") -> str:

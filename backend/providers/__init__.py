@@ -1,5 +1,5 @@
 """OpenAI Responses API 제공자."""
 
-from backend.providers.llm_provider import OpenAIProvider
+from backend.providers.llm_provider import ChatModelProvider
 
-__all__ = ["OpenAIProvider"]
+__all__ = ["ChatModelProvider"]

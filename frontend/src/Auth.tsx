@@ -10,7 +10,7 @@ import {
 } from "react";
 import { api, post, configureAuth, clearRequests } from "./api";
 import type { ServiceStatus, Usage, User } from "./types";
-import { clearAccountDrafts } from "./storage-migration";
+import { clearAccountDrafts } from "./session-drafts";
 interface AuthState {
   publicMode: boolean;
   user: User | null;

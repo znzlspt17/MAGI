@@ -1,12 +1,11 @@
 // shadcn/ui MIT; adapted from ba1503c64472b82256d9de95e2e62c5901a38e8b
 "use client"
 
-import { useMemo } from "react"
 import { cva, type VariantProps } from "class-variance-authority"
+import { useMemo } from "react"
 import { cn } from "../../lib/utils"
 
 import { Label } from "./label"
-import { Separator } from "./separator"
 
 function FieldSet({ className, ...props }: React.ComponentProps<"fieldset">) {
   return (
@@ -33,18 +32,7 @@ function FieldLegend({
   )
 }
 
-function FieldGroup({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="field-group"
-      className={cn(
-        "cn-field-group group/field-group @container/field-group flex w-full flex-col",
-        className
-      )}
-      {...props}
-    />
-  )
-}
+
 
 const fieldVariants = cva("cn-field group/field flex w-full", {
   variants: {
@@ -78,18 +66,7 @@ function Field({
   )
 }
 
-function FieldContent({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="field-content"
-      className={cn(
-        "cn-field-content group/field-content flex flex-1 flex-col leading-snug",
-        className
-      )}
-      {...props}
-    />
-  )
-}
+
 
 function FieldLabel({
   className,
@@ -108,15 +85,7 @@ function FieldLabel({
   )
 }
 
-function FieldTitle({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="field-label"
-      className={cn("cn-field-title flex w-fit items-center", className)}
-      {...props}
-    />
-  )
-}
+
 
 function FieldDescription({ className, ...props }: React.ComponentProps<"p">) {
   return (
@@ -133,32 +102,7 @@ function FieldDescription({ className, ...props }: React.ComponentProps<"p">) {
   )
 }
 
-function FieldSeparator({
-  children,
-  className,
-  ...props
-}: React.ComponentProps<"div"> & {
-  children?: React.ReactNode
-}) {
-  return (
-    <div
-      data-slot="field-separator"
-      data-content={!!children}
-      className={cn("cn-field-separator relative", className)}
-      {...props}
-    >
-      <Separator className="absolute inset-0 top-1/2" />
-      {children && (
-        <span
-          className="cn-field-separator-content relative mx-auto block w-fit bg-background"
-          data-slot="field-separator-content"
-        >
-          {children}
-        </span>
-      )}
-    </div>
-  )
-}
+
 
 function FieldError({
   className,
@@ -212,14 +156,7 @@ function FieldError({
 }
 
 export {
-  Field,
-  FieldLabel,
-  FieldDescription,
-  FieldError,
-  FieldGroup,
-  FieldLegend,
-  FieldSeparator,
-  FieldSet,
-  FieldContent,
-  FieldTitle,
+Field,FieldDescription,
+FieldError,FieldLabel,FieldLegend,
+FieldSet
 }

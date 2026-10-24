@@ -1,26 +1,18 @@
 // shadcn/ui MIT; adapted from ba1503c64472b82256d9de95e2e62c5901a38e8b
 "use client"
 
-import * as React from "react"
-import { cn } from "../../lib/utils"
-import { XIcon } from "../../icons"
 import * as SheetPrimitive from "@radix-ui/react-dialog"
+import * as React from "react"
+import { XIcon } from "../../icons"
+import { cn } from "../../lib/utils"
 
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
 }
 
-function SheetTrigger({
-  ...props
-}: React.ComponentProps<typeof SheetPrimitive.Trigger>) {
-  return <SheetPrimitive.Trigger data-slot="sheet-trigger" {...props} />
-}
 
-function SheetClose({
-  ...props
-}: React.ComponentProps<typeof SheetPrimitive.Close>) {
-  return <SheetPrimitive.Close data-slot="sheet-close" {...props} />
-}
+
+
 
 function SheetPortal({
   ...props
@@ -95,15 +87,7 @@ function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function SheetFooter({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="sheet-footer"
-      className={cn("mt-auto flex flex-col gap-2 p-4", className)}
-      {...props}
-    />
-  )
-}
+
 
 function SheetTitle({
   className,
@@ -132,12 +116,7 @@ function SheetDescription({
 }
 
 export {
-  Sheet,
-  SheetTrigger,
-  SheetClose,
-  SheetContent,
-  SheetHeader,
-  SheetFooter,
-  SheetTitle,
-  SheetDescription,
+Sheet,
+SheetContent,SheetDescription,SheetHeader,
+SheetTitle
 }

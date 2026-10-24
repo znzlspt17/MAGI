@@ -5,7 +5,6 @@ from contextvars import ContextVar
 ACTOR = ContextVar('actor', default=None)
 TRANSACTION = ContextVar('transaction', default=None)
 DEFERRED = ContextVar('deferred', default=None)
-METER = ContextVar('meter', default=None)
 
 
 class AccessError(ValueError):

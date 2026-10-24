@@ -1,15 +1,15 @@
 // shadcn/ui MIT; adapted from ba1503c64472b82256d9de95e2e62c5901a38e8b
 "use client"
 
-import * as React from "react"
+import { ArrowDownIcon } from "@phosphor-icons/react"
 import {
   MessageScroller as MessageScrollerPrimitive,
   useMessageScroller,
   useMessageScrollerScrollable,
   useMessageScrollerVisibility,
 } from "@shadcn/react/message-scroller"
+import * as React from "react"
 import { cn } from "../../lib/utils"
-import { ArrowDownIcon } from "@phosphor-icons/react"
 
 import { Button } from "./button"
 
@@ -119,13 +119,8 @@ function MessageScrollerButton({
 }
 
 export {
-  MessageScrollerProvider,
-  MessageScroller,
-  MessageScrollerViewport,
-  MessageScrollerContent,
-  MessageScrollerItem,
-  MessageScrollerButton,
-  useMessageScroller,
-  useMessageScrollerScrollable,
-  useMessageScrollerVisibility,
+MessageScroller,MessageScrollerButton,MessageScrollerContent,
+MessageScrollerItem,MessageScrollerProvider,MessageScrollerViewport,useMessageScroller,
+useMessageScrollerScrollable,
+useMessageScrollerVisibility
 }

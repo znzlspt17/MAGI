@@ -1,6 +1,5 @@
 """작업별 모델 문맥에 적용하는 공개 운영 정책."""
 
-PATH = "state/conversation_state.json"  # 이전 자료를 읽는 도구를 위한 경로 상수
 POLICY = (
     "Perform only the current stage requested by this call. Latest explicit user decisions "
     "supersede older conflicting decisions. Model assumptions are not confirmed user decisions. "

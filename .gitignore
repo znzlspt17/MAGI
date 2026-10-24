@@ -67,8 +67,9 @@ answers.json
 /test-results/
 /playwright-report/
 
-# 로컬 전용 Python·통합·브라우저 테스트
-/tests/
+# 이전 로컬 검증 자료는 제외하고 현재 제품 경계 검사는 버전 관리한다.
+/tests/*
+!/tests/core/
 
 # 로컬 DB와 모델 가중치 (backend/models 소스는 포함)
 /pgdata/

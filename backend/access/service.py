@@ -8,7 +8,7 @@ import json
 import re
 from uuid import uuid4
 
-from backend.access.context import ACTOR, DEFERRED, METER, AccessError
+from backend.access.context import ACTOR, DEFERRED, AccessError
 from backend.access.billing import Meter
 from backend.access.store import AccessStore, digest, day_at
 from backend.access.recovery import Execution, Failure, WorkerRecovery
@@ -17,7 +17,8 @@ from backend.model_policy import default_prices
 
 WAITING = {'NEEDS_USER_INPUT', 'PASS_PENDING_USER_APPROVAL'}
 SAFE_DOC = re.compile(r'(?:final/FINAL_AGENT_SPEC\.md|draft/approval_candidate_spec\.en\.md|critical/CRITICAL_REPORT\.ko\.md|history/[0-9a-f]{32}\.md)\Z')
-PUBLIC_FIELDS=set('''id request status message action created_at updated_at queued_at progress execution_id project_id retry_status retry_action can_continue read_only latest_completed source_hash step_id continuation_error state blocking_questions awaiting_input_reason review_questions question_forms saved_answers candidate final critical execution_graph version nodes legacy session_events completed_documents title input feedback answers started_at completed_at questions summary document_step_id stage duration_ms issue_counts has_document has_issues detail_available result issues resolved_issues requirements document content filename kind language recording_incomplete source target edges mode embedding_status has_more offset next_offset body attrs active logical_key sequence actor section requirement_id scope title_path question text rationale conditions sources requirement_ids decision_ids question_id question_text answer selection selected_option_ids custom_text form_version input_type options label value decision_key required_change decision_question resolution_reason missing_information severity code explanation description confirmed_basis basis_refs status_label pending total limit truncated groups node_id node_count edge_count connected_id references source_text translated_text delta number_mismatches current_status pending_questions input_type is_required allow_custom selected label_ko default_id recommended help hint requirement text_ko text_en name reason duration elapsed_ms percent total_steps completed_steps count accepted superseded implementation changes source_id requirement source_refs coverage effect expected actual resolution issue_id summary_ko request_type non_scope mandatory_requirements constraints assumptions decisions workflow_status user_reply decision_text index information priority blocking major minor passed failed resolved unresolved answer_forms custom_label instruction prompt choices option_id decision support status_text done next_action can_retry user_action required provenance change original_quote known active_session sessions'''.split())
+PUBLIC_FIELDS=set('''id request status message action created_at updated_at queued_at progress execution_id project_id retry_status retry_action can_continue read_only latest_completed source_hash step_id continuation_error state blocking_questions awaiting_input_reason review_questions question_forms saved_answers candidate final critical execution_graph version nodes session_events completed_documents title input feedback answers started_at completed_at questions summary document_step_id stage duration_ms issue_counts has_document has_issues detail_available result issues resolved_issues requirements document content filename kind language recording_incomplete source target edges mode embedding_status has_more offset next_offset body attrs active logical_key sequence actor section requirement_id scope title_path question text rationale conditions sources requirement_ids decision_ids question_id question_text answer selection selected_option_ids custom_text form_version input_type options label value decision_key required_change decision_question resolution_reason missing_information severity code explanation description confirmed_basis basis_refs status_label pending total limit truncated groups node_id node_count edge_count connected_id references source_text translated_text delta number_mismatches current_status pending_questions input_type is_required allow_custom selected label_ko default_id recommended help hint requirement text_ko text_en name reason duration elapsed_ms percent total_steps completed_steps count accepted superseded implementation changes source_id requirement source_refs coverage effect expected actual resolution issue_id summary_ko request_type non_scope mandatory_requirements constraints assumptions decisions workflow_status user_reply decision_text index information priority blocking major minor passed failed resolved unresolved answer_forms custom_label instruction prompt choices option_id decision support status_text done next_action can_retry user_action required provenance change original_quote known active_session sessions'''.split())
+PUBLIC_FIELDS.add('candidate_hash')
 PUBLIC_FIELDS.update('research search_method mode performed outcome result_count query retrieved_at url job_id resolution_reasons recommended_requirements optional_requirements locked_constraints document_has_more document_next_offset other_body other_kind original_text parent_id related_node_ids'.split())
 PUBLIC_FIELDS.update('change_review before_id after_id before_hash after_hash before after item_id start end line meaning relation evidence analysed remaining calls diff'.split())
 PUBLIC_FIELDS.update('review_snapshot_id review_status rows unlinked unlinked_total specification acceptance verification spec_status acceptance_status verification_status test_status spec_linked acceptance_linked verification_linked group shared category specification_total acceptance_total verification_total'.split())
@@ -35,7 +36,7 @@ def user_payload(value):
         return [user_payload(item) for item in value]
     if not isinstance(value, dict):
         return value
-    private = {'provider','demo','usage','heartbeat','error_code','error_stage','queue_position',
+    private = {'provider','usage','heartbeat','error_code','error_stage','queue_position',
                'order','queue_order','owner_id','lease_generation','ref','artifact_path','artifact_hash',
                'recording_incomplete','cache_diagnostics','model','diagnostics','workflow_constraints'}
     result={}
@@ -68,6 +69,13 @@ class PublicService:
             raise AccessError('관리자 권한이 필요합니다.')
 
     def invoke(self, request, dispatch):
+        if request['method'] == 'job.command':
+            from protocol.commands import JobCommand
+            try:
+                command = JobCommand.model_validate(request['params'])
+            except ValueError:
+                raise AccessError('작업 명령을 확인하세요.', 'invalid') from None
+            request = {**request, 'method': command.kind, 'params': command.parameters()}
         method, params = request['method'], dict(request['params'])
         sid = request.get('session')
         if method == 'auth.info':
@@ -122,23 +130,23 @@ class PublicService:
                 self.manager.get(params.get('job_id'))
                 if method == 'knowledge.impact':
                     try:
-                        return user_payload(self.manager.impact(params))
+                        return user_payload(self.manager.workspace.impact(params))
                     except AccessError:
                         raise
                     except ValueError as exc:
                         raise AccessError(str(exc), 'invalid') from None
                 try:
-                    cached = self.manager.cached_impact(params, request.get('idempotency_key'))
+                    cached = self.manager.workspace.cached_impact(params, request.get('idempotency_key'))
                 except AccessError:
                     raise
                 except ValueError as exc:
                     raise AccessError(str(exc), 'invalid') from None
                 if cached is not None:
                     return user_payload(cached)
-                with self.temporary(actor, params['job_id']):
-                    return self.result(dispatch(request))
+                with self.temporary(actor, params['job_id']) as meter:
+                    return self.result(dispatch({**request,'_meter':meter}))
             if method == 'list':
-                return user_payload([self.manager.summary(i) for i in self.manager.ids()])
+                return user_payload([self.manager.workspace.summary(i) for i in self.manager.ids()])
             if method.startswith('projects.'):
                 if method in {'projects.list','projects.decisions','projects.decision_candidates','projects.reused_decisions'}:
                     return self.result(dispatch(request))
@@ -162,7 +170,7 @@ class PublicService:
                 raise KeyError('document')
             if method == 'knowledge.node':
                 # 저장 원문 전체 대신 사용자에게 허용된 노드와 본문만 제공한다.
-                result = self.manager.knowledge_call(method, params)
+                result = self.manager.workspace.knowledge_call(method, params)
                 if not SAFE_DOC.fullmatch(str(result.get('attrs',{}).get('artifact_path',''))):
                     result.pop('document',None)
                 return user_payload(result)
@@ -178,8 +186,8 @@ class PublicService:
                         return user_payload(cached)
             temporary = method in {'document','knowledge.search','knowledge.graph','knowledge.retry'}
             if temporary:
-                with self.temporary(actor, params.get('id') or 'read-operation'):
-                    return self.result(dispatch({**request,'params':params}))
+                with self.temporary(actor, params.get('id') or 'read-operation') as meter:
+                    return self.result(dispatch({**request,'params':params,'_meter':meter}))
             if method not in {'get','download','knowledge.document','subscribe','requirement.review','implementation.package','implementation.package.file'}:
                 raise AccessError('요청을 처리할 수 없습니다.', 'invalid')
             return self.result(dispatch({**request,'params':params}))
@@ -206,11 +214,8 @@ class PublicService:
         raise AccessError('지원하지 않는 요청입니다.', 'invalid')
 
     @staticmethod
-    def result(raw):
-        response = json.loads(raw)
-        if 'error' in response:
-            raise AccessError(response['error']['message'],response['error']['code'])
-        return user_payload(response.get('result'))
+    def result(value):
+        return user_payload(value)
 
     def release(self, uid, *, require_owner=False):
         with self.store.transaction() as c:
@@ -225,12 +230,12 @@ class PublicService:
 
     def cached_document(self, params):
         from backend.services.spec_translation import source_key
-        detail = self.manager.step(params['id'], params['step_id'])
+        detail = self.manager.workspace.step(params['id'], params['step_id'])
         doc = detail.get('document')
         if not doc:
             raise KeyError('document')
-        root = self.manager.artifact(params['id'], 'translations/'+source_key(doc['content']))
-        if not (root/'translation.ko.json').is_file():
+        root = self.manager.workspace.documents(params['id']).scope('translations/'+source_key(doc['content']))
+        if not root.exists('translation.ko.json'):
             return None
         # 캐시 전용 함수는 원격 호출을 하지 않는다.
         from backend.services.spec_translation import cached_translation
@@ -255,7 +260,13 @@ class PublicService:
                             raise AccessError('같은 요청 키에 다른 입력을 사용할 수 없습니다.', 'busy')
                         return previous['result']
                     if method != 'generate':
-                        self.manager.get(params.get('id'))
+                        current = self.manager.get(params.get('id'))
+                        if method != 'lease.resume' and params.get('execution_id') != current.get('execution_id'):
+                            raise AccessError('작업 상태가 바뀌었습니다. 최신 실행을 확인하세요.', 'conflict')
+                        if method == 'approve':
+                            state = self.manager.workspace.public(current['id']).get('state', {})
+                            if params.get('candidate_hash') != state.get('candidate_hash'):
+                                raise AccessError('승인할 문서가 변경되었습니다.', 'conflict')
                     # 검증 실패는 전체 접수 트랜잭션과 메모리 상태를 되돌린다.
                     if method == 'lease.resume':
                         job = self.manager.get(params['id'])
@@ -263,14 +274,14 @@ class PublicService:
                             raise AccessError('현재 작업은 응답 대기 상태가 아닙니다.', 'busy')
                         self.access.acquire(c,actor['id'],job['id'])
                         c.execute("UPDATE service_lease SET phase='waiting',deadline=%s WHERE singleton=1", (self.access.clock()+180,))
-                        result = self.manager.summary(job['id'])
+                        result = self.manager.workspace.summary(job['id'])
                     else:
                         # 생성 ID는 기존 엔진에서 만든 뒤 같은 DB 트랜잭션 안에서 사용권에 연결한다.
                         jid = params.get('id') or 'pending'
                         generation = self.access.acquire(c,actor['id'],jid,count=method in {'generate','continue'})
                         meter = Meter(self.access,actor['id'],jid,generation,self.prices)
                         from backend.config import Config
-                        model = Config.default().model_routing['interviewer'].model
+                        model = Config().model_routing['interviewer'].model
                         if method != 'approve':
                             maximum = meter.maximum(model)
                             self.access.check_money(c,actor['id'],maximum, day_at(self.access.clock()))
@@ -313,15 +324,14 @@ class PublicService:
             else:
                 generation = self.access.acquire(c,actor['id'],jid)
         active_jid = lease['job_id'] if owned else jid
-        mark = METER.set(Meter(self.access,actor['id'],active_jid,generation,self.prices))
+        meter = Meter(self.access,actor['id'],active_jid,generation,self.prices)
         try:
-            yield
+            yield meter
         finally:
-            METER.reset(mark)
             self.access.finish(active_jid,generation,waiting=owned)
 
     def worker(self, ident, action, payload, *, execution=None):
-        actor_token = meter_token = None
+        actor_token = None
         meter = None
         entered = False
         try:
@@ -335,7 +345,6 @@ class PublicService:
             actor_token = ACTOR.set(actor)
             meter = Meter(self.access, actor['id'], ident, execution.generation,
                           self.prices, execution.initial)
-            meter_token = METER.set(meter)
             with self.store.transaction() as c:
                 lease = self.access.lease(c)
                 if lease['job_id'] != ident or lease['generation'] != execution.generation or lease['phase'] != 'running':
@@ -343,7 +352,7 @@ class PublicService:
             with self.manager.lock:
                 job.pop('_initial_reservation', None)
             entered = True
-            self.manager._run(ident,action,payload)
+            self.manager._run(ident,action,payload,meter=meter)
             if meter.initial:
                 self.access.settle(meter.initial[0], Decimal(0))
             self.access.finish(ident, execution.generation, waiting=job['status'] in WAITING)
@@ -353,8 +362,6 @@ class PublicService:
                                              meter.initial if meter is not None else execution.initial))
             raise
         finally:
-            if meter_token is not None:
-                METER.reset(meter_token)
             if actor_token is not None:
                 ACTOR.reset(actor_token)
 
@@ -414,7 +421,7 @@ class PublicService:
                     raise AccessError('사용자를 찾을 수 없습니다.')
                 return c.execute("SELECT id,owner_id,data->>'request' AS request,data->>'status' AS status,data->>'created_at' AS created_at FROM jobs WHERE owner_id=%s ORDER BY data->>'created_at' DESC NULLS LAST,id",(owner,)).fetchall()
             if method=='admin.job':
-                result=self.manager.public(params.get('id'))
+                result=self.manager.workspace.public(params.get('id'))
                 result['owner_id']=self.manager.jobs[params['id']].get('owner_id')
                 c.execute('INSERT INTO admin_audit(id,actor_id,action,target_id) VALUES (%s,%s,%s,%s)',(uuid4().hex,actor['id'],method,params.get('id')))
                 return result
@@ -492,7 +499,7 @@ class PublicService:
                     raise KeyError('node')
                 if method=='admin.document' and (not job or not SAFE_DOC.fullmatch(str(params.get('path','')))):
                     raise KeyError('document')
-            result=self.manager.knowledge_call('knowledge.'+method.split('.')[1],params)
+            result=self.manager.workspace.knowledge_call('knowledge.'+method.split('.')[1],params)
             if method=='admin.node':
                 if not SAFE_DOC.fullmatch(str(result.get('attrs',{}).get('artifact_path',''))):
                     result.pop('document',None)

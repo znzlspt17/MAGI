@@ -1,37 +1,28 @@
-import { ExecutionTimeline, ResearchResult } from "./ExecutionTimeline";
-import { ChangeReview } from "./ChangeReview";
-import { ServiceStatusNotice, serviceState } from "./ServiceStatus";
-import { Conversation } from "./Conversation";
-import { PromptInput } from "./components/PromptInput";
-import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
-import { Badge } from "./components/ui/badge";
-import { AppSidebar } from "./components/AppSidebar";
-import { SidebarProvider, SidebarInset, SidebarTrigger, SidebarGroup, SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "./components/ui/sidebar";
-import { Input } from "./components/ui/input";
-import { PlusIcon, SquaresFourIcon, GraphIcon, SparkleIcon, FileTextIcon, ChatCircleDotsIcon, ClockCounterClockwiseIcon } from "@phosphor-icons/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ChatCircleDotsIcon, ClockCounterClockwiseIcon, FileTextIcon, GraphIcon, PlusIcon, SparkleIcon, SquaresFourIcon } from "@phosphor-icons/react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { api, post } from "./api";
+import { post } from "./api";
 import { useAuth } from "./Auth";
-import { Button, Notice, statusLabel, formatTime, usageLabel } from "./UI";
+import { ChangeReview } from "./ChangeReview";
+import { AppSidebar } from "./components/AppSidebar";
+import { PromptInput } from "./components/PromptInput";
+import { Badge } from "./components/ui/badge";
+import { Input } from "./components/ui/input";
+import { SidebarGroup, SidebarGroupLabel, SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from "./components/ui/sidebar";
+import { Tabs, TabsList, TabsTrigger } from "./components/ui/tabs";
+import { Conversation } from "./Conversation";
 import { DocumentView } from "./DocumentView";
-import { ProjectDecisionPicker, ReusedDecisions, type DecisionSelection } from "./ProjectDecisions";
+import { ExecutionTimeline, ResearchResult } from "./ExecutionTimeline";
 import { ImplementationPackage } from "./ImplementationPackage";
-import { questionDetails } from "./QuestionActions";
 import Knowledge from "./Knowledge";
+import { ProjectDecisionPicker, ReusedDecisions, type DecisionSelection } from "./ProjectDecisions";
+import { questionDetails } from "./QuestionActions";
+import { ServiceStatusNotice, serviceState } from "./ServiceStatus";
 import type { Job, RecordData, Step } from "./types";
+import { Button, Notice, formatTime, statusLabel, usageLabel } from "./UI";
+import { useJobSession } from "./useJobSession";
 export function graphNodes(job: Job): Step[] {
-  if (job.execution_graph?.nodes?.length) return job.execution_graph.nodes;
-  return [
-    {
-      id: "legacy",
-      stage: "request",
-      status: job.status,
-      summary: job.message || job.request,
-      has_document: !!(job.final || job.candidate),
-      detail_available: true,
-    },
-  ];
+  return job.execution_graph?.nodes || [];
 }
 const stageLabel = (node?: Step) =>
   node?.title ||
@@ -51,57 +42,15 @@ const stageLabel = (node?: Step) =>
     critical_report: "명세 보완 실패 보고",
   }[node?.stage || ""] ||
   "실행 단계";
-function legacyDetail(job: Job) {
-  return {
-    result: {
-      summary: job.message,
-      questions: job.state?.blocking_questions,
-      report: job.critical,
-    },
-    document:
-      job.final || job.candidate
-        ? {
-            content: job.final || job.candidate,
-            filename: job.final
-              ? "FINAL_AGENT_SPEC.md"
-              : "approval_candidate_spec.en.md",
-          }
-        : null,
-  };
-}
 export default function Workspace() {
   const auth = useAuth(),
     navigate = useNavigate(),
     location = useLocation(),
     { id } = useParams();
-  const [connectionEpoch, setConnectionEpoch] = useState(0);
-  useEffect(() => {
-    const resume = (event: PageTransitionEvent) => {
-      if (event.persisted) setConnectionEpoch((value) => value + 1);
-    };
-    window.addEventListener("pageshow", resume);
-    return () => window.removeEventListener("pageshow", resume);
-  }, []);
-  const [jobs, setJobs] = useState<Job[]>([]),
-    [job, setJob] = useState<Job | null>(null),
-    [surface, setSurface] = useState("workspace"),
-    [query, setQuery] = useState(""),
-    [filter, setFilter] = useState(""),
-    [busy, setBusy] = useState(false),
-    [refreshIndex, setRefreshIndex] = useState(0),
-    [tab, setTab] = useState("conversation"),
-    [step, setStep] = useState(""),
-    [detail, setDetail] = useState<RecordData | null>(null),
-    [loading, setLoading] = useState(false),
-    [connection, setConnection] = useState("");
-  const manual = useRef(false),
-    views = useRef(
-      new Map<string, { step: string; tab: string; manual: boolean }>(),
-    ),
-    fetchSequence = useRef(0),
-    selectedId = useRef(id),
-    navigation = useRef(location.key),
-    mutating = useRef(false);
+  const session = useJobSession();
+  const { jobs, job, step, tab, setTab, detail, busy, loading, connection, refresh } = session;
+  const [surface, setSurface] = useState("workspace"), [query, setQuery] = useState(""), [filter, setFilter] = useState("");
+  const navigation = useRef(location.key), selectedId = useRef(id);
   const [projectId, setProjectId] = useState("");
   const [decisionSelections, setDecisionSelections] = useState<DecisionSelection[]>([]);
   useEffect(() => { setProjectId(""); setDecisionSelections([]); }, [auth.user?.id]);
@@ -113,213 +62,8 @@ export default function Workspace() {
   navigation.current = location.key;
   const isAdmin = !auth.publicMode || auth.user?.role === "admin",
     blocked = busy || serviceState(auth.publicMode, auth.status).blocked;
-  const refresh = useCallback(() => setRefreshIndex((i) => i + 1), []);
-  useEffect(() => {
-    let alive = true,
-      inFlight = false,
-      pending = false,
-      controller: AbortController | null = null;
-    const load = async () => {
-      if (inFlight) {
-        pending = true;
-        return;
-      }
-      inFlight = true;
-      controller = new AbortController();
-      try {
-        const list = await api<Job[]>("/api/jobs", {
-          signal: controller.signal,
-        });
-        if (alive) setJobs(list);
-      } catch (e) {
-        if (alive && (e as Error).name !== "AbortError")
-          auth.setNotice((e as Error).message);
-      } finally {
-        inFlight = false;
-        if (alive && pending) {
-          pending = false;
-          void load();
-        }
-      }
-    };
-    let socket: WebSocket | null = null,
-      reconnect: ReturnType<typeof setTimeout> | undefined,
-      attempt = 0;
-    const connect = () => {
-      if (!alive) return;
-      socket = new WebSocket(
-        `${locationProtocol()}//${window.location.host}/ws/events`,
-      );
-      socket.onopen = () => {
-        if (alive) {
-          window.dispatchEvent(new Event("service-status"));
-          attempt = 0;
-          setConnection("");
-          void load();
-          refresh();
-        }
-      };
-      socket.onmessage = (event) => {
-        if (!alive) return;
-        let value;
-        try {
-          value = JSON.parse(event.data);
-        } catch {
-          return;
-        }
-        if (["ready", "job.changed"].includes(value.event)) {
-          void load();
-          refresh();
-        } else if (value.event === "records.deleted") {
-          for (const deletedId of value.ids || []) {
-            views.current.delete(deletedId);
-            const prefix =
-              "draft:" +
-              (auth.user?.id || "local") +
-              ":" +
-              deletedId +
-              ":";
-            Object.keys(sessionStorage)
-              .filter((key) => key.startsWith(prefix))
-              .forEach((key) => sessionStorage.removeItem(key));
-          }
-          if ((value.ids || []).includes(selectedId.current)) navigate("/");
-          window.dispatchEvent(new Event("cleanup"));
-          void load();
-          refresh();
-        } else if (value.event === "service.status")
-          window.dispatchEvent(
-            new CustomEvent("service-status", { detail: value.status }),
-          );
-        else if (value.event === "server_error") socket?.close();
-      };
-      socket.onclose = () => {
-        if (!alive) return;
-        setConnection("작업 서버 연결이 끊어졌습니다. 재연결 중입니다.");
-        reconnect = setTimeout(
-          connect,
-          [1000, 2000, 4000, 8000, 10000][Math.min(attempt++, 4)],
-        );
-      };
-      socket.onerror = () => socket?.close();
-    };
-    void load();
-    connect();
-    const poll = setInterval(() => {
-      void load();
-      refresh();
-    }, 15000);
-    const pagehide = () => {
-      alive = false;
-      clearTimeout(reconnect);
-      clearInterval(poll);
-      socket?.close();
-      controller?.abort();
-    };
-    window.addEventListener("pagehide", pagehide);
-    return () => {
-      pagehide();
-      window.removeEventListener("pagehide", pagehide);
-    };
-  }, [auth.user?.id, connectionEpoch]);
-  useEffect(() => {
-    setJob(null);
-    setDetail(null);
-    manual.current = false;
-    const saved = id ? views.current.get(id) : null;
-    setStep(saved?.step || "");
-    setTab(saved?.tab || "conversation");
-    manual.current = saved?.manual || false;
-    setSurface("workspace");
-  }, [id]);
-  useEffect(() => {
-    if (!id) return;
-    let alive = true;
-    const sequence = ++fetchSequence.current,
-      controller = new AbortController();
-    setLoading(true);
-    api<Job>(`/api/jobs/${encodeURIComponent(id)}`, {
-      signal: controller.signal,
-    })
-      .then((value) => {
-        if (!alive || sequence !== fetchSequence.current) return;
-        setJob(value);
-        if (
-          !["queued", "running"].includes(value.status) &&
-          [
-            "작업을 대기열에 넣었습니다.",
-            "새 작업을 대기열에 넣었습니다.",
-          ].includes(auth.notice)
-        )
-          auth.setNotice("");
-        setStep((previous) => {
-          const nodes = graphNodes(value),
-            exists =
-              nodes.some((n) => n.id === previous) ||
-              (value.completed_documents || []).some(
-                (n: Step) => n.id === previous,
-              );
-          if (manual.current && exists) return previous;
-          const requestedCompleted = new URLSearchParams(location.search).get("completed_id");
-          if (requestedCompleted && (value.completed_documents || []).some((d: Step) => d.id === requestedCompleted)) {
-            manual.current = true; setTab("document"); return requestedCompleted;
-          }
-          const doc = [...nodes].reverse().find((n) => n.has_document);
-          return (doc || nodes.at(-1))?.id || "";
-        });
-      })
-      .catch((e) => {
-        if (alive && e.name !== "AbortError") auth.setNotice(e.message);
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
-    return () => {
-      alive = false;
-      controller.abort();
-    };
-  }, [id, refreshIndex, location.search]);
-  const node =
-    job &&
-    [...graphNodes(job), ...(job.completed_documents || [])].find(
-      (n) => n.id === step,
-    );
-  const nodeSignature = JSON.stringify(node);
-  useEffect(() => {
-    if (!job || job.id !== id || !step) return;
-    let alive = true;
-    const controller = new AbortController();
-    setDetail(null);
-    if (!job.execution_graph?.nodes) {
-      setDetail(legacyDetail(job));
-      return;
-    }
-    if (!node?.detail_available) {
-      setDetail({
-        unavailable: true,
-        message: "이 단계의 상세 기록이 저장되지 않았습니다.",
-      });
-      return;
-    }
-    api(
-      `/api/jobs/${encodeURIComponent(id!)}/steps/${encodeURIComponent(step)}`,
-      { signal: controller.signal },
-    )
-      .then((value) => {
-        if (alive) setDetail(value.step || value.detail || value);
-      })
-      .catch((e) => {
-        if (alive && e.name !== "AbortError")
-          setDetail({ unavailable: true, message: e.message });
-      });
-    return () => {
-      alive = false;
-      controller.abort();
-    };
-  }, [id, step, nodeSignature]);
-  useEffect(() => {
-    if (id && job?.id === id) views.current.set(id, { step, tab, manual: manual.current });
-  }, [id, job?.id, step, tab]);
+  useEffect(() => { setSurface("workspace"); }, [id]);
+  const node = job && [...graphNodes(job), ...(job.completed_documents || [])].find((item: Step) => item.id === step);
   useEffect(() => {
     const leave = (event: BeforeUnloadEvent) => {
       if (
@@ -337,68 +81,31 @@ export default function Workspace() {
   const [evidenceOnly, setEvidenceOnly] = useState(false);
   useEffect(() => { setEvidenceOnly(false); }, [id]);
   function selectStep(value: string, requirements = false) {
-    manual.current = true;
     setEvidenceOnly(requirements);
-    setStep(value);
+    session.select(value);
     setTab("document");
   }
   async function mutate(action: string, payload: unknown) {
-    if (!id || mutating.current) return;
-    mutating.current = true;
-    setBusy(true);
     const target = id;
     try {
-      await post(`/api/jobs/${encodeURIComponent(id)}/${action}`, {
-        payload,
-        execution_id: job?.execution_id,
-      });
-      if (selectedId.current === target) {
-        auth.setNotice("작업을 대기열에 넣었습니다.");
-        refresh();
-      }
+      if (await session.command(action, payload) && selectedId.current === target) auth.setNotice("작업을 대기열에 넣었습니다.");
     } catch (e) {
       if (action !== "message") auth.setNotice((e as Error).message);
       throw e;
-    } finally {
-      mutating.current = false;
-      setBusy(false);
-      void auth.refreshStatus().catch(() => {});
     }
   }
   async function generate() {
-    if (mutating.current) return;
-    if (!request.trim()) {
-      auth.setNotice("개발 요청을 입력하세요.");
-      return;
-    }
-    mutating.current = true;
-    setBusy(true);
+    if (!request.trim()) { auth.setNotice("개발 요청을 입력하세요."); return; }
     const submitted = navigation.current;
     try {
-      const value = await post<Job>("/api/jobs", {
-        request: request.trim(),
-        provider: "openai",
-        project_id: projectId || null,
-        decision_reuse: decisionSelections,
-      });
+      const value = await session.command("generate", request.trim(), { project_id: projectId || null, decision_reuse: decisionSelections });
+      if (!value) return;
       if (submitted === navigation.current) {
-        setRequest("");
-        setDecisionSelections([]);
-        sessionStorage.removeItem(draftKey);
+        setRequest(""); setDecisionSelections([]); sessionStorage.removeItem(draftKey);
         navigate(`/jobs/${value.id}`);
       }
-      setJobs((previous) => [
-        value,
-        ...previous.filter((j) => j.id !== value.id),
-      ]);
       auth.setNotice("새 작업을 대기열에 넣었습니다.");
-      refresh();
-    } catch (e) {
-      auth.setNotice((e as Error).message);
-    } finally {
-      mutating.current = false;
-      setBusy(false);
-    }
+    } catch (e) { auth.setNotice((e as Error).message); }
   }
   const filtered = jobs.filter(
     (j) =>
@@ -546,7 +253,7 @@ export default function Workspace() {
                         {tab === "history" && actualJob.usage && <p className="subtle">{usageLabel(actualJob.usage)}</p>}
                         {tab === "history" && (
                           <>
-                            <ExecutionTimeline key={actualJob.id} job={actualJob} nodes={graphNodes(actualJob)} selected={step} select={selected => { manual.current = true; setStep(selected); }} />
+                            <ExecutionTimeline key={actualJob.id} job={actualJob} nodes={graphNodes(actualJob)} selected={step} select={session.select} />
                             {actualJob.execution_graph?.recording_incomplete && <Notice>일부 이력 기록 누락</Notice>}
                           </>
                         )}
@@ -601,9 +308,7 @@ export default function Workspace() {
     </SidebarProvider>
   );
 }
-function locationProtocol() {
-  return window.location.protocol === "https:" ? "wss:" : "ws:";
-}
+
 function Account() {
   const auth = useAuth(),
     [remaining, setRemaining] = useState<number | null>(null),

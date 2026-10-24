@@ -8,11 +8,8 @@ import re
 from typing import Any
 
 from backend.errors import InvalidStateError
-from backend.infrastructure.prompt_messages import complete as complete_messages
-from backend.infrastructure.prompt_messages import flatten
 from backend.infrastructure.prompt_messages import messages as build_messages
 from backend.infrastructure.prompts import load_prompt
-from backend.infrastructure.provider_output import extract_json_object
 from backend.models import InterviewResult
 from backend.models import InterviewResponse
 from backend.models import QAItem
@@ -33,8 +30,7 @@ class SpecInterviewer:
         state: dict[str, Any],
         manifest: dict[str, Any],
         *,
-        provider_complete_fn: Any | None = None,
-        provider_messages_fn: Any | None = None,
+        provider_messages_fn: Any,
     ) -> InterviewResult:
         request = str(state.get("user_request", "")).strip()
         request_type = classify_request_type(request, manifest)
@@ -55,20 +51,12 @@ class SpecInterviewer:
             )
 
         payload = _build_messages(request, manifest, candidates, answers, state)
-        raw = complete_messages(
-            payload,
-            provider_complete_fn=provider_complete_fn,
-            provider_messages_fn=provider_messages_fn,
-        )
-        if isinstance(raw, InterviewResponse):
-            parsed = _normalise_response(raw.model_dump())
-            if parsed is None:
-                raise InvalidStateError("Interview response schema is invalid.")
-        else:
-            # 문자열 콜백은 기존 직접 서비스 호출의 호환 경계에서만 처리한다.
-            parsed, _ = _parse_response(raw)
-            if parsed is None:
-                raise InvalidStateError("Interview response schema is invalid.")
+        raw = provider_messages_fn(payload)
+        if not isinstance(raw, InterviewResponse):
+            raise InvalidStateError("Interview response schema is invalid.")
+        parsed = _normalise_response(raw.model_dump())
+        if parsed is None:
+            raise InvalidStateError("Interview response schema is invalid.")
 
         parsed_type = str(parsed["request_type"])
         request_type = parsed_type
@@ -148,17 +136,6 @@ def _build_messages(
     )
 
 
-def _build_prompt(
-    request: str,
-    manifest: dict[str, Any],
-    candidates: list[Question],
-    answers: list[QAItem],
-    state: dict[str, Any],
-) -> str:
-    """기존 문자열 콜백 검증용 호환 진입점이다."""
-    return flatten(_build_messages(request, manifest, candidates, answers, state))
-
-
 def _saved_answers(state: dict[str, Any]) -> tuple[list[QAItem], list[QAItem]]:
     explicit_raw = []
     if isinstance(state.get("requirement_lock_sheet"), dict):
@@ -195,24 +172,6 @@ def _all_questions(request_type: str, answers: list[QAItem]) -> dict[str, str]:
     return known
 
 
-def _valid_response(value: Any) -> bool:
-    """호환성을 위해 유지하는 응답 스키마 검사 진입점."""
-    return _normalise_response(value) is not None
-
-
-def _parse_response(raw: Any) -> tuple[dict[str, Any] | None, str]:
-    try:
-        parsed = extract_json_object(raw)
-    except (AttributeError, TypeError):
-        return None, "INTERVIEW_JSON_PARSE"
-    if parsed is None:
-        return None, "INTERVIEW_JSON_PARSE"
-    normalised = _normalise_response(parsed)
-    if normalised is None:
-        return None, "INTERVIEW_SCHEMA"
-    return normalised, ""
-
-
 def _normalise_response(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
@@ -225,10 +184,6 @@ def _normalise_response(value: Any) -> dict[str, Any] | None:
 
     normalised = dict(value)
     normalised["blocking_questions"] = blocking_questions
-    for field in ("assumptions", "additional_questions", "pre_answers"):
-        item = normalised.get(field)
-        if item is None:
-            normalised[field] = []
     assumptions = normalised["assumptions"]
     additional_questions = normalised["additional_questions"]
     pre_answers = normalised["pre_answers"]
@@ -250,11 +205,9 @@ def _is_question_list(value: Any) -> bool:
     if not isinstance(value, list):
         return False
     for item in value:
-        if isinstance(item, str) and item.strip():
-            continue
         if not isinstance(item, dict):
             return False
-        text = item.get("question", item.get("text"))
+        text = item.get("question")
         if not isinstance(text, str) or not text.strip():
             return False
         question_id = item.get("question_id")
@@ -282,15 +235,9 @@ def _is_pre_answer_list(value: Any) -> bool:
     return True
 
 
-def _identify_question(value: Any, known: dict[str, str]) -> tuple[str, str]:
-    if isinstance(value, dict):
-        question_id = str(value.get("question_id", "")).strip()
-        text = str(value.get("question", value.get("text", ""))).strip()
-    else:
-        text = str(value).strip()
-        match = re.match(r"\[([^]]+)]\s*(.*)", text)
-        question_id = match.group(1) if match else ""
-        text = match.group(2) if match else text
+def _identify_question(value: dict[str, Any], known: dict[str, str]) -> tuple[str, str]:
+    question_id = value["question_id"].strip()
+    text = value["question"].strip()
     if question_id in known:
         return question_id, text or known[question_id]
     digest = hashlib.sha256(_normalise(text).encode()).hexdigest()[:10]

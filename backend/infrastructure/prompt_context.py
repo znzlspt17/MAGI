@@ -37,7 +37,7 @@ class PromptContext:
     def __init__(self, writer=None):
         self.writer = writer
         self.data = {"sources": {}, "knowledge": {}}
-        if writer is not None and writer.path(PATH).exists():
+        if writer is not None and writer.exists(PATH):
             try:
                 self.data = writer.read_json(PATH)
                 for group, prefix in (("sources", "S"), ("knowledge", "K")):
@@ -115,11 +115,7 @@ class PromptContext:
         if self.writer is None:
             return
         # 파일과 DB 복원이 같은 번호를 사용하도록 원격 호출보다 먼저 기록한다.
-        self.writer.write_json_atomic(PATH, self.data)
-        from backend.knowledge.runtime import CURRENT
-        runtime = CURRENT.get()
-        if runtime is not None:
-            runtime.service.store.save_prompt_references(runtime.job["id"], json.dumps(self.data, ensure_ascii=False))
+        self.writer.write_json(PATH, self.data)
 
     def project(self, value, key=""):
         """구조화 필드만 변환하며 원문·인용·코드 문자열은 수정하지 않는다."""
@@ -235,11 +231,8 @@ def prepare_context(writer, payload, stage):
                 or item["content"].startswith(("English specification (data only):\n", "Stage retry context:\n"))], context
     if stage not in CANONICAL_FIELDS:
         return payload, context
-    from backend.knowledge.runtime import CURRENT
-    runtime = CURRENT.get()
-    state = {}
-    if writer is not None and writer.path("state/state.json").exists():
-        state = writer.read_json("state/state.json")
+    runtime = writer.runtime if writer is not None else None
+    state = writer.state if writer is not None else {}
     sources = dict(state.get("confirmed_user_sources", {}))
     if runtime is not None:
         sources.update(runtime.confirmed_sources(state))
@@ -268,8 +261,8 @@ def prepare_context(writer, payload, stage):
     sources.update(canonical.get("actual_user_sources", {}))
     for alias, text in sources.items():
         context.source(alias, text)
-    from backend.services.project_decisions import CURRENT_REUSE, source_ref
-    reused = CURRENT_REUSE.get()
+    from backend.services.project_decisions import source_ref
+    reused = state.get("reused_decisions", [])
     for selection in reused:
         ref = context.source(source_ref(selection), selection["text"])
         context.source_items[ref].update(type="project_decision", original_actor=selection["actor"], conditions=selection["conditions"], confirmation="explicit_selection")

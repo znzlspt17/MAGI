@@ -15,8 +15,8 @@ from pathlib import Path
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
-from backend.errors import TranslationValidationError, ConversationUnavailableError, InvalidStateError
-from backend.server.diagnostics import diagnose_exception
+from backend.errors import TranslationValidationError, InvalidStateError
+from backend.server.diagnostics import diagnose_exception, safe_user_error
 from backend.server.job_manager import JobManager
 from backend.server.cleanup import CleanupConflict
 from protocol.messages import (
@@ -48,10 +48,10 @@ def configure_logging() -> None:
 
 
 class Server:
-    def __init__(self, data_dir: str | Path, knowledge=None, *, public=None, internal_key='') -> None:
+    def __init__(self, knowledge, *, public=None, internal_key="") -> None:
         self.loop = asyncio.get_running_loop()
         self.subscribers: set[asyncio.Queue[str]] = set()
-        self.manager = JobManager(data_dir, on_change=self.publish_from_worker, knowledge=knowledge)
+        self.manager = JobManager(knowledge, on_change=self.publish_from_worker)
         self.public = public(self.manager) if public is not None else None
         self.internal_key = internal_key
         self.subscriber_owners = {}
@@ -63,12 +63,18 @@ class Server:
             return
 
     def _publish(self, event: dict) -> None:
-        message = json.dumps({key:value for key,value in event.items() if key!='_owner_id'}, ensure_ascii=False, separators=(",", ":"))
+        message = json.dumps(
+            {key: value for key, value in event.items() if key != "_owner_id"},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
         for queue in tuple(self.subscribers):
             if self.public:
                 uid = self.subscriber_owners.get(queue)
-                jid = event.get('job',{}).get('id')
-                owner=event.get('_owner_id') or self.manager.jobs.get(jid,{}).get('owner_id')
+                jid = event.get("job", {}).get("id")
+                owner = event.get("_owner_id") or self.manager.jobs.get(jid, {}).get(
+                    "owner_id"
+                )
                 if owner != uid:
                     continue
             try:
@@ -86,11 +92,19 @@ class Server:
         if self.public or self.internal_key:
             # 공개 경로는 게이트웨이뿐이다. 브라우저와 비로컬 RPC 연결은 받지 않는다.
             peer = socket.remote_address
-            if not peer or not ip_address(peer[0]).is_loopback or (socket.request and 'Origin' in socket.request.headers):
+            if (
+                not peer
+                or not ip_address(peer[0]).is_loopback
+                or (socket.request and "Origin" in socket.request.headers)
+            ):
                 await socket.close(code=1008)
                 return
-            supplied = socket.request.headers.get('X-Internal','') if socket.request else ''
-            if self.internal_key and not hmac.compare_digest(supplied,self.internal_key):
+            supplied = (
+                socket.request.headers.get("X-Internal", "") if socket.request else ""
+            )
+            if self.internal_key and not hmac.compare_digest(
+                supplied, self.internal_key
+            ):
                 await socket.close(code=1008)
                 return
         try:
@@ -105,18 +119,26 @@ class Server:
                 if request["method"] == "subscribe":
                     if self.public:
                         try:
-                            actor = await asyncio.to_thread(self.public.access.session, request.get('session'))
+                            actor = await asyncio.to_thread(
+                                self.public.access.session, request.get("session")
+                            )
                         except Exception:
-                            await socket.send(error(request_id,'로그인이 필요합니다.','unauthorized'))
+                            await socket.send(
+                                error(
+                                    request_id, "로그인이 필요합니다.", "unauthorized"
+                                )
+                            )
                             return
                     if queue is None:
                         queue = asyncio.Queue(maxsize=32)
                         self.subscribers.add(queue)
                         if self.public:
-                            self.subscriber_owners[queue]=actor['id']
+                            self.subscriber_owners[queue] = actor["id"]
                     await socket.send(rpc_result(request_id, {"ready": True}))
                     if sender is None:
-                        sender = asyncio.create_task(self._sender(socket, queue, request.get('session')))
+                        sender = asyncio.create_task(
+                            self._sender(socket, queue, request.get("session"))
+                        )
                     continue
                 response = await asyncio.to_thread(self._dispatch, request)
                 await socket.send(response)
@@ -128,7 +150,7 @@ class Server:
         finally:
             if queue is not None:
                 self.subscribers.discard(queue)
-                self.subscriber_owners.pop(queue,None)
+                self.subscriber_owners.pop(queue, None)
             if sender is not None:
                 sender.cancel()
 
@@ -137,14 +159,18 @@ class Server:
             try:
                 if self.public:
                     try:
-                        message=await asyncio.wait_for(queue.get(),timeout=5)
+                        message = await asyncio.wait_for(queue.get(), timeout=5)
                     except asyncio.TimeoutError:
-                        actor=await asyncio.to_thread(self.public.access.session,sid)
-                        status=await asyncio.to_thread(self.public.access.status,actor['id'])
-                        message=json.dumps({'event':'service.status','status':status})
+                        actor = await asyncio.to_thread(self.public.access.session, sid)
+                        status = await asyncio.to_thread(
+                            self.public.access.status, actor["id"]
+                        )
+                        message = json.dumps(
+                            {"event": "service.status", "status": status}
+                        )
                     else:
                         # 진행 이벤트를 전송하기 직전에 세션 철회 여부를 확인한다.
-                        await asyncio.to_thread(self.public.access.session,sid)
+                        await asyncio.to_thread(self.public.access.session, sid)
                     await socket.send(message)
                 else:
                     await socket.send(await queue.get())
@@ -158,127 +184,163 @@ class Server:
                 return
 
     def _dispatch(self, request: dict) -> str:
-        if request['method'] == 'health.check':
+        if request["method"] == "health.check":
             # 내부 키를 검사한 loopback 소켓에서만 DB 준비 상태를 확인한다.
-            if not self.internal_key or self.manager.closed or self.manager.knowledge is None:
-                return error(request['request_id'], '준비되지 않았습니다.', 'unavailable')
+            if (
+                not self.internal_key
+                or self.manager.closed
+                or self.manager.knowledge is None
+            ):
+                return error(
+                    request["request_id"], "준비되지 않았습니다.", "unavailable"
+                )
             try:
                 store = self.manager.knowledge.store
                 with store.connect(**store.config.connection) as connection:
                     connection.execute("SET LOCAL statement_timeout = '3s'")
                     connection.execute("SELECT 1").fetchone()
-                return rpc_result(request['request_id'], {'ready': True})
+                return rpc_result(request["request_id"], {"ready": True})
             except Exception:
-                return error(request['request_id'], '준비되지 않았습니다.', 'unavailable')
+                return error(
+                    request["request_id"], "준비되지 않았습니다.", "unavailable"
+                )
         if self.public:
             from backend.access.context import AccessError
-            try:
-                return rpc_result(request['request_id'],self.public.invoke(request,self._dispatch_legacy))
-            except AccessError as exc:
-                LOGGER.warning('public request rejected method=%s category=%s request_id=%s',request['method'],exc.code,request['request_id'])
-                return error(request['request_id'],str(exc),exc.code)
-            except KeyError:
-                LOGGER.warning('public request rejected method=%s category=not_found request_id=%s',request['method'],request['request_id'])
-                return error(request['request_id'],'작업을 찾을 수 없습니다.','not_found')
-            except Exception as exc:
-                _log_exception('public dispatch failed',exc,method=request['method'])
-                return error(request['request_id'],'요청을 처리하지 못했습니다.','unavailable')
-        if request['method'].startswith(('admin.','cleanup.')):
-            return error(request['request_id'],'관리자 인증이 설정된 서비스에서만 사용할 수 있습니다.','forbidden')
-        return self._dispatch_legacy(request)
 
-    def _dispatch_legacy(self, request: dict) -> str:
-        request_id = request["request_id"]
-        method = request["method"]
-        params = request["params"]
+            try:
+                return rpc_result(
+                    request["request_id"],
+                    self.public.invoke(request, self._dispatch_request),
+                )
+            except AccessError as exc:
+                LOGGER.warning(
+                    "public request rejected method=%s category=%s request_id=%s",
+                    request["method"],
+                    exc.code,
+                    request["request_id"],
+                )
+                return error(request["request_id"], str(exc), exc.code)
+            except KeyError:
+                LOGGER.warning(
+                    "public request rejected method=%s category=not_found request_id=%s",
+                    request["method"],
+                    request["request_id"],
+                )
+                return error(
+                    request["request_id"], "작업을 찾을 수 없습니다.", "not_found"
+                )
+            except Exception as exc:
+                _log_exception("public dispatch failed", exc, method=request["method"])
+                return error(
+                    request["request_id"], "요청을 처리하지 못했습니다.", "unavailable"
+                )
+        if request["method"].startswith(("admin.", "cleanup.")):
+            return error(
+                request["request_id"],
+                "관리자 인증이 설정된 서비스에서만 사용할 수 있습니다.",
+                "forbidden",
+            )
+        return error(
+            request["request_id"], "인증 서비스가 필요합니다.", "configuration"
+        )
+
+    def _dispatch_request(self, request: dict):
+        from backend.access.context import AccessError
+        from protocol.commands import COMMAND_KINDS
+        from protocol.messages import RPC_METHODS
+
+        method, params = request["method"], request["params"]
         try:
-            if method == "list":
-                payload = [self.manager.summary(ident) for ident in self.manager.ids()]
-            elif method == "get":
-                ident = _ident(params)
-                step_id = params.get("step_id")
-                payload = (
-                    self.manager.step(ident, step_id)
-                    if isinstance(step_id, str)
-                    else self.manager.public(ident)
-                )
-            elif method == "requirement.review":
-                payload = self.manager.requirement_review(_ident(params), params)
-            elif method in {"implementation.package", "implementation.package.file"}:
-                payload = self.manager.implementation_package(_ident(params), params, read_file=method.endswith(".file"))
-            elif method == "document":
-                step_id = params.get("step_id")
-                language = params.get("language")
-                if not isinstance(step_id, str) or not isinstance(language, str) or language not in {"ko", "en"}:
-                    raise ValueError("Invalid document request")
-                payload = self.manager.document(_ident(params), step_id, language)
-            elif method == "generate":
-                payload = self.manager.summary(
-                    self.manager.create(
+            if method in COMMAND_KINDS:
+                if method == "generate":
+                    job = self.manager.create(
                         params.get("request"),
-                        params.get("demo"),
-                        params.get("provider"),
-                        params.get("project_id"),
-                        params.get("decision_reuse"),
-                    )["id"]
-                )
-            elif method.startswith("cleanup."):
-                action = method.split(".")[1]
-                payload = (self.manager.cleanup.catalog() if action == "catalog" else
-                           getattr(self.manager.cleanup, action)(params))
-                if action == "execute":
-                    self.publish_from_worker({"event": "records.deleted", "ids": payload["targets"]})
-            elif method == "knowledge.impact":
-                payload = self.manager.impact(params)
-            elif method == "knowledge.impact.analyse":
-                from backend.knowledge.projection import digest
-                payload = self.manager.impact_analyse(params.get("job_id"), params, request.get("idempotency_key") or digest(params))
-            elif method.startswith(("projects.", "knowledge.")):
-                payload = self.manager.knowledge_call(method, params)
-            elif method == "continue":
-                job = self.manager.continue_session(_ident(params), params.get("payload"), params.get("execution_id"))
-                payload = self.manager.summary(job["id"])
-            elif method == "retry":
-                job = self.manager.retry(_ident(params), params.get("execution_id"))
-                payload = self.manager.summary(job["id"])
-            elif method in {"answer", "revise", "approve", "message"}:
-                job = self.manager.action(_ident(params), method, params.get("payload"),
-                                          expected_execution_id=params.get("execution_id"))
-                payload = self.manager.summary(job["id"])
-            elif method == "download":
-                ident = _ident(params)
-                if self.manager.get(ident).get("status") != "FINALIZED":
-                    raise KeyError(ident)
-                path = self.manager.artifact(ident, "final/FINAL_AGENT_SPEC.md")
-                payload = {
-                    "name": "FINAL_AGENT_SPEC.md",
-                    "content": base64.b64encode(path.read_bytes()).decode("ascii"),
-                }
-            else:
-                return error(request_id, "요청을 처리할 수 없습니다.", "invalid")
-        except (ConversationUnavailableError, InvalidStateError) as exc:
-            from backend.server.diagnostics import safe_user_error
-            return error(request_id, safe_user_error(exc), "conflict")
-        except CleanupConflict as exc:
-            return error(request_id, str(exc), "conflict")
+                        project_id=params.get("project_id"),
+                        decision_reuse=params.get("decision_reuse"),
+                    )
+                else:
+                    payload = (
+                        {"retry_of": params["execution_id"]}
+                        if method == "retry"
+                        else {"candidate_hash": params["candidate_hash"]}
+                        if method == "approve"
+                        else params.get("payload")
+                    )
+                    job = self.manager.action(
+                        _ident(params),
+                        method,
+                        payload,
+                        expected_execution_id=params.get("execution_id"),
+                    )
+                return self.manager.workspace.summary(job["id"])
+            handler = RPC_METHODS.get(method)
+            if handler is None:
+                raise AccessError("지원하지 않는 요청입니다.", "invalid")
+            return getattr(self, handler)(params, request)
+        except (InvalidStateError, CleanupConflict) as exc:
+            raise AccessError(safe_user_error(exc), "conflict") from None
         except TranslationValidationError as exc:
             _log_exception("dispatch failed", exc, method=method)
-            return error(request_id, diagnose_exception(exc)["reason"], "translation_invalid")
-        except KeyError:
-            LOGGER.info("dispatch rejected method=%s category=not_found", method)
-            return error(request_id, "작업을 찾을 수 없습니다.", "not_found")
+            raise AccessError(
+                diagnose_exception(exc)["reason"], "translation_invalid"
+            ) from None
         except ValueError:
-            LOGGER.info("dispatch rejected method=%s category=invalid", method)
-            return error(
-                request_id, "입력 또는 현재 작업 상태를 확인하세요.", "invalid"
-            )
-        except RuntimeError:
-            LOGGER.info("dispatch rejected method=%s category=conflict", method)
-            return error(request_id, "작업 서버를 사용할 수 없습니다.", "conflict")
-        except Exception as exc:
-            _log_exception("dispatch failed", exc, method=method)
-            return error(request_id, "요청을 처리하지 못했습니다.", "internal")
-        return rpc_result(request_id, payload)
+            raise AccessError(
+                "입력 또는 현재 작업 상태를 확인하세요.", "invalid"
+            ) from None
+
+    def _list_jobs(self, params, request):
+        return [self.manager.workspace.summary(ident) for ident in self.manager.ids()]
+
+    def _get_job(self, params, request):
+        ident = _ident(params)
+        return (
+            self.manager.workspace.step(ident, params["step_id"])
+            if "step_id" in params
+            else self.manager.workspace.public(ident)
+        )
+
+    def _document(self, params, request):
+        return self.manager.workspace.document(
+            _ident(params),
+            params.get("step_id"),
+            params.get("language"),
+            meter=request.get("_meter"),
+        )
+
+    def _download(self, params, request):
+        ident = _ident(params)
+        if self.manager.get(ident)["status"] != "FINALIZED":
+            raise KeyError(ident)
+        content = self.manager.workspace.documents(ident).read_text(
+            "final/FINAL_AGENT_SPEC.md"
+        )
+        return {
+            "name": "FINAL_AGENT_SPEC.md",
+            "content": base64.b64encode(content.encode()).decode("ascii"),
+        }
+
+    def _requirement_review(self, params, request):
+        return self.manager.workspace.requirement_review(_ident(params), params)
+
+    def _implementation_package(self, params, request):
+        return self.manager.workspace.implementation_package(
+            _ident(params), params, read_file=request["method"].endswith(".file")
+        )
+
+    def _knowledge(self, params, request):
+        return self.manager.workspace.knowledge_call(request["method"], params)
+
+    def _impact(self, params, request):
+        return self.manager.workspace.impact(params)
+
+    def _impact_analyse(self, params, request):
+        return self.manager.workspace.impact_analyse(
+            params.get("job_id"),
+            params,
+            request.get("idempotency_key"),
+            meter=request.get("_meter"),
+        )
 
 
 def _ident(params: dict) -> str:
@@ -290,37 +352,28 @@ def _ident(params: dict) -> str:
 
 async def main() -> None:
     configure_logging()
-    from backend.knowledge.config import KnowledgeConfig, load_environment
+    from backend.knowledge.config import KnowledgeConfig
     from backend.knowledge.runtime import KnowledgeService
     from backend.knowledge.store import KnowledgeStore
-    load_environment()
     from protocol.deployment import validate_container
-    validate_container('backend')
-    if os.environ.get('CONTAINER') == '1':
+
+    validate_container("backend")
+    if os.environ.get("CONTAINER") == "1":
         from backend.knowledge.prepare_model import verify_prepared_model
-        verify_prepared_model(os.environ['EMBEDDING_MODEL_PATH'])
-    public_mode=os.environ.get('PUBLIC_MODE','1')!='0'
-    internal_key=os.environ.get('INTERNAL_KEY','')
-    runtime=None
-    data_dir = os.environ.get("DATA_DIR", str(Path.cwd() / "web_data"))
+
+        verify_prepared_model(os.environ["EMBEDDING_MODEL_PATH"])
+    internal_key = os.environ.get("INTERNAL_KEY", "")
+    runtime = None
     try:
-        from backend.knowledge.format_guard import require_current
-        require_current(data_dir)
         config = KnowledgeConfig.from_env()
-        knowledge = None
-        if config is not None:
-            store = KnowledgeStore(config)
-            store.migrate()
-            knowledge = KnowledgeService(store)
-        if public_mode:
-            if knowledge is None:
-                raise InvalidStateError('공개 모드에는 PostgreSQL 설정이 필요합니다.')
-            from backend.access.runtime import PublicRuntime,service_factory
-            runtime=PublicRuntime(store)
-            runtime.acquire()
-        server = Server(data_dir, knowledge=knowledge,public=service_factory if public_mode else None,internal_key=internal_key)
-        if knowledge is not None and not public_mode:
-            knowledge.schedule()
+        store = KnowledgeStore(config)
+        store.require_ready()
+        from backend.access.runtime import PublicRuntime, service_factory
+
+        runtime = PublicRuntime(store)
+        runtime.acquire()
+        knowledge = KnowledgeService(store)
+        server = Server(knowledge, public=service_factory, internal_key=internal_key)
     except Exception as exc:
         _log_exception("server initialization failed", exc)
         raise SystemExit(1) from None

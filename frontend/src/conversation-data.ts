@@ -19,7 +19,6 @@ export function conversationTurns(job: Job): { turns: ConversationTurn[]; incomp
   }
   if (!records.size) {
     incomplete = true;
-    if (job.request) turns.push({ id: `${job.id}:request`, eventId: "legacy", role: "user", text: job.request });
   }
   return { turns, incomplete };
 }

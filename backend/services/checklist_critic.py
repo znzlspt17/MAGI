@@ -8,10 +8,7 @@ from typing import Any
 from backend.errors import ReviewValidationError
 from backend.infrastructure.output_language import has_hangul, prose
 
-from backend.infrastructure.provider_output import extract_json_object
 from backend.models import ReviewResponse
-from backend.infrastructure.prompt_messages import complete as complete_messages
-from backend.infrastructure.prompt_messages import flatten
 from backend.infrastructure.prompt_messages import messages as build_messages
 from backend.infrastructure.prompts import load_prompt
 from backend.models import (
@@ -36,8 +33,7 @@ class ChecklistCritic:
         spec_md: str,
         sheet: RequirementLockSheet,
         *,
-        provider_complete_fn: Any | None = None,
-        provider_messages_fn: Any | None = None,
+        provider_messages_fn: Any,
         user_request: str = "",
         previous_issues: list[IssuePacket] | list[dict[str, Any]] | None = None,
         revision_feedback: str = "",
@@ -56,18 +52,13 @@ class ChecklistCritic:
             revision_feedback=revision_feedback,
             revision_history=revision_history or [],
         )
-        raw = complete_messages(
-            payload,
-            provider_complete_fn=provider_complete_fn,
-            provider_messages_fn=provider_messages_fn,
-        )
+        raw = provider_messages_fn(payload)
         try:
-            if isinstance(raw, ReviewResponse):
-                parsed = raw.model_dump()
-                for index, item in enumerate(parsed["issues"], start=1):
-                    item["issue_id"] = f"LLM-ISSUE-{index:03d}"
-            else:
-                parsed = extract_json_object(raw)
+            if not isinstance(raw, ReviewResponse):
+                raise ReviewValidationError()
+            parsed = raw.model_dump()
+            for index, item in enumerate(parsed["issues"], start=1):
+                item["issue_id"] = f"LLM-ISSUE-{index:03d}"
             llm_issues = _parse_provider_issues(
                 parsed,
                 {
@@ -184,26 +175,6 @@ def _parse_provider_issues(
         issue.status = "open"
     return issues
 
-
-def _build_prompt(
-    spec_md: str,
-    sheet: RequirementLockSheet,
-    *,
-    user_request: str = "",
-    previous_issues: list[IssuePacket] | list[dict[str, Any]] | None = None,
-    revision_feedback: str = "",
-) -> str:
-    """기존 문자열 콜백 검증용 호환 진입점이다."""
-    return flatten(
-        _build_messages(
-            spec_md,
-            sheet,
-            user_request=user_request,
-            previous_issues=previous_issues,
-            revision_feedback=revision_feedback,
-            revision_history=[revision_feedback] if revision_feedback else [],
-        )
-    )
 
 def _serialize_previous_issues(
     previous_issues: list[IssuePacket] | list[dict[str, Any]] | None,

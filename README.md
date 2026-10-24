@@ -41,46 +41,34 @@
 - Python 3.11 이상과 [uv](https://docs.astral.sh/uv/)
 - 화면 빌드용 Node.js 22.12 이상과 pnpm 11.25.0
 - OpenAI API 키
-- 공개 모드에서는 PostgreSQL·pgvector와 Google OAuth 설정
+- PostgreSQL·pgvector와 Google OAuth 설정
 
 소스에서 실행할 때는 저장소 루트에서 Python 의존성을 설치하고 화면을 빌드합니다. 운영 시 별도 Node 서버는 필요하지 않으며, Flask 게이트웨이가 빌드된 화면을 제공합니다.
 
 ```sh
-uv sync
+uv sync --locked --group gateway
 cd frontend
 pnpm install --frozen-lockfile
 pnpm build
 cd ..
 ```
 
-### 개인용 로컬 실행
+### 웹 서비스 실행
 
-다음 예시는 인증 없는 로컬 모드입니다. `OPENAI_API_KEY`가 설정된 PowerShell 창 두 개를 저장소 루트에서 사용합니다.
+[운영 문서](docs/PUBLIC_SERVICE.ko.md)에 따라 DB를 설치·검증하고 PostgreSQL·Google 로그인·모델 설정을 실행 환경에 주입합니다. 저장소 루트의 터미널 두 개에서 실행합니다.
 
-첫 번째 창에서 백엔드를 실행합니다.
-
-```powershell
-$env:PUBLIC_MODE = '0'
+```sh
 uv run python -m backend.server
-```
-
-두 번째 창에서 게이트웨이를 실행합니다.
-
-```powershell
-$env:PUBLIC_MODE = '0'
-$env:FLASK_SKIP_DOTENV = '1'
 uv run python -m flask --app gateway.app:create_app run --host 127.0.0.1 --port 5000 --no-reload
 ```
 
-브라우저에서 [http://127.0.0.1:5000](http://127.0.0.1:5000)을 엽니다. 인증 없는 로컬 모드는 개인 PC에서만 사용합니다.
-
-기본 실행 모드는 Google 로그인을 사용하는 공개 모드입니다. 공개 서비스와 localhost 로그인 구성은 [공개 서비스 운영](docs/PUBLIC_SERVICE.ko.md)을 참고하세요.
+운영 환경은 HTTPS 프록시를 사용합니다. 개발 PC의 localhost Google 로그인 설정도 운영 문서에 설명합니다.
 
 ### 설정 적용 방식
 
-백엔드 실행 프로그램은 현재 작업 폴더의 `.env`를 읽으며, 이미 설정된 프로세스 환경변수가 우선합니다. 게이트웨이는 앱에서 `.env`를 직접 읽지 않으므로 실행 환경에 설정을 주입해야 합니다. 컨테이너는 Compose·Portainer가 주입한 설정을 사용합니다.
+백엔드와 게이트웨이는 실행 환경에 주입한 설정을 사용합니다. 컨테이너에서는 Compose·Portainer에 설정합니다.
 
-DB 설정이 없고 `PUBLIC_MODE=0`이면 파일 저장소를 사용합니다. DB 설정이 있으면 PostgreSQL을 사용하며, 연결 실패 시 파일 저장소로 자동 전환하지 않습니다.
+PostgreSQL 연결과 공개 서비스 설정은 필수입니다. 실행 문맥은 공식 PostgreSQL checkpointer, 문서·이력·사용자 결정은 업무 DB에 저장합니다.
 
 ## 모델과 언어
 
@@ -95,13 +83,13 @@ PostgreSQL·pgvector에 작업 상태와 단계별 문서, 요구사항·결정�
 로컬 임베딩을 사용할 경우 의존성과 모델을 준비합니다.
 
 ```sh
-uv sync --extra embedding
+uv sync --extra embedding --group gateway
 uv run python -m backend.knowledge.prepare_model --output ./models/bge-m3
 ```
 
 준비한 폴더를 `EMBEDDING_MODEL_PATH`에 지정하고 `EMBEDDING_DEVICE=cpu`를 사용합니다. 서비스 시작 시 모델을 자동 다운로드하지 않습니다. 의미 검색을 사용할 수 없으면 텍스트 검색으로 자료를 조회할 수 있습니다.
 
-기본 작업 폴더는 `web_data/`이며 `DATA_DIR`로 변경할 수 있습니다. DB 사용 시 저장된 기록을 기준으로 로컬 산출물을 복원합니다.
+작업·문서·이력은 PostgreSQL에 저장합니다. 문서 파일은 다운로드할 때 생성합니다. DB 설치·전환과 백업 범위는 [운영 문서](docs/PUBLIC_SERVICE.ko.md)를 참고하세요.
 
 | 경로 | 내용 |
 |---|---|
@@ -110,32 +98,26 @@ uv run python -m backend.knowledge.prepare_model --output ./models/bge-m3
 | `final/FINAL_AGENT_SPEC.md` | 사용자 승인을 마친 최종 명세 |
 | `critical/` | 명세 보완 실패 보고서 |
 | `completed/`, `history/` | 이전 완료본과 실행 시점의 문서 |
-| `state/`, `translations/` | 실행 상태·사용량과 번역 기록 |
-
-## Python API
-
-```python
-from backend import Engine
-
-engine = Engine()
-result = engine.generate_from_text(
-    text="사용자가 메모를 작성하고 검색할 수 있는 앱을 만들어 주세요.",
-    output_dir="./output",
-    web_search_mode="off",
-)
-print(result.status)
-```
-
-파일 입력, 질문 답변, 수정, 승인과 상태 조회도 제공합니다. 자세한 사용법은 [사용자 가이드](docs/USER_GUIDE.ko.md#python-api)를 참고하세요.
+| `translations/` | 원문 버전에 연결된 번역 |
 
 ## 사용 범위와 제한
 
 - 명세 생성에는 서버 실행 환경의 OpenAI API 키가 필요합니다.
 - 최종 명세는 사용자 승인 후 생성되며, 대상 제품의 코드는 구현하지 않습니다.
 - 서버가 중단되면 저장된 기록은 보존되지만 실행 중이던 모델 작업을 자동 재실행하지 않습니다.
-- Python API는 공개 웹 서비스의 계정별 실행·비용 제한을 적용하지 않습니다.
 
 ## 상세 문서
 
-- [사용자 가이드](docs/USER_GUIDE.ko.md): 질문·수정·승인, 실행 이력, 번역, 검색·그래프와 Python API
+- [사용자 가이드](docs/USER_GUIDE.ko.md): 질문·수정·승인, 실행 이력, 번역, 검색·그래프
 - [공개 서비스 운영](docs/PUBLIC_SERVICE.ko.md): 환경 변수, 로그인·DB·배포, 관리자와 데이터 관리
+
+## 개발 검증
+
+```sh
+uv sync --locked --extra test --group gateway
+uv run python -m pytest -q
+pnpm --dir frontend test
+pnpm --dir frontend build
+```
+
+핵심 제품 경계 검사는 `tests/core`에 있습니다. CI는 전용 PostgreSQL·pgvector와 공식 PostgreSQL checkpointer를 사용합니다. 로컬 SQL 대체 검사는 PostgreSQL 운영 복구 검증을 대신하지 않습니다. 브라우저 검사는 빌드한 화면과 가짜 모델 응답을 사용하며, 실제 모델 품질 평가는 별도입니다.

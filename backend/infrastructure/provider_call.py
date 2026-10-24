@@ -9,21 +9,20 @@ from datetime import datetime, timezone
 from time import perf_counter
 from typing import Any
 
-from backend.infrastructure.conversation_state import POLICY
+from backend.infrastructure.model_policy import POLICY
 from backend.models import STAGE_SCHEMAS
 from backend.infrastructure.output_language import LANGUAGE_RULES, language_issues, OutputLanguageError
 
 from backend.infrastructure.cache_diagnostics import safe_response_id, safe_diagnostics
-from backend.infrastructure.artifact_writer import ArtifactWriter
+from backend.knowledge.core import Documents
 from backend.models import CompletionResult
-from backend.providers.llm_provider import OpenAIProvider
+from backend.providers.llm_provider import ChatModelProvider
 from backend.infrastructure.stage_retry import attempt_limit, current_messages, retry_messages
 from backend.infrastructure.prompt_context import prepare_context
 from backend.errors import RequirementNormalizationError, ReviewValidationError, SpecCompilationError
 
 
 LOGGER = logging.getLogger("backend.server")
-_USAGE_PATH = "state/provider_usage.json"
 _CACHE_KEY_VERSION = "v3"
 WORKFLOW_MESSAGES = ContextVar("workflow_messages", default=None)
 
@@ -50,37 +49,9 @@ def complete_with_usage(writer, provider, messages, *, model, stage, temperature
     raise AssertionError("Unreachable language repair")
 
 
-def complete_direct(provider, messages, *, model, stage):
-    schema = STAGE_SCHEMAS[stage]
-    messages = current_messages(messages, stage)
-    original_messages = list(messages)
-    limit = attempt_limit()
-    for attempt in range(limit):
-        projected, references = prepare_context(None, messages, stage)
-        result = provider.complete_result(projected, model=model, temperature=0, text_format=schema,
-            instructions="\n\n".join(item["content"] for item in projected if item.get("role") == "system")
-                         + "\n" + LANGUAGE_RULES[stage]).parsed
-        if not isinstance(result, schema):
-            raise TypeError("Provider structured result is invalid.")
-        try:
-            result = references.restore(result)
-        except (RequirementNormalizationError, ReviewValidationError, SpecCompilationError) as exc:
-            if attempt == limit - 1:
-                raise
-            messages = retry_messages(original_messages, stage=stage, attempt=attempt + 1, error=exc)
-            continue
-        details = language_issues(result)
-        if not details:
-            return result
-        if attempt == limit - 1:
-            raise OutputLanguageError(details)
-        messages = retry_messages(original_messages, stage=stage, attempt=attempt + 1, error=OutputLanguageError(details))
-    raise AssertionError("Unreachable language repair")
-
-
 def _complete_once(
-    writer: ArtifactWriter,
-    provider: OpenAIProvider,
+    writer: Documents,
+    provider: ChatModelProvider,
     messages: list[dict],
     *,
     model: str,
@@ -88,7 +59,7 @@ def _complete_once(
     temperature: float | None = 0,
     isolated_schema: type | None = None,
 ) -> Any:
-    """사용량과 대화 연결을 저장하고 단계별 구조화 결과를 전달한다."""
+    """사용량과 작업별 메시지를 저장하고 단계별 구조화 결과를 전달한다."""
     # 변경 검토는 생성 대화와 검색 문맥을 공유하지 않는 단발 호출이다.
     references = None
     if isolated_schema is None:
@@ -105,8 +76,7 @@ def _complete_once(
         "cached_tokens": None,
     }
     attempts = usage.setdefault("attempts", [])
-    state_path = writer.path("state/state.json")
-    attempt["run_id"] = writer.read_json("state/state.json").get("run_id") if state_path.exists() else None
+    attempt["run_id"] = writer.job_id
     if not isinstance(attempts, list):
         attempts = []
         usage["attempts"] = attempts
@@ -202,32 +172,13 @@ def _complete_once(
     return references.restore(result.parsed) if schema else result.text
 
 
-def _load_usage(writer: ArtifactWriter) -> dict[str, Any]:
-    if not writer.path(_USAGE_PATH).exists():
-        return {"attempts": [], "recording_incomplete": False}
-    try:
-        value = writer.read_json(_USAGE_PATH)
-    except Exception as exc:
-        _log_usage_io("read", exc)
-        return {"attempts": [], "recording_incomplete": True}
-    if not isinstance(value, dict) or not isinstance(value.get("attempts"), list):
-        LOGGER.warning(
-            "provider usage read failed reason=invalid_data exception_type=none"
-        )
-        return {"attempts": [], "recording_incomplete": True}
-    return {
-        "attempts": [
-            _normalise_attempt(item)
-            for item in value["attempts"]
-            if isinstance(item, dict)
-        ],
-        "recording_incomplete": value.get("recording_incomplete") is True,
-    }
+def _load_usage(writer: Documents) -> dict[str, Any]:
+    return writer.usage()
 
 
-def _record_usage(writer: ArtifactWriter, usage: dict[str, Any]) -> bool:
+def _record_usage(writer: Documents, usage: dict[str, Any]) -> bool:
     try:
-        writer.write_json(_USAGE_PATH, usage, overwrite=True)
+        writer.save_usage(usage)
     except Exception as exc:
         usage["recording_incomplete"] = True
         _log_usage_io("write", exc)
@@ -245,7 +196,7 @@ def _safe_stage(stage: object) -> str:
     return stage if stage.replace("_", "").isalnum() and len(stage) <= 64 else "unknown"
 
 
-def _safe_provider(provider: OpenAIProvider) -> str:
+def _safe_provider(provider: ChatModelProvider) -> str:
     name = getattr(provider, "provider_name", "unknown")
     return name if isinstance(name, str) and name.isidentifier() else "unknown"
 
@@ -259,28 +210,6 @@ def _safe_model(model: object) -> str:
 
 def _count(value: int | None) -> int | None:
     return value if type(value) is int and value >= 0 else None
-
-
-def _normalise_attempt(value: dict[str, Any]) -> dict[str, Any]:
-    status = value.get("status")
-    return {
-        "stage": _safe_stage(value.get("stage", "")),
-        "provider": value.get("provider")
-        if value.get("provider") in {"openai"}
-        else "unknown",
-        "model": _safe_model(value.get("model", "")),
-        "status": status if status in {"attempt", "success", "failed"} else "attempt",
-        "elapsed_ms": _count(value.get("elapsed_ms")),
-        "input_tokens": _count(value.get("input_tokens")),
-        "output_tokens": _count(value.get("output_tokens")),
-        "cached_tokens": _count(value.get("cached_tokens")),
-        "started_at": timestamp.isoformat() if (timestamp := _utc_time(value.get("started_at"))) else None,
-        "response_id": safe_response_id(value.get("response_id")),
-        "comparison_response_id": safe_response_id(value.get("comparison_response_id")),
-        "comparison_elapsed_ms": _count(value.get("comparison_elapsed_ms")),
-        "cache_diagnostics": safe_diagnostics(value.get("cache_diagnostics")),
-        "conversation_event": value.get("conversation_event") if value.get("conversation_event") in {"started", "continued"} else None,
-    }
 
 
 def _logged_count(value: int | None) -> int | str:

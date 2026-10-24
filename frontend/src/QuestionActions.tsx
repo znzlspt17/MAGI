@@ -91,7 +91,7 @@ export function QuestionActions({
   const [pending, setPending] = useState(false);
   const [approvedExecution, setApprovedExecution] = useState(() => sessionStorage.getItem(prefix + "approved-execution") || "");
   const submitting = useRef(false);
-  const executionKey = `${job.id}:${job.execution_id || "legacy"}:${job.status}`;
+  const executionKey = `${job.id}:${job.execution_id}:${job.status}`;
   const disabled = busy || pending || approvedExecution === executionKey || serviceState(publicMode, status).blocked;
   const retryApproval = job.action === "approve" && job.retry_status === "PASS_PENDING_USER_APPROVAL" && !job.read_only;
   const actionClass = conversational ? "action-card conversation-action" : "action-card";

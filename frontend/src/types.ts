@@ -62,7 +62,6 @@ export interface Job extends RecordData {
   session_events?: SessionEvent[];
   execution_graph?: {
     nodes: Step[];
-    legacy?: boolean;
     recording_incomplete?: boolean;
     unresolved_issue_counts?: Record<string, number>;
   };
@@ -84,7 +83,7 @@ export interface SpecChange {
 export interface ChangeReviewData {
   status: "no_baseline" | "unchanged" | "complete" | "partial" | "failed" | "running";
   before_id?: string | null; after_id?: string; before_hash?: string | null; after_hash: string;
-  legacy?: boolean; analysed: number; remaining: number | null;
+  analysed: number; remaining: number | null;
   sources: { source_id: string; text: string; question?: string }[];
   changes: SpecChange[];
 }

@@ -10,19 +10,15 @@ GROUPS = ("mandatory_requirements", "recommended_requirements", "optional_requir
 
 
 def impact_context(store, job_id, node_id=None):
+    state = store.state(job_id)
     with store.transaction(mode="read") as conn:
         job = conn.execute("SELECT data FROM jobs WHERE id=%s", (job_id,)).fetchone()
         if not job:
             raise KeyError(job_id)
-        latest = conn.execute("SELECT id,state FROM snapshots WHERE job_id=%s ORDER BY sequence DESC LIMIT 1", (job_id,)).fetchone()
-        if not latest or latest["state"].get("status") not in READY or job["data"].get("status") not in READY:
+        if state.get("status") not in READY or job["data"].get("status") not in READY:
             raise ValueError("승인 후보가 준비된 작업에서 변경 영향을 검토할 수 있습니다.")
-        state = latest["state"]
         path = "final/FINAL_AGENT_SPEC.md" if state["status"] == "FINALIZED" else "draft/approval_candidate_spec.en.md"
-        artifact = conn.execute("SELECT content,content_hash FROM artifacts WHERE snapshot_id=%s AND path=%s", (latest["id"], path)).fetchone()
-        if not artifact:
-            raise ValueError("기준 명세를 확인할 수 없습니다.")
-        source_hash = artifact["content_hash"]
+        source_hash = digest(store.documents(job_id).read_text(path))
         rows = conn.execute("SELECT id,logical_key,kind,body,attrs FROM nodes WHERE job_id=%s AND active "
             "AND (kind IN ('requirement','decision') AND attrs->>'scope'='product' "
             "OR kind='spec' AND attrs->>'artifact_hash'=%s "

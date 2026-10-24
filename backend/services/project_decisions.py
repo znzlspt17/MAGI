@@ -2,9 +2,7 @@
 import hashlib
 import json
 import re
-from contextvars import ContextVar
 
-CURRENT_REUSE = ContextVar("confirmed_project_decisions", default=())
 
 from backend.knowledge.trace import DecisionTrace, confirmed_sources
 
@@ -15,7 +13,7 @@ def candidates(archive, completed_id, job_id, project_id):
     trace = archive.get("trace") or {}
     if not isinstance(basis, dict) or not isinstance(trace, dict) or not isinstance(basis.get("requirement_lock_sheet", {}), dict):
         return []
-    sources = {**confirmed_sources(basis, {}), **basis.get("confirmed_user_sources", {})}
+    sources = {**confirmed_sources(basis), **basis.get("confirmed_user_sources", {})}
     reusable_sources = {source_ref(item) for item in basis.get("reused_decisions", [])}
     decisions = {d.get("id"): d for d in [*(basis.get("requirement_lock_sheet") or {}).get("decisions", []), *trace.get("decisions", [])] if isinstance(d, dict)}
     from backend.knowledge.trace import REQUIREMENT_GROUPS

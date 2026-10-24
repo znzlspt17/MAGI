@@ -21,7 +21,7 @@ def load_snapshot(writer, ident, content):
         return None
     path = f"candidate_snapshots/{ident}.json"
     try:
-        if not writer.path(path).is_file():
+        if not writer.exists(path):
             return None
         packet = writer.read_json(path)
     except (OSError, ValueError, UnicodeError, ArtifactError):

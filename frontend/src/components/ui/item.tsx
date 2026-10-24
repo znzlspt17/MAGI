@@ -1,10 +1,9 @@
 // shadcn/ui MIT; adapted from ba1503c64472b82256d9de95e2e62c5901a38e8b
-import * as React from "react"
-import { cva, type VariantProps } from "class-variance-authority"
-import { cn } from "../../lib/utils"
 import * as Slot from "@radix-ui/react-slot"
+import { cva, type VariantProps } from "class-variance-authority"
+import * as React from "react"
+import { cn } from "../../lib/utils"
 
-import { Separator } from "./separator"
 
 function ItemGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (
@@ -17,19 +16,7 @@ function ItemGroup({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function ItemSeparator({
-  className,
-  ...props
-}: React.ComponentProps<typeof Separator>) {
-  return (
-    <Separator
-      data-slot="item-separator"
-      orientation="horizontal"
-      className={cn("my-0", className)}
-      {...props}
-    />
-  )
-}
+
 
 const itemVariants = cva(
   "group/item flex flex-wrap items-center rounded-md border border-transparent text-sm transition-colors duration-100 outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [a]:transition-colors [a]:hover:bg-accent/50",
@@ -89,20 +76,7 @@ const itemMediaVariants = cva(
   }
 )
 
-function ItemMedia({
-  className,
-  variant = "default",
-  ...props
-}: React.ComponentProps<"div"> & VariantProps<typeof itemMediaVariants>) {
-  return (
-    <div
-      data-slot="item-media"
-      data-variant={variant}
-      className={cn(itemMediaVariants({ variant, className }))}
-      {...props}
-    />
-  )
-}
+
 
 function ItemContent({ className, ...props }: React.ComponentProps<"div">) {
   return (
@@ -154,41 +128,11 @@ function ItemActions({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function ItemHeader({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="item-header"
-      className={cn(
-        "flex basis-full items-center justify-between gap-2",
-        className
-      )}
-      {...props}
-    />
-  )
-}
 
-function ItemFooter({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="item-footer"
-      className={cn(
-        "flex basis-full items-center justify-between gap-2",
-        className
-      )}
-      {...props}
-    />
-  )
-}
+
+
 
 export {
-  Item,
-  ItemMedia,
-  ItemContent,
-  ItemActions,
-  ItemGroup,
-  ItemSeparator,
-  ItemTitle,
-  ItemDescription,
-  ItemHeader,
-  ItemFooter,
+Item,ItemActions,ItemContent,ItemDescription,ItemGroup,
+ItemTitle
 }

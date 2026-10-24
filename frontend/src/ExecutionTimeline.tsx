@@ -9,12 +9,12 @@ const meaningful = (text?: string) => text && !["단계를 완료했습니다.",
 
 export function ExecutionTimeline({ job, nodes, selected, select }: { job: Job; nodes: Step[]; selected: string; select: (id: string) => void }) {
   const events = job.session_events || [];
-  const ids = [...new Set([...events.map(e => e.id), ...nodes.map(n => n.execution_id || "legacy")])];
+  const ids = [...new Set([...events.map(e => e.id), ...nodes.flatMap(n => n.execution_id ? [n.execution_id] : [])])];
   const initial = nodes.find(n => n.status === "running")?.execution_id || ids.at(-1);
   const [open, setOpen] = useState<Record<string, boolean>>(initial ? { [initial]: true } : {});
   return <ol className="execution-timeline" aria-label="실행별 처리 이력">{ids.map((id, index) => {
     const event = events.find(e => e.id === id);
-    const steps = nodes.filter(n => (n.execution_id || "legacy") === id);
+    const steps = nodes.filter(n => n.execution_id === id);
     const questions = [...new Set(event?.questions || [])];
     const title = actions[event?.action || steps[0]?.action || ""] || "처리 기록";
     return <li key={id}><Collapsible open={!!open[id]} onOpenChange={value => setOpen(previous => ({ ...previous, [id]: value }))}>

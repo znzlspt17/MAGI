@@ -1,265 +1,128 @@
-"""Public engine API for MAGI."""
+"""웹 명령을 그래프 입력으로 바꾼다. 파일 저장과 독립 실행 API는 제공하지 않는다."""
 
 from __future__ import annotations
 
 import copy
-import json
-import os
-from pathlib import Path
+import hashlib
 from typing import Callable
-from uuid import uuid4
 
-from backend.config import Config, VALID_WEB_SEARCH_MODES
-from backend.errors import InvalidStateError, Error
-from backend.infrastructure.artifact_writer import ArtifactWriter
+from backend.config import Config
+from backend.errors import InvalidStateError
 from backend.infrastructure.evidence_registry import EvidenceRegistry
-from backend.infrastructure.heartbeat import HEARTBEAT_PATH
 from backend.models import (
+    State,
     STATUS_FINALIZED,
     STATUS_NEEDS_USER_INPUT,
     STATUS_PASS_PENDING_USER_APPROVAL,
-    STATUS_REJECTED_BY_USER,
-    State,
 )
-from backend.models import Result
-from backend.pipeline.workflow_nodes import WorkflowNodes
-from backend.providers.llm_provider import OpenAIProvider
+from backend.providers.llm_provider import ChatModelProvider
 from backend.services.saved_answers import saved_answers
-from backend.services.skill_registry import build_default_skill_registry
-
-
-SUPPORTED_INPUT_EXTENSIONS = {".md", ".txt"}
+from backend.services.skill_registry import SkillRegistry
 
 
 class Engine:
-    def __init__(
-        self,
-        *,
-        config: Config | None = None,
-        provider: OpenAIProvider | None = None,
-        workflow_store_factory=None,
-    ) -> None:
-        self.config = config or Config.default()
-        self.provider = provider or OpenAIProvider()
-        self.workflow_store_factory = workflow_store_factory
+    def __init__(self, documents, runtime, *, config=None, provider=None):
+        self.documents, self.runtime = documents, runtime
+        self.config = config or Config()
+        self.provider = provider or ChatModelProvider(meter=runtime.meter)
 
-    def generate_from_file(
-        self,
-        *,
-        input_path: str,
-        output_dir: str,
-        project_dir: str | None = None,
-        web_search_mode: str | None = None,
-        overwrite: bool = False,
-        on_progress: Callable[[dict[str, str]], None] | None = None,
-    ) -> Result:
-        path = Path(input_path)
-        if not path.exists():
-            raise FileNotFoundError(f"Input file does not exist: {input_path}")
-        if path.suffix.lower() not in SUPPORTED_INPUT_EXTENSIONS:
-            raise Error(
-                f"Unsupported input extension '{path.suffix}'. Supported: .md, .txt"
+    def load(self):
+        from backend.services.completed_specs import load_completed
+
+        data = self.documents.workflow_snapshot().values
+        if not data or data.get("workflow_schema") != 1:
+            raise InvalidStateError("현재 그래프 상태를 확인할 수 없습니다.")
+        state = State.from_dict(data)
+        if state.latest_completed:
+            load_completed(self.documents, state.latest_completed["id"])
+        self.documents.state = state.to_dict()
+        return state
+
+    def execute(self, action, payload=None, *, on_progress=None):
+        writer = self.documents
+        if action == "generate":
+            self.config.validate()
+            state = State(
+                run_id=writer.job_id,
+                status="DRAFT",
+                user_request=payload,
+                original_user_request=payload,
+                reused_decisions=copy.deepcopy(
+                    self.runtime.job.get("reused_decisions", [])
+                ),
+                max_critic_passes=self.config.max_critic_passes,
+                web_search_mode="off",
             )
-        return self.generate_from_text(
-            text=path.read_text(encoding="utf-8"),
-            output_dir=output_dir,
-            project_dir=project_dir,
-            web_search_mode=web_search_mode,
-            input_source=str(path.resolve()),
-            overwrite=overwrite,
-            on_progress=on_progress,
-        )
-
-    def generate_from_text(
-        self,
-        *,
-        text: str,
-        output_dir: str,
-        project_dir: str | None = None,
-        web_search_mode: str | None = None,
-        input_source: str = "direct_text",
-        reused_decisions: list[dict] | None = None,
-        overwrite: bool = False,
-        on_progress: Callable[[dict[str, str]], None] | None = None,
-    ) -> Result:
-        self.config.validate()
-        self._validate_web_search_mode(web_search_mode)
-        self._validate_provider_credentials()
-        from backend.knowledge.format_guard import require_current
-        require_current(output_dir)
-        writer = ArtifactWriter(output_dir, allow_overwrite=overwrite)
-        writer.prepare()
-        evidence = EvidenceRegistry()
-        evidence.add(
-            "USER_REQUEST", "Original user request was captured.", input_source
-        )
-        created: list[str] = []
-
-        writer.write_text("raw/user_request.md", text)
-        # 새 생성은 기존 작업의 응답 연결을 이어받지 않는다.
-        from backend.infrastructure.conversation_state import PATH as conversation_path
-        if writer.path(conversation_path).exists():
-            writer.path(conversation_path).unlink()
-
-        writer.write_json(
-            "state/private_model_assignments.json",
-            self.config.private_model_assignments(),
-        )
-        created.extend(
-            [
-                "raw/user_request.md",
-                "state/private_model_assignments.json",
-            ]
-        )
-
-        state = State(
-            run_id=uuid4().hex[:12],
-            status="DRAFT",
-            user_request=text,
-            original_user_request=text,
-            reused_decisions=copy.deepcopy(reused_decisions or []),
-            input_source=input_source,
-            project_dir=str(Path(project_dir).resolve()) if project_dir else None,
-            output_dir=str(Path(output_dir).resolve()),
-            web_search_mode=web_search_mode or self.config.web_search,
-            pipeline_version=self.config.pipeline_version,
-            evidence_registry_path=str(writer.path("evidence/evidence_registry.json")),
-            created_artifacts=created,
-            max_critic_passes=self.config.max_critic_passes,
-        )
-        writer.write_json("evidence/evidence_registry.json", evidence.to_dict(), overwrite=True)
-        state.created_artifacts.append("evidence/evidence_registry.json")
-        self._persist_state(writer, state)
-        return self._run_workflow(state, writer, evidence, on_progress=on_progress)
-
-    def approve(self, output_dir: str, *, on_progress=None) -> Result:
-        writer = ArtifactWriter(output_dir, allow_overwrite=True)
-        state = self._load_state(writer)
-        if state.status != STATUS_PASS_PENDING_USER_APPROVAL:
-            raise InvalidStateError("검토를 통과한 승인 후보가 필요합니다.")
-        candidate = writer.path("draft/approval_candidate_spec.en.md")
-        self._validate_candidate_for_approval(candidate, state)
-        if state.workflow_schema:
-            import hashlib
-            if hashlib.sha256(candidate.read_text(encoding="utf-8").encode()).hexdigest() != state.candidate_hash:
-                raise InvalidStateError("승인 후보가 변경되었습니다. 다시 검토해야 합니다.")
-        evidence = EvidenceRegistry.from_dict(writer.read_json("evidence/evidence_registry.json"))
-        return self._run_workflow(state, writer, evidence, on_progress=on_progress, action="approve")
-
-    def _finalize(
-        self,
-        output_dir: str,
-        *,
-        on_progress: Callable[[dict[str, str]], None] | None = None,
-    ) -> Result:
-        _notify_progress(on_progress, "approve", "started")
-        writer = ArtifactWriter(output_dir, allow_overwrite=False)
-        state = self._load_state(writer)
-        if state.status != STATUS_PASS_PENDING_USER_APPROVAL:
-            raise InvalidStateError(
-                "Approval attempted before the run is ready. "
-                f"Expected {STATUS_PASS_PENDING_USER_APPROVAL}, got {state.status}."
+            evidence = EvidenceRegistry()
+            evidence.add(
+                "USER_REQUEST", "Original user request was captured.", "user_request"
             )
-        if state.user_approval_status != "PENDING":
-            raise InvalidStateError("Approval candidate has not completed the latest review.")
-        candidate = Path(state.approval_candidate_spec or "")
-        if not candidate.exists():
-            raise InvalidStateError("Approval candidate does not exist.")
-        self._validate_candidate_for_approval(candidate, state)
-        final_path = writer.path("final/FINAL_AGENT_SPEC.md")
-        from backend.services.completed_specs import archive_completed
-        if final_path.exists() and not state.latest_completed:
-            raise InvalidStateError("이전 완료본의 확정 자료가 보존되지 않았습니다.")
-        previous = final_path.read_bytes() if final_path.exists() else None
-        previous_state = writer.read_text("state/state.json")
-        content = candidate.read_text(encoding="utf-8")
-        completed = archive_completed(writer, state, content)
-        final_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = writer.path("final/FINAL_AGENT_SPEC.tmp")
-        temporary.write_text(content, encoding="utf-8")
-        os.replace(temporary, final_path)
-        state.status = STATUS_FINALIZED
-        state.user_approval_status = "APPROVED"
-        state.final_agent_spec = str(final_path)
-        state.latest_completed = completed
-        if completed["path"] not in state.created_artifacts:
-            state.created_artifacts.append(completed["path"])
-        if "final/FINAL_AGENT_SPEC.md" not in state.created_artifacts:
-            state.created_artifacts.append("final/FINAL_AGENT_SPEC.md")
-        try:
-            self._persist_state(writer, state)
-        except Exception:
-            if previous is None:
-                final_path.unlink(missing_ok=True)
-            else:
-                temporary.write_bytes(previous)
-                os.replace(temporary, final_path)
-            writer.write_text("state/state.json", previous_state, overwrite=True)
-            raise
-        _notify_progress(on_progress, "approve", "completed")
-        return self._result_from_state(state)
+            writer.write_text("raw/user_request.md", payload, overwrite=False)
+        else:
+            state = self.load()
+            if action == "retry":
+                saved = writer.workflow_snapshot()
+                if (not saved.next and state.status == STATUS_FINALIZED) or (
+                    any(t.interrupts for t in saved.tasks)
+                    and "retry" not in state.allowed_actions
+                ):
+                    return state
+            evidence = EvidenceRegistry.from_dict(
+                writer.read_json("evidence/evidence_registry.json")
+            )
+            if action in {"message", "revise", "continue"}:
+                if not isinstance(payload, str) or not payload.strip():
+                    raise InvalidStateError("수정 의견을 입력해주세요.")
+                state.revision_feedback = payload.strip()
+                state.revision_history.append(state.revision_feedback)
+                state.structured_issues = []
+                state.blocking_questions = []
+                state.awaiting_input_reason = None
+                state.critic_pass_count = 0
+                state.diagnosed_keys = []
+                state.resolution_stop = False
+                state.final_agent_spec = None
+                state.user_approval_status = "PENDING"
+                action = "message" if action == "continue" else action
+            elif action == "answer":
+                state = self._answer(state, payload)
+            elif action == "approve":
+                if (
+                    not isinstance(payload, dict)
+                    or payload.get("candidate_hash") != state.candidate_hash
+                ):
+                    raise InvalidStateError("승인 후보가 변경되었습니다.")
+                if state.status != STATUS_PASS_PENDING_USER_APPROVAL:
+                    raise InvalidStateError("검토를 통과한 승인 후보가 필요합니다.")
+                candidate = writer.read_text("draft/approval_candidate_spec.en.md")
+                self._validate_candidate_for_approval(candidate, state)
+                if (
+                    hashlib.sha256(candidate.encode()).hexdigest()
+                    != state.candidate_hash
+                ):
+                    raise InvalidStateError("승인 후보가 변경되었습니다.")
+        from backend.pipeline.tasks import WorkflowTasks
+        from backend.pipeline.agent_workflow import AgentWorkflow
 
-    def revise(
-        self,
-        *,
-        output_dir: str,
-        feedback_path: str,
-        on_progress: Callable[[dict[str, str]], None] | None = None,
-    ) -> Result:
-        writer = ArtifactWriter(output_dir, allow_overwrite=True)
-        state = self._load_state(writer)
-        from backend.services.completed_specs import require_conversation, archive_completed, restore_completed_cache
-        require_conversation(writer)
-        if state.status == STATUS_FINALIZED:
-            restore_completed_cache(writer, state)
-            state.latest_completed = archive_completed(writer, state)
-        feedback = Path(feedback_path).read_text(encoding="utf-8")
-        state.status = STATUS_REJECTED_BY_USER
-        state.user_approval_status = "REJECTED"
-        state.revision_feedback = feedback.strip()
-        state.revision_history.append(state.revision_feedback)
-        state.resume_stage = "interview"
-        writer.write_text("raw/revision_feedback.md", feedback, overwrite=True)
-        evidence = EvidenceRegistry.from_dict(
-            writer.read_json("evidence/evidence_registry.json")
+        writer.state = state.to_dict()
+        nodes = WorkflowTasks(
+            writer=writer,
+            runtime=self.runtime,
+            config=self.config,
+            provider=self.provider,
+            skills=SkillRegistry(),
+            evidence=evidence,
         )
-        evidence.add(
-            "USER_REQUEST", "User revision feedback was captured.", feedback_path
+        return AgentWorkflow(self, nodes, writer, evidence, on_progress).run(
+            state, action=action
         )
 
-        # 새 요청은 체크포인트에 먼저 저장한다. 실패해도 기존 초안과 포인터를 보존한다.
-        state.structured_issues = []
-        state.critic_pass_count = 0
-        state.diagnosed_keys = []
-        state.resolution_stop = False
-        self._persist_state(writer, state)
-        workflow_state = copy.deepcopy(state)
-        workflow_state.final_agent_spec = None
-        workflow_state.blocking_questions = []
-        workflow_state.awaiting_input_reason = None
-        return self._run_workflow(
-            workflow_state, writer, evidence, on_progress=on_progress, action="revise"
-        )
-
-    def answer(
-        self,
-        output_dir: str,
-        *,
-        answers: list[dict],
-        on_progress: Callable[[dict[str, str]], None] | None = None,
-    ) -> Result:
-        """Inject user answers to blocking questions and resume the pipeline."""
-        writer = ArtifactWriter(output_dir, allow_overwrite=True)
-        state = self._load_state(writer)
-
-        from backend.services.completed_specs import require_conversation
-        require_conversation(writer)
-
+    def _answer(self, state, answers):
+        writer = self.documents
         from backend.models import RequirementLockSheet
 
         pending_questions = list(state.blocking_questions)
         is_review_answer = state.awaiting_input_reason == "review"
-        artifact_sheet = self._read_lock_sheet_artifact(writer)
         sheet = (
             RequirementLockSheet.from_dict(state.requirement_lock_sheet)
             if state.requirement_lock_sheet
@@ -271,16 +134,21 @@ class Engine:
             )
         )
 
-        normalized_answers = _validate_answers(answers, pending_questions, state.question_forms)
+        normalized_answers = _validate_answers(
+            answers, pending_questions, state.question_forms
+        )
         existing_answers = {
             item.question_id: item
             for item in saved_answers(
                 state.to_dict(),
-                legacy_lock_sheet=artifact_sheet,
-                pending_questions=pending_questions,
             )
         }
-        state.confirmed_user_sources.update({"user_answer:" + item.question_id: item.answer for item in normalized_answers})
+        state.confirmed_user_sources.update(
+            {
+                "user_answer:" + item.question_id: item.answer
+                for item in normalized_answers
+            }
+        )
         existing_answers.update({item.question_id: item for item in normalized_answers})
         sheet.user_answers = list(existing_answers.values())
         all_answers = list(existing_answers.values())
@@ -303,34 +171,11 @@ class Engine:
                 all_answers,
             )
         ]
+        writer.write_json("analysis/requirement_lock_sheet.json", sheet.to_dict())
+        writer.write_text("analysis/requirement_lock_sheet.ko.md", sheet.to_markdown())
         if remaining_questions:
             state.blocking_questions = remaining_questions
-            state.status = STATUS_NEEDS_USER_INPUT
-            state.resume_stage = None
-            writer.write_json(
-                "analysis/requirement_lock_sheet.json", sheet.to_dict(), overwrite=True
-            )
-            writer.write_text(
-                "analysis/requirement_lock_sheet.ko.md",
-                sheet.to_markdown(),
-                overwrite=True,
-            )
-            writer.write_text(
-                "analysis/05_blocking_questions.ko.md",
-                "# 차단 질문\n\n"
-                + "\n".join(f"- {item}" for item in state.blocking_questions)
-                + "\n",
-                overwrite=True,
-            )
-            self._persist_state(writer, state)
-            evidence = EvidenceRegistry.from_dict(writer.read_json("evidence/evidence_registry.json"))
-            return self._run_workflow(state, writer, evidence, on_progress=on_progress, action="answer")
-        writer.write_json(
-            "analysis/requirement_lock_sheet.json", sheet.to_dict(), overwrite=True
-        )
-        writer.write_text(
-            "analysis/requirement_lock_sheet.ko.md", sheet.to_markdown(), overwrite=True
-        )
+            return state
 
         # Reset compile/critic state
         if not is_review_answer:
@@ -340,176 +185,36 @@ class Engine:
         state.resolution_stop = False
         state.status = STATUS_NEEDS_USER_INPUT
         state.blocking_questions = pending_questions
-        state.resume_stage = None
 
-        # 제공자 기반 인터뷰가 실패하기 전에 사용자 답변을 저장한다.
-        self._persist_state(writer, state)
-        workflow_state = copy.deepcopy(state)
-        workflow_state.blocking_questions = remaining_questions
-        workflow_state.awaiting_input_reason = None
-        workflow_state.resume_stage = "requirement_lock_stage" if is_review_answer else "interview"
-        workflow_state.final_agent_spec = None
-
-        evidence = EvidenceRegistry.from_dict(
-            writer.read_json("evidence/evidence_registry.json")
-        )
-        evidence.add(
-            "USER_REQUEST",
-            "User answers to blocking questions were incorporated.",
-            output_dir,
-        )
-        return self._run_workflow(
-            workflow_state, writer, evidence, on_progress=on_progress, action="answer"
-        )
-
-    def status(self, output_dir: str) -> Result:
-        writer = ArtifactWriter(output_dir, allow_overwrite=False)
-        state = self._load_state(writer)
-        return self._result_from_state(state)
-
-    def retry(self, output_dir: str, *, checkpoint: dict, on_progress=None) -> Result:
-        """저장된 단계 결과를 복원하고 다음 단계부터 재개한다."""
-        from backend.knowledge.runtime import restore_artifacts
-        from backend.services.workflow_recovery import validate_checkpoint
-        from backend.services.completed_specs import require_conversation
-        writer = ArtifactWriter(output_dir, allow_overwrite=True)
-        current = self._load_state(writer)
-        if current.workflow_schema:
-            return self.resume(output_dir, on_progress=on_progress)
-        value = validate_checkpoint(checkpoint)
-        require_conversation(writer)
-        state_data = {**value["state"], "output_dir": str(writer.output_dir)}
-        artifacts = {**value["artifacts"], "state/state.json": json.dumps(state_data, ensure_ascii=False)}
-        restore_artifacts(writer.output_dir, artifacts)
-        state = self._load_state(writer)
-        if state.resume_stage is None:
-            self._persist_state(writer, state)
-            _notify_progress(on_progress, value["stage"], "completed")
-            return self._result_from_state(state)
-        evidence = EvidenceRegistry.from_dict(writer.read_json("evidence/evidence_registry.json"))
-        return self._run_workflow(state, writer, evidence, on_progress=on_progress, action="retry")
-
-    def _run_workflow(self, state: State, writer: ArtifactWriter, evidence: EvidenceRegistry,
-                      *, on_progress=None, action="generate") -> Result:
-        from backend.pipeline.agent_workflow import AgentWorkflow
-        from backend.services.project_decisions import CURRENT_REUSE
-        nodes = WorkflowNodes(writer=writer, config=self.config, provider=self.provider,
-                              skills=build_default_skill_registry(), evidence=evidence)
-        token = CURRENT_REUSE.set(state.reused_decisions)
-        try:
-            return AgentWorkflow(self, nodes, writer, evidence, on_progress).run(state, action=action)
-        finally:
-            CURRENT_REUSE.reset(token)
-
-    def message(self, output_dir: str, *, text: str, on_progress=None) -> Result:
-        if not isinstance(text, str) or not text.strip():
-            raise InvalidStateError("수정 의견을 입력해주세요.")
-        writer = ArtifactWriter(output_dir, allow_overwrite=True)
-        state = self._load_state(writer)
-        if state.status not in {STATUS_NEEDS_USER_INPUT, STATUS_PASS_PENDING_USER_APPROVAL,
-                                "CRITICAL_BLOCKED", STATUS_FINALIZED} and not (
-                                    state.workflow_schema and "message" in state.allowed_actions):
-            raise InvalidStateError("대기 중인 작업에만 수정 의견을 제출할 수 있습니다.")
-        feedback = writer.path("raw/web_feedback.md")
-        writer.write_text("raw/web_feedback.md", text.strip(), overwrite=True)
-        return self.revise(output_dir=output_dir, feedback_path=str(feedback), on_progress=on_progress)
-
-    def resume(self, output_dir: str, *, on_progress=None) -> Result:
-        writer = ArtifactWriter(output_dir, allow_overwrite=True)
-        state = self._load_state(writer)
-        evidence = EvidenceRegistry.from_dict(writer.read_json("evidence/evidence_registry.json"))
-        return self._run_workflow(state, writer, evidence, on_progress=on_progress, action="retry")
-
-    def _persist_state(self, writer: ArtifactWriter, state: State) -> None:
-        if "state/state.json" not in state.created_artifacts:
-            state.created_artifacts.append("state/state.json")
-        from backend.knowledge.runtime import CURRENT
-        runtime = CURRENT.get()
-        if runtime is not None:
-            runtime.commit("state", state.to_dict())
-        writer.write_json("state/state.json", state.to_dict(), overwrite=True)
-
-    def _load_state(self, writer: ArtifactWriter) -> State:
-        from backend.models import RequirementLockSheet
-        from backend.knowledge.format_guard import require_current
-        require_current(writer.output_dir)
-        path = writer.path("state/state.json")
-        if not path.exists():
-            raise InvalidStateError(f"MAGI state file does not exist: {path}")
-        try:
-            state = State.from_dict(writer.read_json("state/state.json"))
-            if any(not all(key in record for key in ("decision_key", "feedback_hash", "question_id", "question")) for record in state.review_questions):
-                raise InvalidStateError("Review contract is invalid. Start a new generation.")
-            for issue in state.structured_issues:
-                from backend.models import IssuePacket
-                IssuePacket.from_dict(issue)
-            if state.requirement_lock_sheet is not None:
-                from backend.services.workflow_constraints import validate_locked_sources
-                validate_locked_sources(RequirementLockSheet.from_dict(state.requirement_lock_sheet), state.to_dict())
-            if state.latest_completed:
-                from backend.services.completed_specs import load_completed
-                load_completed(writer, state.latest_completed.get("id"))
-            return self._hydrate_original_user_request(writer, state)
-        except InvalidStateError:
-            raise
-        except Exception as exc:
-            raise InvalidStateError(f"Malformed MAGI state file: {path}. Start a new generation.") from exc
-
-    @staticmethod
-    def _hydrate_original_user_request(
-        writer: ArtifactWriter, state: State
-    ) -> State:
-        """이전 실행 기록도 원문 산출물을 우선해 불변 요청 문맥을 복구한다."""
-        try:
-            raw_request = writer.read_text("raw/user_request.md")
-        except Exception:
-            raw_request = ""
-        if raw_request.strip():
-            state.original_user_request = raw_request
-            state.user_request = raw_request
-        elif state.original_user_request.strip():
-            state.user_request = state.original_user_request
-        elif not state.original_user_request:
-            state.original_user_request = state.user_request
-        if not isinstance(state.revision_history, list):
-            state.revision_history = []
-        else:
-            state.revision_history = [
-                item for item in state.revision_history if isinstance(item, str)
-            ]
+        state.blocking_questions = remaining_questions
+        state.awaiting_input_reason = None
+        state.final_agent_spec = None
         return state
 
-    @staticmethod
-    def _read_lock_sheet_artifact(writer: ArtifactWriter) -> dict | None:
-        try:
-            data = writer.read_json("analysis/requirement_lock_sheet.json")
-        except Exception:
-            return None
-        if isinstance(data, dict):
-            from backend.models import RequirementLockSheet
-            RequirementLockSheet.from_dict(data)
-            return data
-        return None
+    def finalize(self, state):
+        from backend.services.completed_specs import archive_completed
 
-    def _result_from_state(self, state: State) -> Result:
-        questions_path = None
-        if state.status == STATUS_NEEDS_USER_INPUT:
-            p = Path(state.output_dir) / "analysis" / "05_blocking_questions.ko.md"
-            if p.exists():
-                questions_path = str(p)
-        return Result(
-            status=state.status,
-            output_dir=state.output_dir,
-            approval_candidate_path=state.approval_candidate_spec,
-            final_spec_path=state.final_agent_spec,
-            critical_report_path=state.critical_report,
-            state_path=str(Path(state.output_dir) / "state" / "state.json"),
-            heartbeat_path=str(Path(state.output_dir) / HEARTBEAT_PATH),
-            questions_path=questions_path,
-        )
+        current = State.from_dict(state)
+        content = self.documents.read_text("draft/approval_candidate_spec.en.md")
+        self._validate_candidate_for_approval(content, current)
+        if hashlib.sha256(content.encode()).hexdigest() != current.candidate_hash:
+            raise InvalidStateError("승인 후보가 변경되었습니다.")
+        with self.documents.store.transaction():
+            completed = archive_completed(self.documents, current, content)
+            self.documents.write_text("final/FINAL_AGENT_SPEC.md", content)
+        return {
+            **state,
+            "status": STATUS_FINALIZED,
+            "user_approval_status": "APPROVED",
+            "latest_completed": completed,
+            "final_agent_spec": "final/FINAL_AGENT_SPEC.md",
+            "created_artifacts": list(
+                dict.fromkeys([*state.get("created_artifacts", []), completed["path"]])
+            ),
+        }
 
     def _validate_candidate_for_approval(
-        self, candidate: Path, state: State
+        self, candidate_text: str, state: State
     ) -> None:
         """Reject externally modified candidates that no longer meet blocking checks."""
         from backend.models import (
@@ -519,7 +224,6 @@ class Engine:
         from backend.models import RequirementLockSheet
         from backend.services.checklist import run_deterministic_checks
 
-        candidate_text = candidate.read_text(encoding="utf-8")
         from backend.services.spec_compiler import SpecCompiler
 
         if not SpecCompiler.english_only(candidate_text):
@@ -529,32 +233,33 @@ class Engine:
             raise InvalidStateError(
                 "Approval candidate still has unresolved required review issues."
             )
-        if state.blocking_questions or any(issue.resolution_kind == "user_decision" and issue.status != "resolved" for issue in stored_issues):
-            raise InvalidStateError("Approval candidate still has unresolved required review issues.")
-        sheet = RequirementLockSheet.from_dict(state.requirement_lock_sheet).require_validated()
+        if state.blocking_questions or any(
+            issue.resolution_kind == "user_decision" and issue.status != "resolved"
+            for issue in stored_issues
+        ):
+            raise InvalidStateError(
+                "Approval candidate still has unresolved required review issues."
+            )
+        sheet = RequirementLockSheet.from_dict(
+            state.requirement_lock_sheet
+        ).require_validated()
 
-        from backend.services.workflow_constraints import validate_product_boundary, validate_locked_sources
+        from backend.services.workflow_constraints import (
+            validate_product_boundary,
+            validate_locked_sources,
+        )
+
         validate_locked_sources(sheet, state.to_dict())
         try:
             validate_product_boundary(sheet, [candidate_text])
         except ValueError:
-            raise InvalidStateError("Requirement lock contract is invalid. Start a new generation.") from None
+            raise InvalidStateError(
+                "Requirement lock contract is invalid. Start a new generation."
+            ) from None
         issues = run_deterministic_checks(candidate_text, sheet)
         if count_unresolved_required(issues):
             raise InvalidStateError(
                 "Approval candidate no longer satisfies blocking checks."
-            )
-
-    def _validate_provider_credentials(self) -> None:
-        self.config.validate()
-        self.provider.validate_credentials()
-
-    def _validate_web_search_mode(self, mode: str | None) -> None:
-        if mode is None:
-            return
-        if mode not in VALID_WEB_SEARCH_MODES:
-            raise Error(
-                f"Invalid web_search_mode '{mode}'. Allowed values are: auto, on, off."
             )
 
 
@@ -575,8 +280,12 @@ def _validate_answers(answers: list[dict], questions: list[str], forms=None):
         if question_id in seen:
             raise InvalidStateError("Duplicate answer question ID.")
         seen.add(question_id)
-        if any(key in item for key in ("form_version", "selected_option_ids", "custom_text")):
+        if any(
+            key in item
+            for key in ("form_version", "selected_option_ids", "custom_text")
+        ):
             from backend.services.question_forms import selected_answer
+
             form = (forms or {}).get(question_id)
             if not form or not any(p.startswith(f"[{question_id}]") for p in questions):
                 raise InvalidStateError("Question form is no longer pending.")
@@ -594,7 +303,14 @@ def _validate_answers(answers: list[dict], questions: list[str], forms=None):
             raise InvalidStateError(
                 f"Answer does not match a pending question: {question_id}"
             )
-        result.append(QAItem(question_id=question_id, question=question, answer=answer, selection=selection))
+        result.append(
+            QAItem(
+                question_id=question_id,
+                question=question,
+                answer=answer,
+                selection=selection,
+            )
+        )
     return result
 
 

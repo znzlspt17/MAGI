@@ -90,7 +90,8 @@ const historyLabels: Record<string, string> = { generate: "최초 요청", answe
 export function JobHistory({ events, open, setOpen }: { events: JobDetail["session_events"]; open: Record<string, boolean>; setOpen: (key: string, open: boolean) => void }) {
   if (!events?.length) return <p className="jobs-empty">저장된 처리 이력이 없습니다.</p>;
   return <ol className="jobs-history" aria-label="실행별 처리 이력">{events.map((event, index) => {
-    const key = event.id || `legacy-${index}`;
+    if (!event.id) return null;
+    const key = event.id;
     const title = historyLabels[event.action || ""] || "처리 기록";
     const summary = event.summary?.trim() ? event.summary : "저장된 결과 요약이 없습니다";
     const time = jobTime(event.started_at);

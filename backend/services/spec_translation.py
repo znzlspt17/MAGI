@@ -47,12 +47,11 @@ def source_key(content: str) -> str:
     return sha256((VERSION + "\n" + content).encode("utf-8")).hexdigest()
 
 
-def cached_translation(document, root):
+def cached_translation(document, writer):
     """읽기 전용 사용자가 이미 검증된 캐시를 다운로드한다. 모델은 호출하지 않는다."""
     from pathlib import Path
-    from backend.infrastructure.artifact_writer import ArtifactWriter
     try:
-        cached = ArtifactWriter(root).read_json('translation.ko.json')
+        cached = writer.read_json('translation.ko.json')
         if not isinstance(cached, dict) or cached.get('source_hash') != source_key(document['content']) or not isinstance(cached.get('content'),str):
             return None
         _validate(document['content'],cached['content'])
@@ -146,7 +145,7 @@ def _validate(source: str, translated: str) -> None:
 def korean_translation(source: str, *, writer, provider, model: str) -> dict:
     key = source_key(source)
     cache_path = "translation.ko.json"
-    if writer.path(cache_path).exists():
+    if writer.exists(cache_path):
         try:
             cached = writer.read_json(cache_path)
             if cached.get("source_hash") == key and isinstance(cached.get("content"), str):
@@ -167,7 +166,7 @@ def korean_translation(source: str, *, writer, provider, model: str) -> dict:
             validation["status"] = "validated"
             writer.write_json("validation.json", validation, overwrite=True)
             translated = {"content": result.content, "language": "ko", "source_hash": key,
-                          "usage": provider_usage_summary(writer.read_json("state/provider_usage.json"))}
+                          "usage": provider_usage_summary(writer.usage())}
             writer.write_json(cache_path, translated, overwrite=True)
             return translated
         except (TranslationValidationError, OutputLanguageError) as exc:

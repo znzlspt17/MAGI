@@ -2,7 +2,7 @@
 
 MAGI는 개발 요청을 인터뷰와 검토를 거쳐 구현 명세로 정리합니다. 이 문서는 작업 공간에서 요청을 작성하고, 질문에 답하며, 명세를 수정·승인하고 저장된 지식을 활용하는 방법을 설명합니다.
 
-설치와 로컬 실행은 [README](../README.md#설치와-빠른-시작), Google 로그인·DB·배포 설정은 [공개 서비스 운영](PUBLIC_SERVICE.ko.md)을 참고하세요.
+소스 설치는 [README](../README.md#설치와-빠른-시작), Google 로그인·DB·배포 설정은 [공개 서비스 운영](PUBLIC_SERVICE.ko.md)을 참고하세요.
 
 ## 작업 시작
 
@@ -109,46 +109,8 @@ DB에 저장된 요구사항·결정·명세를 권한 범위 안에서 검색�
 
 ## 저장과 이어하기
 
-기본 작업 폴더는 `web_data/`입니다. 파일 저장소는 로컬 파일을 사용하며, DB 저장소는 저장된 기록을 기준으로 로컬 산출물을 복원합니다.
+요청·답변·문서 버전·승인과 실행 기록은 PostgreSQL에 저장합니다. 다운로드한 문서 파일은 실행 상태를 대신하지 않습니다.
 
-| 경로 | 내용 |
-|---|---|
-| `raw/` | 요청과 수정 의견 |
-| `context/`, `research/`, `evidence/` | 프로젝트 자료와 검색 근거 |
-| `analysis/` | 인터뷰 결과와 확정 요구사항 |
-| `review/`, `draft/` | 검토 결과와 승인 후보 |
-| `final/FINAL_AGENT_SPEC.md` | 승인된 최종 명세 |
-| `completed/`, `history/` | 이전 완료본과 단계별 문서 |
-| `critical/` | 명세 보완 실패 보고서 |
-| `state/`, `translations/` | 실행 상태·사용량과 번역 기록 |
+연결이 끊기거나 서버가 재시작되어도 저장된 자료는 보존됩니다. 실행 중이던 모델 작업은 자동 재실행하지 않습니다. 작업 화면에서 저장된 결과를 확인하고 명시적으로 재개하거나 수정 의견을 보냅니다. 완료 여부가 불명확한 호출은 자동으로 다시 보내지 않습니다.
 
-연결이 끊기거나 서버가 중단되어도 저장된 요청과 기록은 보존됩니다. 실행 중이던 모델 작업은 자동 재실행하지 않습니다. 응답을 받지 못한 요청은 작업 기록의 반영 여부를 확인한 뒤 후속 작업을 진행합니다.
-
-## Python API
-
-브라우저 대신 Python에서 엔진을 직접 사용할 수 있습니다. API 키는 Python 프로세스의 실행 환경에 설정합니다.
-
-```python
-from backend import Engine
-
-engine = Engine()
-result = engine.generate_from_text(
-    text="사용자가 메모를 작성하고 검색할 수 있는 앱을 만들어 주세요.",
-    output_dir="./output",
-    web_search_mode="off",
-)
-print(result.status)
-```
-
-| 메서드 | 용도 |
-|---|---|
-| `generate_from_text(text=..., output_dir=...)` | 문자열 요청으로 작업 생성 |
-| `generate_from_file(input_path=..., output_dir=...)` | Markdown·텍스트 파일로 작업 생성 |
-| `answer(output_dir, answers=...)` | 대기 중인 질문의 답변 제출 |
-| `revise(output_dir=..., feedback_path=...)` | 수정 의견 파일을 읽어 반영 |
-| `approve(output_dir)` | 승인 대기 중인 명세를 최종 확정 |
-| `status(output_dir)` | 저장된 작업 상태 조회 |
-
-프로젝트 폴더는 생성 메서드의 `project_dir`로 전달할 수 있습니다. `web_search_mode`는 `auto`, `on`, `off`를 지원합니다. 수정 의견은 UTF-8 파일로 작성하고 `feedback_path`에 경로를 전달합니다. 설정 객체는 `backend.config.Config`이며, YAML·JSON 설정 파일은 `Config.from_file()`로 명시적으로 읽습니다.
-
-Python API는 `.env`를 자동으로 읽지 않으며, 공개 웹 서비스의 계정별 실행·비용 제한을 적용하지 않습니다. 생성·검토·번역 모델은 `gpt-6-luna`로 고정됩니다.
+백업에는 업무 자료의 `core`, 공식 실행 상태의 `workflow`, 계정·비용·사용권 원장의 `public` 스키마가 모두 필요합니다. 운영 절차는 [운영 문서](PUBLIC_SERVICE.ko.md)를 참고하세요.

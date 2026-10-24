@@ -115,9 +115,9 @@ def prepare_review(context, params, ranked_ids=()):
     return key, messages(), data, coverage
 
 
-def run_review(writer, provider, model, prepared, save, basis):
+def run_review(writer, provider, model, prepared, basis):
     key, messages, data, coverage = prepared
-    if writer.path("report.json").is_file():
+    if writer.exists("report.json"):
         report = writer.read_json("report.json")
         if report.get("status") == "running":
             report.update(status="interrupted", reason="중단된 호출의 결과를 확인할 수 없어 자동 재전송하지 않습니다.")
@@ -125,9 +125,8 @@ def run_review(writer, provider, model, prepared, save, basis):
     report = {"id": key, "version": VERSION, "status": "running", "inferred": [], "limitations": [],
               "coverage": coverage, "proposal": data["proposal"], "change_kind": data["change_kind"],
               "basis": basis, "sources": data["sources"]}
-    writer.write_json_atomic("input.json", {"messages": messages, "coverage": coverage})
-    writer.write_json_atomic("report.json", report)
-    save()  # 이 기록을 보존하지 못하면 원격 호출을 시작하지 않는다.
+    writer.write_json("input.json", {"messages": messages, "coverage": coverage})
+    writer.write_json("report.json", report)
     try:
         value = _complete_once(writer, provider, messages, model=model, stage="impact_review", isolated_schema=ImpactResponse)
         validate_response(value, data["sources"])
@@ -138,8 +137,7 @@ def run_review(writer, provider, model, prepared, save, basis):
         LOGGER.warning("impact review failed exception_type=%s", type(exc).__name__)
         report.update(status="failed", reason="추가 영향을 분석하지 못했습니다. 기록된 연결과 원문을 확인하세요.")
     finally:
-        writer.write_json_atomic("report.json", report)
-        save()
+        writer.write_json("report.json", report)
     return report
 
 

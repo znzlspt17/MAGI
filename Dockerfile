@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir uv==0.10.0
 COPY pyproject.toml uv.lock ./
 
 FROM python-build AS gateway-deps
-RUN uv sync --frozen --no-dev --extra production --no-install-project --no-build
+RUN uv sync --frozen --no-dev --only-group gateway --no-install-project --no-build
 
 FROM python-build AS backend-deps
 RUN uv sync --frozen --no-dev --extra embedding --no-install-project --no-build

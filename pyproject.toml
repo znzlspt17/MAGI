@@ -11,27 +11,22 @@ description = "MAGI generates reviewed AI-agent-ready implementation specificati
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "Flask>=3.1.0",
-  "Flask-Sock>=0.7.0",
   "pydantic>=2.0,<3",
   "langgraph==1.2.16",
-  "pyyaml>=6.0.0",
   "websockets>=15,<17",
   "psycopg[binary]>=3.2,<4",
-  "python-dotenv>=1.0,<2",
   "Authlib>=1.6,<2",
   "requests>=2.32,<3",
   "langchain==1.4.7",
   "langchain-openai==1.7.2",
   "langgraph-checkpoint-postgres==3.2.0",
-  "langgraph-checkpoint-sqlite==3.1.2",
   "httpx2==2.13.1",
 ]
 
 [project.optional-dependencies]
 embedding = ["sentence-transformers>=5.1,<6", "torch>=2,<3"]
 test = ["pytest>=8,<10"]
-production = ["gunicorn>=23,<24; sys_platform != 'win32'"]
+
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
@@ -47,5 +42,13 @@ include = ["backend*", "gateway*", "protocol*", "frontend*"]
 
 [tool.setuptools.package-data]
 "backend" = ["prompts/*.md"]
-"backend.knowledge" = ["migrations/*.sql"]
+"backend.knowledge" = ["core.sql"]
+"backend.access" = ["schema.sql"]
 "frontend" = ["templates/*.html", "static/dist/manifest.json", "static/dist/assets/*", "static/vendor/*.txt", "static/vendor/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/core"]
+pythonpath = [".", "tests/core"]
+
+[dependency-groups]
+gateway = ["Flask>=3.1.0", "Flask-Sock>=0.7.0", "websockets>=15,<17", "gunicorn>=23,<24; sys_platform != 'win32'"]

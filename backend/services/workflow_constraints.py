@@ -13,14 +13,6 @@ def user_sources(state):
         base = re.sub(r":[0-9a-f]{64}$", "", marker)
         if base != marker:
             result.setdefault(base, []).append(text)
-    from backend.knowledge.runtime import CURRENT
-    runtime = CURRENT.get()
-    if runtime is not None:
-        for marker, text in runtime.confirmed_sources(state).items():
-            result.setdefault(marker, []).append(text)
-            base = re.sub(r":[0-9a-f]{64}$", "", marker)
-            if base != marker:
-                result.setdefault(base, []).append(text)
     return result
 
 

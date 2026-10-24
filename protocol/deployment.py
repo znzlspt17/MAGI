@@ -8,11 +8,9 @@ import sys
 from urllib.parse import urlsplit
 
 from protocol.web_config import login_origin
-from protocol.environment import require_current_environment
 
 
 def validate_container(role):
-    require_current_environment()
     if os.environ.get('CONTAINER') != '1':
         return
     if os.environ.get('PUBLIC_MODE') != '1' or os.environ.get('LOCAL_LOGIN', '0') != '0':

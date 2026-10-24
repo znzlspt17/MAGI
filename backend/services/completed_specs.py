@@ -11,12 +11,10 @@ def archive_completed(writer, state, content=None):
     content = writer.read_text("final/FINAL_AGENT_SPEC.md") if content is None else content
     data = {"content": content, "basis": {key: value for key, value in state.to_dict().items()
             if key in {"original_user_request", "user_request", "requirement_lock_sheet", "confirmed_user_sources", "revision_history", "reused_decisions"}}}
-    trace = writer.path("analysis/spec_trace.json")
-    if trace.is_file():
+    if writer.exists("analysis/spec_trace.json"):
         data["trace"] = writer.read_json("analysis/spec_trace.json")
     from backend.services.requirement_review import load_snapshot
-    pointer = writer.path("state/candidate_snapshot.json")
-    if pointer.is_file():
+    if writer.exists("state/candidate_snapshot.json"):
         try:
             value = writer.read_json("state/candidate_snapshot.json")
             ident = value.get("id") if isinstance(value, dict) else None
@@ -30,22 +28,12 @@ def archive_completed(writer, state, content=None):
     serialized = json.dumps(data, ensure_ascii=False, sort_keys=True)
     ident = hashlib.sha256(serialized.encode()).hexdigest()
     path = f"completed/{ident}.json"
-    target = writer.path(path)
-    if target.exists():
-        if target.read_text(encoding="utf-8") != serialized:
+    if writer.exists(path):
+        if writer.read_text(path) != serialized:
             raise InvalidStateError("완료 명세 보존본이 손상되었습니다.")
     else:
         writer.write_text(path, serialized, overwrite=False)
     return {"id": ident, "path": path, "source_hash": hashlib.sha256(content.encode()).hexdigest()}
-
-
-def require_conversation(writer):
-    """기존 작업도 저장된 사용자 원문에서 문맥을 재구성한다."""
-    from backend.models import State
-    state = State.from_dict(writer.read_json("state/state.json"))
-    if not (state.original_user_request or state.user_request).strip():
-        raise InvalidStateError("작업의 사용자 원문이 없어 확인이 필요합니다.")
-    return state
 
 
 def completed_references(state):
@@ -65,23 +53,3 @@ def load_completed(writer, ident):
     if not isinstance(data.get("content"), str):
         raise InvalidStateError("완료 명세 보존본을 확인할 수 없습니다.")
     return data
-
-
-def restore_completed_cache(writer, state):
-    """대표 파일은 저장된 완료 포인터를 기준으로 복구할 수 있는 캐시다."""
-    reference = state.latest_completed
-    if not reference:
-        return
-    path = reference.get("path", "")
-    if not isinstance(path, str) or not re.fullmatch(r"completed/[0-9a-f]{64}\.json", path):
-        raise InvalidStateError("완료 명세 보존본을 확인할 수 없습니다.")
-    if path != f"completed/{reference.get('id')}.json":
-        raise InvalidStateError("완료 명세 보존본이 손상되었습니다.")
-    data = load_completed(writer, reference.get("id"))
-    target = writer.path("final/FINAL_AGENT_SPEC.md")
-    if not target.exists() or target.read_text(encoding="utf-8") != data["content"]:
-        import os
-        target.parent.mkdir(parents=True, exist_ok=True)
-        temporary = writer.path("final/FINAL_AGENT_SPEC.tmp")
-        temporary.write_text(data["content"], encoding="utf-8")
-        os.replace(temporary, target)
