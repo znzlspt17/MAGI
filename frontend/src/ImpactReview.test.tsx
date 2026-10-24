@@ -5,7 +5,7 @@ import { ImpactReview, type ImpactPage, type ImpactReport } from "./ImpactReview
 
 const mocks = vi.hoisted(() => ({ api: vi.fn(), post: vi.fn() }));
 vi.mock("./api", () => mocks);
-vi.mock("./Auth", () => ({ useAuth: () => ({ user: { id: "owner" }, status: { busy: false } }) }));
+vi.mock("./Auth", () => ({ useAuth: () => ({ user: { id: "owner" }, status: { ready: true } }) }));
 afterEach(cleanup);
 
 const basis = { id: "basis", job_id: "job", source_hash: "hash", node_id: "req", status: "PASS_PENDING_USER_APPROVAL" };

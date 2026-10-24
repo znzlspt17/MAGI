@@ -8,7 +8,7 @@ export function useKnowledge({ admin, selectedJobId, onDeleted }: { admin: boole
   const auth = useAuth(),
     canRetry = !auth.publicMode || auth.user?.role === "admin",
     mutationBusy =
-      !!(auth.status.busy && !auth.status.mine) || !!auth.status.recovering;
+      auth.status.ready === false || auth.status.checkState === "error";
   const saved = useRef(new URLSearchParams(location.search)),
     [projects, setProjects] = useState<any[]>([]),
     [project, setProject] = useState(

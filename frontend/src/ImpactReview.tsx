@@ -51,7 +51,7 @@ export function ImpactReview({ jobId, nodeId, inspect }: { jobId: string; nodeId
   const [error, setError] = useState("");
   const generation = useRef(0), alive = useRef(true), sending = useRef(false);
   const selectedId = kind === "add" ? undefined : nodeId;
-  const blocked = !!(status.busy && !status.mine) || !!status.recovering;
+  const blocked = status.ready === false || status.checkState === "error";
 
   async function load(offset = 0) {
     const ticket = ++generation.current;

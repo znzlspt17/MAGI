@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 
 CommandKind = Literal[
-    "generate", "answer", "message", "revise", "approve", "retry", "continue"
+    "generate", "answer", "message", "revise", "approve", "retry", "continue", "stop"
 ]
 COMMAND_KINDS = frozenset(get_args(CommandKind))
 
@@ -51,7 +51,7 @@ class JobCommand(BaseModel):
             or any(not isinstance(item, dict) for item in self.input)
         ):
             raise ValueError("답변은 비어 있지 않은 목록이어야 합니다.")
-        if self.kind in {"approve", "retry"} and self.input is not None:
+        if self.kind in {"approve", "retry", "stop"} and self.input is not None:
             raise ValueError("승인과 재개에는 추가 입력을 지정할 수 없습니다.")
         return self
 

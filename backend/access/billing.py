@@ -7,9 +7,10 @@ from backend.model_policy import COST_POLICY
 
 
 class Meter:
-    def __init__(self, access, uid, jid, generation, prices, initial=None):
+    def __init__(self, access, uid, jid, generation, prices, initial=None, *, execution_id):
         self.access, self.uid, self.jid = access, uid, jid
         self.generation, self.prices, self.initial = generation, prices, initial
+        self.execution_id = execution_id
 
     def price(self, model):
         try:
@@ -29,21 +30,21 @@ class Meter:
         return ((context * incoming + output * outgoing) / Decimal(1000000)).quantize(Decimal('.00000001'), rounding='ROUND_UP')
 
     def reserve(self, model):
-        self.access.check_execution(self.uid,self.jid,self.generation)
+        self.access.check_execution(self.uid,self.jid,self.generation,self.execution_id)
         amount = self.maximum(model)
         if self.initial is not None and self.initial[1] == model:
             ident, _ = self.initial
             self.initial = None
         else:
-            ident = self.access.reserve(self.uid, self.jid, self.generation, model, amount)
-        self.access.mark_called(ident)
+            ident = self.access.reserve(self.uid, self.jid, self.generation, model, amount, execution_id=self.execution_id)
+        self.access.mark_called(ident, generation=self.generation, execution_id=self.execution_id)
         return ident
 
     def record_usage(self, ident, model, incoming, outgoing, cached, written=None, write_30m=None, write_12h=None):
         _, _, context, output = self.price(model)
         incoming = incoming if type(incoming) is int and 0 <= incoming <= context else None
         outgoing = outgoing if type(outgoing) is int and 0 <= outgoing <= output else None
-        self.access.record_tokens(ident,incoming,outgoing,cached,written,write_30m,write_12h,policy=COST_POLICY)
+        self.access.record_tokens(ident,incoming,outgoing,cached,written,write_30m,write_12h,policy=COST_POLICY, generation=self.generation, execution_id=self.execution_id)
 
     def settle(self, ident, model, result):
         if result is not None:
@@ -51,14 +52,14 @@ class Meter:
                               result.cache_write_tokens,result.cache_write_30m_tokens,result.cache_write_12h_tokens)
         # 실패/타임아웃은 제공자의 실제 과금 여부를 추정하지 않는다.
         if result is None or type(result.input_tokens) is not int or type(result.output_tokens) is not int:
-            self.access.settle(ident)
+            self.access.settle(ident, generation=self.generation, execution_id=self.execution_id)
             return
         incoming, outgoing, context, output = self.price(model)
         if not 0 <= result.input_tokens <= context or not 0 <= result.output_tokens <= output:
-            self.access.settle(ident)
+            self.access.settle(ident, generation=self.generation, execution_id=self.execution_id)
             raise AccessError('제공자 사용량 상한을 확인해야 합니다.', 'unavailable')
         usage = {key: getattr(result,key) for key in TOKEN_FIELDS}
         if usage_problem(usage,self.prices[model]):
-            self.access.settle(ident)
+            self.access.settle(ident, generation=self.generation, execution_id=self.execution_id)
             return
-        self.access.settle(ident, calculate_cost(usage,self.prices[model]), source='calculated', policy=COST_POLICY)
+        self.access.settle(ident, calculate_cost(usage,self.prices[model]), source='calculated', policy=COST_POLICY, generation=self.generation, execution_id=self.execution_id)

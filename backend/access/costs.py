@@ -1,4 +1,4 @@
-"""실시간 정산과 과거 보정에서 공유하는 사용량 검증·계산."""
+"""실시간 정산의 사용량 검증·계산과 근거 분류."""
 
 from decimal import Decimal, ROUND_UP
 
@@ -41,8 +41,6 @@ def calculate_cost(usage, prices=None):
 def evidence_status(row):
     if row.get('settlement_source') == 'manual':
         return 'manual'
-    if row.get('settlement_source') == 'calculated' and row.get('cost_policy') is None:
-        return 'legacy'
     if row.get('cost_policy') != COST_POLICY or row.get('model') != MODEL:
         return 'unknown'
     return usage_problem(row, default_prices()[MODEL]) or 'complete'

@@ -25,13 +25,12 @@ class CleanupStore:
             "chunk_vectors": (f"chunk_id IN ({chunks})", job_ids),
             "chunks": (f"node_id IN ({nodes})", job_ids),
             "chunk_sets": (f"node_id IN ({nodes})", job_ids),
-            "embeddings": (f"node_id IN ({nodes})", job_ids),
             "embedding_queue": (f"node_id IN ({nodes})", job_ids),
         }
         counts = {}
         for table, (where, values) in clauses.items():
             counts[table] = conn.execute(f"SELECT count(*) AS total FROM {table} WHERE {where}", (values,)).fetchone()["total"]
-        for table in ("nodes", "document_versions", "document_bodies", "execution_events", "model_usage", "history_archive", "projection_commits", "executions"):
+        for table in ("nodes", "document_versions", "document_bodies", "execution_events", "model_usage", "projection_commits", "executions"):
             counts[table] = conn.execute(f"SELECT count(*) AS total FROM {table} WHERE job_id=ANY(%s)", (job_ids,)).fetchone()["total"]
         edges = conn.execute(f"SELECT id,source,target FROM edges WHERE source IN ({nodes}) OR target IN ({nodes}) ORDER BY id", (job_ids, job_ids)).fetchall()
         owned = {r["id"] for r in conn.execute(nodes, (job_ids,)).fetchall()}
@@ -53,9 +52,9 @@ class CleanupStore:
         conn.execute(f"INSERT INTO deleted_nodes(id) {nodes} ON CONFLICT DO NOTHING", (ids,))
         conn.execute(f"DELETE FROM edges WHERE source IN ({nodes}) OR target IN ({nodes})", (ids, ids))
         conn.execute(f"DELETE FROM chunk_vectors WHERE chunk_id IN (SELECT id FROM chunks WHERE node_id IN ({nodes}))", (ids,))
-        for table in ("chunks", "chunk_sets", "embeddings", "embedding_queue"):
+        for table in ("chunks", "chunk_sets", "embedding_queue"):
             conn.execute(f"DELETE FROM {table} WHERE node_id IN ({nodes})", (ids,))
-        for table in ("nodes", "document_versions", "document_bodies", "execution_events", "model_usage", "history_archive", "projection_commits", "executions"):
+        for table in ("nodes", "document_versions", "document_bodies", "execution_events", "model_usage", "projection_commits", "executions"):
             conn.execute(f"DELETE FROM {table} WHERE job_id=ANY(%s)", (ids,))
         conn.execute("DELETE FROM jobs WHERE id=ANY(%s)", (ids,))
         conn.execute("DELETE FROM projects WHERE id=ANY(%s)", ([p["id"] for p in inventory["projects"]],))

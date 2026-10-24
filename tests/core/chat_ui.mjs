@@ -22,7 +22,7 @@ try {
   let body;
   if(path==='/api/auth/info')body={public:true,login_available:true};
   else if(path==='/api/me')body={id:'fixture-user',role:'user',csrf:'fixture-csrf'};
-  else if(path==='/api/service/status')body={busy:false};
+  else if(path==='/api/service/status')body={ready:true,active_count:0,queued_count:0,max_parallel:2,own_active_count:0};
   else if(path==='/api/me/usage')body={runs:1,remaining_runs:2};
   else if(path==='/api/jobs')body=[job,other];
   else if(path==='/api/jobs/'+otherId)body=other;

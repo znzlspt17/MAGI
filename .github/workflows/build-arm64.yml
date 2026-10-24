@@ -71,7 +71,13 @@ jobs:
           cache-to: type=gha,version=2,scope=magi-backend-arm64,mode=max
       - name: Smoke-check local ARM64 images
         id: images
-        run: python deploy/release.py smoke --output output/release --release "$RELEASE_ID"
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from deploy.artifacts import smoke
+          smoke(Path("output/release"), os.environ["RELEASE_ID"])
+          PY
       - name: Scan backend fixable critical vulnerabilities
         if: ${{ !cancelled() && steps.images.outcome == 'success' }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -110,7 +116,12 @@ jobs:
           exit-code: "1"
       - name: Show vulnerability IDs and fixed versions even on failure
         if: ${{ !cancelled() && steps.images.outcome == 'success' }}
-        run: python deploy/release.py summarize-scans --output output/release
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from deploy.artifacts import summarize_scans
+          raise SystemExit(0 if summarize_scans(Path("output/release")) else 1)
+          PY
       # 모든 smoke·취약점 검사가 성공한 뒤에만 게시 권한으로 로그인한다.
       - name: Authenticate to GHCR after successful release checks
         uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1 # v3
@@ -119,7 +130,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish scanned images and verify registry identities
-        run: python deploy/release.py publish --output output/release --repository "$GITHUB_REPOSITORY" --images-file output/portainer-images.txt
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from deploy.artifacts import publish
+          publish(Path("output/release"), os.environ["GITHUB_REPOSITORY"], Path("output/portainer-images.txt"))
+          PY
       - name: Show image variables for Portainer
         run: |
           {

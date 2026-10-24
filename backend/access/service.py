@@ -1,4 +1,4 @@
-"""공개 RPC 입구. 로컬 엔진과 분리된 사용자·독점 정책을 적용한다."""
+"""공개 RPC 입구. 로컬 엔진과 분리된 사용자·실행별 보호 정책을 적용한다."""
 
 from contextlib import contextmanager
 from copy import deepcopy
@@ -8,7 +8,7 @@ import json
 import re
 from uuid import uuid4
 
-from backend.access.context import ACTOR, DEFERRED, AccessError
+from backend.access.context import ACTOR, DEFERRED, ADMISSION, AccessError
 from backend.access.billing import Meter
 from backend.access.store import AccessStore, digest, day_at
 from backend.access.recovery import Execution, Failure, WorkerRecovery
@@ -37,7 +37,7 @@ def user_payload(value):
     if not isinstance(value, dict):
         return value
     private = {'provider','usage','heartbeat','error_code','error_stage','queue_position',
-               'order','queue_order','owner_id','lease_generation','ref','artifact_path','artifact_hash',
+               'order','queue_order','owner_id','execution_generation','ref','artifact_path','artifact_hash',
                'recording_incomplete','cache_diagnostics','model','diagnostics','workflow_constraints'}
     result={}
     for key,item in value.items():
@@ -63,6 +63,8 @@ class PublicService:
         manager.knowledge.public_mode=True
         manager.public_service = self
         self.recovery = WorkerRecovery(self)
+        from backend.access.capacity import ExecutionCapacity
+        self.capacity = ExecutionCapacity()
 
     def require_admin(self, actor):
         if actor['role'] != 'admin':
@@ -97,7 +99,7 @@ class PublicService:
         self.access.throttle(actor['id'])
         if request.get('csrf') is not None and not hmac.compare_digest(str(request['csrf']), actor['csrf']):
             raise AccessError('요청 확인 값이 올바르지 않습니다.')
-        mutations = {'generate','answer','revise','approve','continue','retry','message','lease.keep','lease.release','lease.resume','auth.logout','knowledge.impact.analyse','projects.create','projects.decisions.register','projects.decisions.deactivate'}
+        mutations = {'generate','answer','revise','approve','continue','retry','message','stop','auth.logout','knowledge.impact.analyse','projects.create','projects.decisions.register','projects.decisions.deactivate'}
         if (method in mutations or method.startswith(('cleanup.','admin.')) or method == 'knowledge.retry' or method == 'document') and method != 'cleanup.catalog':
             if not hmac.compare_digest(str(request.get('csrf','')), actor['csrf']):
                 raise AccessError('요청 확인 값이 필요합니다.')
@@ -111,16 +113,6 @@ class PublicService:
             return self.access.status(actor['id'])
         if method == 'usage':
             return self.access.usage(actor['id'])
-        if method == 'lease.release':
-            self.release(actor['id'], require_owner=True)
-            return self.access.status(actor['id'])
-        if method == 'lease.keep':
-            with self.store.transaction() as c:
-                lease = self.access.lease(c)
-                if lease['owner_id'] != actor['id'] or lease['phase'] != 'waiting':
-                    raise AccessError('유지할 사용권이 없습니다.', 'busy')
-                c.execute('UPDATE service_lease SET deadline=%s WHERE singleton=1', (self.access.clock()+180,))
-            return self.access.status(actor['id'])
         if method.startswith('admin.'):
             self.require_admin(actor)
             return self.admin(actor, method, params)
@@ -174,7 +166,7 @@ class PublicService:
                 if not SAFE_DOC.fullmatch(str(result.get('attrs',{}).get('artifact_path',''))):
                     result.pop('document',None)
                 return user_payload(result)
-            if method in {'generate','answer','revise','approve','continue','retry','message','lease.resume'}:
+            if method in {'generate','answer','revise','approve','continue','retry','message','stop'}:
                 return self.admit(actor, request, dispatch)
             if method == 'document':
                 self.manager.get(params.get('id'))
@@ -184,11 +176,11 @@ class PublicService:
                     cached = self.cached_document(params)
                     if cached is not None:
                         return user_payload(cached)
-            temporary = method in {'document','knowledge.search','knowledge.graph','knowledge.retry'}
+            temporary = method == 'document'
             if temporary:
-                with self.temporary(actor, params.get('id') or 'read-operation') as meter:
+                with self.temporary(actor, params.get('id') or uuid4().hex) as meter:
                     return self.result(dispatch({**request,'params':params,'_meter':meter}))
-            if method not in {'get','download','knowledge.document','subscribe','requirement.review','implementation.package','implementation.package.file'}:
+            if method not in {'get','download','knowledge.search','knowledge.graph','knowledge.document','subscribe','requirement.review','implementation.package','implementation.package.file'}:
                 raise AccessError('요청을 처리할 수 없습니다.', 'invalid')
             return self.result(dispatch({**request,'params':params}))
         finally:
@@ -217,16 +209,19 @@ class PublicService:
     def result(value):
         return user_payload(value)
 
-    def release(self, uid, *, require_owner=False):
-        with self.store.transaction() as c:
-            row = self.access.lease(c)
-            if require_owner and row['owner_id'] != uid:
-                raise AccessError('종료할 사용권이 없습니다.', 'forbidden')
-            if row['owner_id'] == uid:
-                if row['phase'] == 'waiting':
-                    self.access.clear(c)
-                else:
-                    c.execute('UPDATE service_lease SET stopping=true WHERE singleton=1')
+    def release(self, uid):
+        self.access.stop_owner(uid)
+        with self.manager.lock:
+            targets = [(job['id'],job['execution_id']) for job in self.manager.jobs.values() if job.get('owner_id') == uid]
+        for jid, execution_id in targets:
+            self.cancel_queued(jid,execution_id)
+
+    def cancel_queued(self, jid, execution_id):
+        # 커밋 후에 취소해야 완료 콜백이 독립 트랜잭션으로 미사용 예약을 반환한다.
+        with self.manager.lock:
+            for future, (ident, execution) in list(self.manager._futures.items()):
+                if ident == jid and execution is not None and execution.execution_id == execution_id:
+                    future.cancel()
 
     def cached_document(self, params):
         from backend.services.spec_translation import source_key
@@ -247,88 +242,87 @@ class PublicService:
             raise AccessError('중복 방지 요청 키가 필요합니다.', 'invalid')
         method, params = request['method'], request['params']
         fingerprint = digest(json.dumps([method,params],sort_keys=True,ensure_ascii=False))
+        jid = params.get('id') if method != 'generate' else uuid4().hex
+        execution_id = uuid4().hex
         deferred = []
         with self.manager.lock:
-            old_jobs = deepcopy(self.manager.jobs)
+            previous_job = deepcopy(self.manager.jobs.get(jid))
             mark = DEFERRED.set(deferred)
+            admission = ADMISSION.set((jid,execution_id))
             try:
                 with self.store.transaction() as c:
-                    self.access.lease(c)
                     previous = c.execute('SELECT fingerprint,result FROM admissions WHERE user_id=%s AND key=%s', (actor['id'],key)).fetchone()
                     if previous:
                         if previous['fingerprint'] != fingerprint:
-                            raise AccessError('같은 요청 키에 다른 입력을 사용할 수 없습니다.', 'busy')
+                            raise AccessError('같은 요청 키에 다른 입력을 사용할 수 없습니다.', 'conflict')
                         return previous['result']
                     if method != 'generate':
-                        current = self.manager.get(params.get('id'))
-                        if method != 'lease.resume' and params.get('execution_id') != current.get('execution_id'):
+                        current = self.manager.get(jid)
+                        if params.get('execution_id') != current.get('execution_id'):
                             raise AccessError('작업 상태가 바뀌었습니다. 최신 실행을 확인하세요.', 'conflict')
                         if method == 'approve':
-                            state = self.manager.workspace.public(current['id']).get('state', {})
+                            state = self.manager.workspace.public(jid).get('state', {})
                             if params.get('candidate_hash') != state.get('candidate_hash'):
                                 raise AccessError('승인할 문서가 변경되었습니다.', 'conflict')
-                    # 검증 실패는 전체 접수 트랜잭션과 메모리 상태를 되돌린다.
-                    if method == 'lease.resume':
-                        job = self.manager.get(params['id'])
-                        if job['status'] not in WAITING:
-                            raise AccessError('현재 작업은 응답 대기 상태가 아닙니다.', 'busy')
-                        self.access.acquire(c,actor['id'],job['id'])
-                        c.execute("UPDATE service_lease SET phase='waiting',deadline=%s WHERE singleton=1", (self.access.clock()+180,))
-                        result = self.manager.workspace.summary(job['id'])
+                    if method == 'stop':
+                        self.access.stop(c, actor['id'], jid, params['execution_id'])
+                        result = self.result(self.manager.workspace.summary(jid))
                     else:
-                        # 생성 ID는 기존 엔진에서 만든 뒤 같은 DB 트랜잭션 안에서 사용권에 연결한다.
-                        jid = params.get('id') or 'pending'
-                        generation = self.access.acquire(c,actor['id'],jid,count=method in {'generate','continue'})
-                        meter = Meter(self.access,actor['id'],jid,generation,self.prices)
+                        self.capacity.check_admission()
+                        generation = self.access.acquire(c,actor['id'],jid,execution_id=execution_id,count=method in {'generate','continue'})
+                        meter = Meter(self.access,actor['id'],jid,generation,self.prices,execution_id=execution_id)
                         from backend.config import Config
                         model = Config().model_routing['interviewer'].model
                         if method != 'approve':
                             maximum = meter.maximum(model)
-                            self.access.check_money(c,actor['id'],maximum, day_at(self.access.clock()))
+                            self.access.check_money(c,actor['id'],maximum,day_at(self.access.clock()))
                         result = self.result(dispatch(request))
-                        jid = result['id']
-                        c.execute('UPDATE service_lease SET job_id=%s WHERE singleton=1', (jid,))
                         job = self.manager.jobs[jid]
-                        job['lease_generation'] = generation
-                        self.store._save_job(c,job)
+                        job['execution_generation'] = generation
                         if method != 'approve':
-                            ident = self.access.reserve(actor['id'],jid,generation,model,maximum)
+                            ident = self.access.reserve(actor['id'],jid,generation,model,maximum,execution_id=execution_id,queued=True)
                             job['_initial_reservation'] = (ident,model)
+                        self.store._save_job(c,job)
                     result = user_payload(result)
                     c.execute('INSERT INTO admissions VALUES (%s,%s,%s,%s)', (actor['id'],key,fingerprint,self.store._json(result)))
             except Exception:
-                self.manager.jobs = old_jobs
+                if previous_job is None:
+                    self.manager.jobs.pop(jid,None)
+                else:
+                    self.manager.jobs[jid] = previous_job
                 raise
             finally:
                 DEFERRED.reset(mark)
-            for jid, action, payload in deferred:
+                ADMISSION.reset(admission)
+            for deferred_jid, action, payload in deferred:
                 try:
-                    self.manager._submit_locked(jid,action,payload)
+                    self.manager._submit_locked(deferred_jid,action,payload)
                 except RuntimeError:
                     raise AccessError('작업 접수 후 실행하지 못했습니다. 기록을 확인하세요.', 'unavailable') from None
+            if method == 'stop':
+                self.cancel_queued(jid,params['execution_id'])
         return result
 
     @contextmanager
     def temporary(self, actor, jid):
-        owned = False
-        with self.manager.lock, self.store.transaction() as c:
-            lease = self.access.lease(c)
-            if jid=='maintenance' and lease['phase']!='idle':
-                raise AccessError('작업 사용권이 해제된 뒤 운영 작업을 실행하세요.', 'busy')
-            if lease['owner_id'] == actor['id'] and lease['phase']=='waiting':
-                if jid not in {'read-operation',lease['job_id']}:
-                    raise AccessError('현재 작업의 처리만 진행할 수 있습니다.', 'busy')
-                generation = lease['generation']
-                c.execute("UPDATE service_lease SET phase='running',deadline=NULL WHERE singleton=1")
-                owned = True
-            else:
-                generation = self.access.acquire(c,actor['id'],jid)
-        active_jid = lease['job_id'] if owned else jid
-        meter = Meter(self.access,actor['id'],active_jid,generation,self.prices)
-        try:
-            yield meter
-        finally:
-            self.access.finish(active_jid,generation,waiting=owned)
+        if jid == 'maintenance':
+            with self.capacity.maintenance():
+                # 접수의 확인·커밋과 유지보수 진입 검사를 같은 경계에서 직렬화한다.
+                with self.manager.lock, self.store.transaction() as c:
+                    if c.execute("SELECT 1 FROM execution_leases WHERE phase IN ('queued','running','recovery') LIMIT 1").fetchone():
+                        raise AccessError('실행이 끝난 뒤 유지보수를 시작하세요.', 'capacity')
+                yield None
+            return
+        # 동기 부가 작업은 워크플로와 같은 용량을 사용하지만 대기열을 점유하지 않는다.
+        with self.capacity.slot(blocking=False):
+            execution_id = uuid4().hex
+            with self.store.transaction() as c:
+                generation = self.access.acquire(c,actor['id'],jid,execution_id=execution_id,kind='auxiliary',queued=False)
+            meter = Meter(self.access,actor['id'],jid,generation,self.prices,execution_id=execution_id)
+            try:
+                yield meter
+            finally:
+                self.access.finish(jid,generation,execution_id)
 
     def worker(self, ident, action, payload, *, execution=None):
         actor_token = None
@@ -338,28 +332,23 @@ class PublicService:
             with self.manager.lock:
                 job = self.manager.jobs[ident]
                 execution = execution or Execution.from_job(job)
-                if (job.get('execution_id') != execution.execution_id
-                    or job.get('lease_generation') != execution.generation):
-                    raise AccessError('이전 실행은 재개할 수 없습니다.', 'busy')
+                if job.get('execution_id') != execution.execution_id or job.get('execution_generation') != execution.generation:
+                    raise AccessError('이전 실행은 재개할 수 없습니다.', 'conflict')
             actor = self.access.session_for_worker(job['owner_id'])
             actor_token = ACTOR.set(actor)
-            meter = Meter(self.access, actor['id'], ident, execution.generation,
-                          self.prices, execution.initial)
-            with self.store.transaction() as c:
-                lease = self.access.lease(c)
-                if lease['job_id'] != ident or lease['generation'] != execution.generation or lease['phase'] != 'running':
-                    raise AccessError('이전 실행은 재개할 수 없습니다.', 'busy')
-            with self.manager.lock:
-                job.pop('_initial_reservation', None)
-            entered = True
-            self.manager._run(ident,action,payload,meter=meter)
-            if meter.initial:
-                self.access.settle(meter.initial[0], Decimal(0))
-            self.access.finish(ident, execution.generation, waiting=job['status'] in WAITING)
+            meter = Meter(self.access,actor['id'],ident,execution.generation,self.prices,execution.initial,execution_id=execution.execution_id)
+            with self.capacity.slot(blocking=True):
+                self.access.start(actor['id'],ident,execution.generation,execution.execution_id)
+                with self.manager.lock:
+                    job.pop('_initial_reservation',None)
+                entered = True
+                self.manager._run(ident,action,payload,meter=meter)
+                if meter.initial:
+                    self.access.settle(meter.initial[0],Decimal(0),generation=execution.generation,execution_id=execution.execution_id)
+                self.access.finish(ident,execution.generation,execution.execution_id)
         except Exception:
             if execution is not None:
-                self.recovery.record(Failure(execution, entered,
-                                             meter.initial if meter is not None else execution.initial))
+                self.recovery.record(Failure(execution,entered,meter.initial if meter is not None else execution.initial))
             raise
         finally:
             if actor_token is not None:
@@ -400,6 +389,13 @@ class PublicService:
                 ACTOR.reset(token)
 
     def admin(self, actor, method, params):
+        if method == 'admin.stop':
+            with self.manager.lock, self.store.transaction() as c:
+                self.access.stop(c,actor['id'],params.get('id'),params.get('execution_id'),admin=True)
+                c.execute('INSERT INTO admin_audit(id,actor_id,action,target_id) VALUES (%s,%s,%s,%s)',
+                          (uuid4().hex,actor['id'],method,params.get('id')))
+            self.cancel_queued(params['id'],params['execution_id'])
+            return {'ok':True}
         if method in {'admin.usage','admin.usage.rows'}:
             from backend.access.usage import usage
             self.require_admin(actor)
@@ -410,9 +406,8 @@ class PublicService:
             if method=='admin.overview':
                 return {'users':c.execute('SELECT id,role,suspended,daily_runs,daily_usd FROM users ORDER BY id').fetchall(),
                         'costs':c.execute('SELECT id,day,user_id,job_id,model,reserved,actual,state FROM cost_calls ORDER BY day DESC LIMIT 200').fetchall(),
-                        'lease':self.access.lease(c),'embedding_status':self.manager.knowledge.last_error,
-                        'daily_usd':c.execute('SELECT daily_usd FROM service_settings WHERE singleton=1').fetchone()['daily_usd'],
-                        'unowned':c.execute('SELECT id FROM jobs WHERE owner_id IS NULL ORDER BY id').fetchall()}
+                        'executions':c.execute("SELECT execution_id,job_id,owner_id,kind,phase,stopping FROM execution_leases WHERE phase IN ('queued','running','recovery') ORDER BY generation").fetchall(),'embedding_status':self.manager.knowledge.last_error,
+                        'daily_usd':c.execute('SELECT daily_usd FROM service_settings WHERE singleton=1').fetchone()['daily_usd']}
             if method=='admin.user_jobs':
                 owner=params.get('owner_id')
                 if not isinstance(owner,str) or not owner.strip():
@@ -441,26 +436,6 @@ class PublicService:
                 c.execute('UPDATE users SET role=%s,daily_runs=%s,daily_usd=%s,suspended=%s WHERE id=%s',
                           (role,runs,usd,params['suspended'],params.get('id')))
                 c.execute('UPDATE sessions SET revoked=true WHERE user_id=%s',(params.get('id'),))
-            elif method=='admin.claim':
-                if self.access.lease(c)['phase']!='idle':
-                    raise AccessError('사용 중에는 이관할 수 없습니다.', 'busy')
-                jid=params.get('id')
-                job=self.manager.jobs.get(jid)
-                if not job or job.get('owner_id'):
-                    raise KeyError(jid)
-                owner=params.get('owner_id')
-                if not c.execute('SELECT id FROM users WHERE id=%s',(owner,)).fetchone():
-                    raise KeyError(owner)
-                c.execute("UPDATE jobs SET owner_id=%s,data=jsonb_set(data,'{owner_id}',to_jsonb(%s::text)) WHERE id=%s AND owner_id IS NULL",(owner,owner,jid))
-                job['owner_id']=owner
-                # 이관 후에도 한 소유자로 확인되는 개인 프로젝트만 공개한다.
-                c.execute("UPDATE projects SET owner_id=%s WHERE id=%s AND owner_id IS NULL AND NOT EXISTS(SELECT 1 FROM jobs WHERE project_id=%s AND (owner_id IS NULL OR owner_id<>%s))", (owner,job['project_id'],job['project_id'],owner))
-            elif method=='admin.stop':
-                lease=self.access.lease(c)
-                if lease['phase']=='waiting':
-                    self.access.clear(c)
-                else:
-                    c.execute('UPDATE service_lease SET stopping=true WHERE singleton=1')
             elif method=='admin.settings':
                 cap=Decimal(str(params.get('daily_usd')))
                 if not cap.is_finite() or not 0<=cap<=10000:

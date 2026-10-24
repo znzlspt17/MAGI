@@ -3,10 +3,10 @@ import {act,cleanup,fireEvent,render,screen,waitFor,within} from '@testing-libra
 import {QuestionActions} from './QuestionActions';
 import type {Job} from './types';
 vi.mock('./RequirementReview',()=>({RequirementReview:()=>null}));
-const authState=vi.hoisted(()=>({status:{} as {busy?:boolean;mine?:boolean}}));
+const authState=vi.hoisted(()=>({status:{} as {ready?:boolean;active_count?:number;own_active_count?:number;checkState?:string}}));
 vi.mock('./Auth',()=>({useAuth:()=>({publicMode:true,user:{id:'owner'},status:authState.status})}));
 afterEach(cleanup);
-beforeEach(()=>{sessionStorage.clear();authState.status={busy:false,mine:false};});
+beforeEach(()=>{sessionStorage.clear();authState.status={ready:true,active_count:0,own_active_count:0};});
 const forms={
  S:{question_id:'S',question:'운영체제',input_type:'single_choice',options:[{id:'a',label:'Windows'},{id:'b',label:'Linux'}],form_version:'S-v1'},
  M:{question_id:'M',question:'기능',input_type:'multiple_choice',options:[{id:'a',label:'저장'},{id:'b',label:'검색'}],form_version:'M-v1'},
@@ -127,11 +127,11 @@ describe('대화 입력과 승인',()=>{
   await act(async()=>fireEvent.click(screen.getByRole('button',{name:'이어서 요청하기'})));
   expect((input as HTMLTextAreaElement).value).toBe('');
  });
- it('다른 사용자의 lease 동안 초안은 유지하고 승인을 잠근다',()=>{
-  authState.status={busy:true,mine:false};
+ it('다른 사용자가 실행 중이어도 초안과 승인 입력을 사용할 수 있다',()=>{
+  authState.status={ready:true,active_count:2,own_active_count:0};
   render(<QuestionActions job={{id:'approve',status:'PASS_PENDING_USER_APPROVAL'}} onAction={vi.fn()} busy={false} conversational/>);
   expect((screen.getByRole('textbox') as HTMLTextAreaElement).disabled).toBe(false);
-  expect((screen.getByRole('button',{name:'이 명세 승인'}) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole('button',{name:'이 명세 승인'}) as HTMLButtonElement).disabled).toBe(false);
  });
  it('동일 실행의 승인은 재마운트해도 반복하지 않으며 새 실행에서는 다시 허용한다',async()=>{
   const action=vi.fn().mockResolvedValue(undefined),value:Job={id:'approve',execution_id:'e1',status:'PASS_PENDING_USER_APPROVAL'};

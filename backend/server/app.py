@@ -359,7 +359,7 @@ async def main() -> None:
 
     validate_container("backend")
     if os.environ.get("CONTAINER") == "1":
-        from backend.knowledge.prepare_model import verify_prepared_model
+        from backend.knowledge.model_files import verify_prepared_model
 
         verify_prepared_model(os.environ["EMBEDDING_MODEL_PATH"])
     internal_key = os.environ.get("INTERNAL_KEY", "")
@@ -367,15 +367,19 @@ async def main() -> None:
     try:
         config = KnowledgeConfig.from_env()
         store = KnowledgeStore(config)
-        store.require_ready()
         from backend.access.runtime import PublicRuntime, service_factory
+        from backend.knowledge.setup import migrate
 
         runtime = PublicRuntime(store)
-        runtime.acquire()
+        runtime.acquire(recover=False)
+        migrate(store, runtime=runtime)
+        runtime.recover()
         knowledge = KnowledgeService(store)
         server = Server(knowledge, public=service_factory, internal_key=internal_key)
     except Exception as exc:
         _log_exception("server initialization failed", exc)
+        if runtime:
+            runtime.close()
         raise SystemExit(1) from None
     loop = asyncio.get_running_loop()
     stopped = asyncio.Event()

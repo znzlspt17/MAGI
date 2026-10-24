@@ -13,7 +13,8 @@ from uuid import uuid4
 import pytest
 from backend.knowledge.config import KnowledgeConfig, KnowledgeError
 from backend.knowledge.store import KnowledgeStore
-from backend.knowledge.upgrade import migrate_business, initialize_checkpoints
+from backend.knowledge.setup import migrate
+from backend.access.runtime import PublicRuntime
 
 
 @pytest.fixture
@@ -75,6 +76,12 @@ def wasm_connection():
                     row["total"] = int(row["total"])
             return Result(response["rows"])
 
+        def commit(self):
+            pass
+
+        def close(self):
+            self.execute("SELECT pg_advisory_unlock_all()")
+
         def __enter__(self):
             connection_gate.acquire()
             try:
@@ -91,6 +98,11 @@ def wasm_connection():
                 connection_gate.release()
 
     instance = KnowledgeStore(KnowledgeConfig({}), connect=lambda **kw: Connection())
+    bootstrap = instance.connect()
+    bootstrap.execute("CREATE ROLE ci_service NOSUPERUSER NOBYPASSRLS")
+    bootstrap.execute("GRANT USAGE,CREATE ON SCHEMA public TO ci_service")
+    bootstrap.execute("DO $$ BEGIN EXECUTE format('GRANT CREATE ON DATABASE %I TO ci_service', current_database()); END $$")
+    bootstrap.execute("SET ROLE ci_service")
     try:
         yield instance
     finally:
@@ -109,8 +121,8 @@ def empty_store(request, monkeypatch):
         from psycopg import sql
 
         connection = dict(
-            host="127.0.0.1",
-            port=55432,
+            host=os.environ.get("TEST_POSTGRES_HOST", "127.0.0.1"),
+            port=int(os.environ.get("TEST_POSTGRES_PORT", "55432")),
             dbname="postgres",
             user="postgres",
             password="ci-only",
@@ -125,7 +137,11 @@ def empty_store(request, monkeypatch):
             config = {**connection, "dbname": database}
             with psycopg.connect(**config) as admin:
                 admin.execute("CREATE EXTENSION vector")
-            instance = KnowledgeStore(KnowledgeConfig(config))
+                if not admin.execute("SELECT 1 FROM pg_roles WHERE rolname='ci_service'").fetchone():
+                    admin.execute("CREATE ROLE ci_service LOGIN PASSWORD 'ci-only' NOSUPERUSER NOBYPASSRLS")
+                admin.execute(sql.SQL("GRANT CREATE ON DATABASE {} TO ci_service").format(sql.Identifier(database)))
+                admin.execute("GRANT USAGE,CREATE ON SCHEMA public TO ci_service")
+            instance = KnowledgeStore(KnowledgeConfig({**config, "user": "ci_service"}))
             yield instance
         finally:
             with psycopg.connect(**connection, autocommit=True) as admin:
@@ -140,7 +156,19 @@ def empty_store(request, monkeypatch):
 
     saver = InMemorySaver()
     saver.conn = instance.connect()
-    saver.setup = lambda: None
+    def setup_checkpoints():
+        from langgraph.checkpoint.postgres.base import MIGRATIONS
+
+        saver.conn.execute("SET search_path TO workflow,public")
+        saver.conn.execute(MIGRATIONS[0])
+        row = saver.conn.execute("SELECT max(v) AS version FROM checkpoint_migrations").fetchone()
+        previous = row["version"] if row["version"] is not None else -1
+        for version, statement in enumerate(MIGRATIONS):
+            if version > previous:
+                saver.conn.execute(statement.replace("INDEX CONCURRENTLY", "INDEX"))
+                saver.conn.execute("INSERT INTO checkpoint_migrations(v) VALUES (%s)", (version,))
+
+    saver.setup = setup_checkpoints
 
     @contextmanager
     def checkpoints(_):
@@ -151,46 +179,32 @@ def empty_store(request, monkeypatch):
 
 
 @pytest.fixture
-def legacy_store(empty_store):
-    seed_legacy_schema(empty_store)
+def store(empty_store):
+    runtime = PublicRuntime(empty_store)
+    try:
+        runtime.acquire(recover=False)
+        migrate(empty_store, runtime=runtime)
+    finally:
+        runtime.close()
     return empty_store
 
 
 @pytest.fixture
-def store(legacy_store):
-    migrate_business(legacy_store)
-    initialize_checkpoints(legacy_store)
-    if os.environ.get("CI") == "true" and os.environ.get("CI_POSTGRES") == "1":
-        from backend.knowledge.upgrade import verify_and_enable
+def admin_transaction(empty_store):
+    """테스트 역할 생성·권한 변경만 별도의 관리자 경로에서 실행한다."""
+    @contextmanager
+    def transaction():
+        if empty_store.config.connection:
+            admin = KnowledgeStore(KnowledgeConfig({**empty_store.config.connection, "user": "postgres"}))
+            with admin.transaction() as conn:
+                yield conn
+        else:
+            bootstrap = empty_store.connect()
+            bootstrap.execute("RESET ROLE")
+            try:
+                with empty_store.transaction() as conn:
+                    yield conn
+            finally:
+                bootstrap.execute("SET ROLE ci_service")
 
-        with legacy_store.transaction() as conn:
-            if not conn.execute(
-                "SELECT 1 FROM pg_roles WHERE rolname='ci_service'"
-            ).fetchone():
-                conn.execute(
-                    "CREATE ROLE ci_service LOGIN PASSWORD 'ci-only' NOSUPERUSER NOBYPASSRLS"
-                )
-        verify_and_enable(legacy_store, application_role="ci_service")
-        return KnowledgeStore(
-            KnowledgeConfig({**legacy_store.config.connection, "user": "ci_service"})
-        )
-    return legacy_store
-
-
-def seed_legacy_schema(store):
-    with store.transaction(mode="maintenance") as conn:
-        conn.execute("SET LOCAL search_path TO public")
-        conn.execute(
-            "SELECT set_config('magi.internal','on',true),set_config('app.internal','on',true)"
-        )
-        conn.execute("CREATE TABLE magi_schema_versions(version text PRIMARY KEY)")
-        for index in range(1, 12):
-            name = f"{index:03}.sql"
-            conn.execute(
-                Path(__file__)
-                .with_name("fixtures")
-                .joinpath("legacy_schema", name)
-                .read_text(encoding="utf-8")
-            )
-            table = "schema_versions" if index >= 9 else "magi_schema_versions"
-            conn.execute(f"INSERT INTO {table}(version) VALUES (%s)", (name,))
+    return transaction

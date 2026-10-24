@@ -55,7 +55,7 @@ cd ..
 
 ### 웹 서비스 실행
 
-[운영 문서](docs/PUBLIC_SERVICE.ko.md)에 따라 DB를 설치·검증하고 PostgreSQL·Google 로그인·모델 설정을 실행 환경에 주입합니다. 저장소 루트의 터미널 두 개에서 실행합니다.
+[운영 문서](docs/PUBLIC_SERVICE.ko.md)에 따라 빈 DB의 pgvector 확장과 서비스 계정 권한을 준비하고 PostgreSQL·Google 로그인·모델 설정을 실행 환경에 주입합니다. 백엔드는 시작 시 번호별 SQL을 자동 적용합니다. 저장소 루트의 터미널 두 개에서 실행합니다.
 
 ```sh
 uv run python -m backend.server
@@ -82,14 +82,17 @@ PostgreSQL·pgvector에 작업 상태와 단계별 문서, 요구사항·결정�
 
 로컬 임베딩을 사용할 경우 의존성과 모델을 준비합니다.
 
-```sh
-uv sync --extra embedding --group gateway
-uv run python -m backend.knowledge.prepare_model --output ./models/bge-m3
+프로젝트의 embedding extra와 gateway 그룹 의존성을 설치한 Python 환경에서 모델 준비 API를 호출하거나, 준비된 모델 폴더를 연결합니다. 별도 모델 준비 CLI는 제공하지 않습니다.
+
+```python
+from backend.knowledge.model_files import prepare
+
+prepare("./models/bge-m3")
 ```
 
 준비한 폴더를 `EMBEDDING_MODEL_PATH`에 지정하고 `EMBEDDING_DEVICE=cpu`를 사용합니다. 서비스 시작 시 모델을 자동 다운로드하지 않습니다. 의미 검색을 사용할 수 없으면 텍스트 검색으로 자료를 조회할 수 있습니다.
 
-작업·문서·이력은 PostgreSQL에 저장합니다. 문서 파일은 다운로드할 때 생성합니다. DB 설치·전환과 백업 범위는 [운영 문서](docs/PUBLIC_SERVICE.ko.md)를 참고하세요.
+작업·문서·이력은 PostgreSQL에 저장합니다. 문서 파일은 다운로드할 때 생성합니다. DB 자동 마이그레이션과 백업 범위는 [운영 문서](docs/PUBLIC_SERVICE.ko.md)를 참고하세요.
 
 | 경로 | 내용 |
 |---|---|

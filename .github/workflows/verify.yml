@@ -52,4 +52,8 @@ jobs:
           CI_POSTGRES: '1'
         run: .venv/bin/python -m pytest -q
       - name: Check deployment inputs
-        run: .venv/bin/python deploy/release.py check-inputs
+        run: |
+          .venv/bin/python - <<'PY'
+          from deploy.artifacts import release_inputs
+          release_inputs()
+          PY

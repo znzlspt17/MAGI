@@ -10,13 +10,12 @@ vi.mock("./api", () => ({ api: vi.fn(), post: vi.fn() }));
 const entries = [
   { id: "recent", owner_id: "owner", request: "긴 요청 내용 ".repeat(30), status: "FINALIZED", created_at: "2026-10-21T01:00:00Z" },
   { id: "older", owner_id: "other", request: "오류가 발생한 작업", status: "error", created_at: "2026-10-20T01:00:00Z" },
-  { id: "unowned", owner_id: null, request: "이관할 작업", status: "NEEDS_USER_INPUT" },
+  { id: "unowned", owner_id: null, request: "내부 작업", status: "NEEDS_USER_INPUT" },
 ];
-const save = vi.fn().mockResolvedValue({ ok: true });
 function Harness() {
   const [version, setVersion] = useState(0);
   const location = useLocation();
-  return <><output aria-label="현재 주소">{location.search}</output><JobData users={[{ id: "owner" }, { id: "other" }]} unowned={[{ id: "unowned" }]} version={version} busy={false} save={save} refresh={() => setVersion(v => v + 1)} /></>;
+  return <><output aria-label="현재 주소">{location.search}</output><JobData users={[{ id: "owner" }, { id: "other" }]} version={version} busy={false} refresh={() => setVersion(v => v + 1)} /></>;
 }
 function mount(url = "/admin/data") { return render(<MemoryRouter initialEntries={[url]}><Harness /></MemoryRouter>); }
 beforeEach(() => {

@@ -20,17 +20,17 @@ def test_uncertain_cost_keeps_reservation_but_releases_execution(store):
     access = AccessStore(store, clock=lambda: 1800000000)
     _, user = account(access, "owner")
     with store.transaction() as conn:
-        generation = access.acquire(conn, user["id"], "a" * 32)
+        generation = access.acquire(conn, user["id"], "a" * 32, execution_id="test-execution", kind="auxiliary", queued=False)
     ident = access.reserve(
-        user["id"], "a" * 32, generation, "gpt-6-luna", Decimal("0.1")
+        user["id"], "a" * 32, generation, "gpt-6-luna", Decimal("0.1"), execution_id="test-execution"
     )
     access.mark_called(ident)
     access.settle(ident)
-    access.finish("a" * 32, generation, waiting=True)
+    access.finish("a" * 32, generation, "test-execution")
     with store.transaction(mode="read") as conn:
         assert (
-            conn.execute("SELECT phase FROM service_lease").fetchone()["phase"]
-            == "waiting"
+            conn.execute("SELECT phase FROM execution_leases").fetchone()["phase"]
+            == "finished"
         )
         call = conn.execute(
             "SELECT state,reserved,actual FROM cost_calls WHERE id=%s", (ident,)
@@ -85,12 +85,13 @@ def test_duplicate_command_is_accepted_once_and_rejects_changed_input(
         manager.close()
 
 
-def test_rls_protects_document_bodies_and_versions(store, empty_store):
+def test_rls_protects_document_bodies_and_versions(store, admin_transaction):
     access = AccessStore(store)
     _, owner = account(access, "owner")
     _, other = account(access, "other")
-    with empty_store.transaction() as conn:
-        conn.execute("CREATE ROLE magi_test_reader NOSUPERUSER NOBYPASSRLS")
+    with admin_transaction() as conn:
+        if not conn.execute("SELECT 1 FROM pg_roles WHERE rolname='magi_test_reader'").fetchone():
+            conn.execute("CREATE ROLE magi_test_reader NOSUPERUSER NOBYPASSRLS")
         if conn.execute("SELECT 1 FROM pg_roles WHERE rolname='ci_service'").fetchone():
             conn.execute("GRANT magi_test_reader TO ci_service")
         conn.execute("GRANT USAGE ON SCHEMA core TO magi_test_reader")

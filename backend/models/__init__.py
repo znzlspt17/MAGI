@@ -368,7 +368,6 @@ class State:
     revision_history: list[str] = field(default_factory=list)
     created_artifacts: list[str] = field(default_factory=list)
     workflow_schema: int = 1
-    migration_origin: dict[str, Any] = field(default_factory=dict)
     revision: int = 0
     plan: dict[str, Any] = field(default_factory=dict)
     plan_history: list[dict[str, Any]] = field(default_factory=list)

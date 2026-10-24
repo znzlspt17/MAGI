@@ -25,7 +25,7 @@ try {
    let body;
    if(path==='/api/auth/info')body={public:false};
    else if(path==='/api/me')body={id:'fixture',role:'user',csrf:'fake-csrf'};
-   else if(path==='/api/service/status')body={busy:false};
+   else if(path==='/api/service/status')body={ready:true,active_count:0,queued_count:0,max_parallel:2,own_active_count:0};
    else if(path==='/api/me/usage')body={};
    else if(path==='/api/jobs')body=[job];
    else if(path==='/api/jobs/'+id)body=job;

@@ -1,6 +1,5 @@
-"""공개 BGE-M3 파일만 익명 다운로드한다. 앱 시작 경로에서는 호출하지 않는다."""
+"""공개 BGE-M3 모델 파일 준비 API와 서버 시작 시 사용하는 해시 검증."""
 
-import argparse
 import hashlib
 import json
 import re
@@ -76,15 +75,3 @@ def prepare(destination, revision=None):
     (root / "model_revision.json").write_text(json.dumps({"model": "BAAI/bge-m3", "revision": revision,
                                                             "sha256": files}, indent=2), encoding="utf-8")
     return root
-
-
-def main():
-    parser = argparse.ArgumentParser(description="공개 BGE-M3 모델을 명시적으로 준비합니다.")
-    parser.add_argument("--output", required=True)
-    parser.add_argument("--revision", help="재현할 모델의 40자리 commit SHA (생략하면 최신 revision 자동 확인)")
-    args = parser.parse_args()
-    print(prepare(args.output, args.revision))
-
-
-if __name__ == "__main__":
-    main()

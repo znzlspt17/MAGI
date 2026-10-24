@@ -88,7 +88,7 @@ export default function Workspace() {
   async function mutate(action: string, payload: unknown) {
     const target = id;
     try {
-      if (await session.command(action, payload) && selectedId.current === target) auth.setNotice("작업을 대기열에 넣었습니다.");
+      if (await session.command(action, payload) && selectedId.current === target) auth.setNotice(action === "stop" ? "이 작업의 중지를 요청했습니다." : "작업을 대기열에 넣었습니다.");
     } catch (e) {
       if (action !== "message") auth.setNotice((e as Error).message);
       throw e;
@@ -145,7 +145,7 @@ export default function Workspace() {
             <SquaresFourIcon weight="duotone" size={20} aria-hidden />작업 공간
           </Button></SidebarMenuButton></SidebarMenuItem>
           <SidebarMenuItem><SidebarMenuButton asChild isActive={surface === "knowledge"}><Button
-            disabled={!!(auth.status.busy && !auth.status.mine)}
+            disabled={false}
             aria-current={surface === "knowledge" ? "page" : undefined}
             onClick={() => setSurface("knowledge")}
           >
@@ -245,7 +245,10 @@ export default function Workspace() {
                   {tab !== "conversation" && <CompletedDocuments job={actualJob} select={selectStep} />}
                   <div role="tabpanel" id={`workspace-panel-${tab}`} aria-labelledby={`workspace-tab-${tab}`} tabIndex={0}>
                   {tab === "conversation" ? (
-                    <Conversation key={actualJob.id} job={actualJob} select={selectStep} onAction={mutate} busy={busy} />
+                    <>
+                    {["queued", "running"].includes(actualJob.status) && <Button disabled={busy} onClick={() => void mutate("stop", undefined).catch(() => {})}>이 작업 중지</Button>}
+                  <Conversation key={actualJob.id} job={actualJob} select={selectStep} onAction={mutate} busy={busy} />
+                    </>
                   ) : (
                     <div className="document-action-layout">
                       <section className="document-panel">
@@ -310,55 +313,7 @@ export default function Workspace() {
 }
 
 function Account() {
-  const auth = useAuth(),
-    [remaining, setRemaining] = useState<number | null>(null),
-    location = useLocation();
-  useEffect(() => {
-    const update = () =>
-      setRemaining(
-        auth.status.deadline
-          ? Math.max(0, Math.ceil(auth.status.deadline - Date.now() / 1000))
-          : null,
-      );
-    update();
-    const timer = setInterval(update, 1000);
-    return () => clearInterval(timer);
-  }, [auth.status.deadline]);
-  async function lease(action: string) {
-    try {
-      await post(
-        `/api/lease/${action}`,
-        action === "resume" ? { id: location.pathname.split("/").pop() } : {},
-      );
-      await auth.refreshStatus();
-    } catch (e) {
-      auth.setNotice((e as Error).message);
-    }
-  }
-  return (
-    <header className="account-header">
-      <SidebarTrigger  className="desktop-sidebar-trigger" />
-      <ServiceStatusNotice />
-      {remaining !== null && remaining <= 30 && (
-        <p role="alert">곧 사용권이 해제됩니다.</p>
-      )}
-      <div className="account-controls">
-        {auth.status.mine && auth.status.phase === "waiting" && auth.status.checkState === "ready" && (
-          <>
-            <Button onClick={() => void lease("keep")}>계속 사용</Button>
-            <Button onClick={() => void lease("release")}>사용 종료</Button>
-          </>
-        )}
-        {auth.publicMode &&
-          auth.status.checkState === "ready" && !auth.status.busy &&
-          location.pathname.startsWith("/jobs/") && (
-            <Button onClick={() => void lease("resume")}>
-              이 작업 사용권 다시 얻기
-            </Button>
-          )}
-      </div>
-    </header>
-  );
+  return <header className="account-header"><SidebarTrigger className="desktop-sidebar-trigger" /><ServiceStatusNotice /></header>;
 }
 function CompletedDocuments({
   job,

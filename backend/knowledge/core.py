@@ -71,6 +71,9 @@ class Documents:
             raise TypeError("문서 본문은 문자열이어야 합니다.")
         checksum = content_hash(content)
         with self.store.transaction() as conn:
+            meter = getattr(self.runtime, "meter", None)
+            if meter is not None:
+                meter.access.execution(conn, meter.uid, meter.jid, meter.generation, meter.execution_id)
             conn.execute("SELECT id FROM jobs WHERE id=%s FOR UPDATE", (self.job_id,))
             latest = conn.execute(
                 "SELECT content_hash FROM document_versions WHERE job_id=%s AND name=%s "

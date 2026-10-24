@@ -19,7 +19,7 @@ def test_command_registry_and_removed_endpoints():
         "params": {"kind": "generate", "input": "메모"},
     }
     assert parse_request(json.dumps(packet)) is not None
-    for method in ["generate", "answer", "approve", "retry", "projects.assign"]:
+    for method in ["generate", "answer", "approve", "retry", "projects.assign", "admin.claim"]:
         assert parse_request(json.dumps({**packet, "method": method})) is None
     for params in [
         {"kind": "approve", "job_id": "a", "execution_id": "e"},

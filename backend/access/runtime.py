@@ -25,15 +25,21 @@ class PublicRuntime:
             c.commit()
             self.connection=c
             if recover:
-                with self.store.transaction() as tx:
-                    tx.execute("UPDATE service_lease SET phase='recovery',deadline=NULL WHERE singleton=1 AND phase IN ('running','recovery')")
+                self.recover()
         except Exception:
             c.close()
+            self.connection=None
             raise
+
+    def recover(self):
+        with self.store.transaction() as tx:
+            tx.execute("UPDATE execution_leases SET phase='interrupted',stopping=true WHERE phase IN ('queued','running','recovery')")
+            tx.execute("UPDATE cost_calls SET state='uncertain' WHERE state='reserved'")
 
     def close(self):
         if self.connection:
             self.connection.close()
+            self.connection=None
 
 
 def service_factory(manager):

@@ -1,6 +1,5 @@
 """ARM64 릴리스를 검증하고, 검사한 동일 이미지를 GHCR에 게시한다."""
 
-import argparse
 import json
 from pathlib import Path
 import re
@@ -49,6 +48,7 @@ def smoke(output, release):
         '--tmpfs', '/tmp:rw,nosuid,nodev,size=64m,uid=10001,gid=10001',
         '--entrypoint', 'python', images['backend'], '-c',
         'import torch; import backend.server.app; '
+        'from backend.knowledge.setup import load_migrations; assert load_migrations(); '
         'assert torch.version.cuda is None; '
         'assert torch.ones(2).sum().item() == 2')
     run('docker', 'run', '--rm', '--init', '--network', 'none', '--read-only',
@@ -67,7 +67,7 @@ def smoke(output, release):
         'caddy_source': CADDY, 'model': {'name': 'BAAI/bge-m3',
         'dtype': 'float32', 'dimensions': 1024, 'max_tokens': 512, 'external_read_only': True},
         'verified': ['source-ci-syntax-and-frontend', 'arm64-qemu-import-smoke'],
-        'pending': ['local-python-regression', 'pi-model-load', 'pi-6GB-memory', 'database-clone-migration-restore',
+        'pending': ['local-python-regression', 'pi-model-load', 'pi-6GB-memory', 'database-auto-migration-backup-restore',
                     'public-https-google-login-and-user-isolation'],
     }
     (output / 'release.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
@@ -172,33 +172,3 @@ def publish(output, repository, images_file):
     (output / 'release.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     images_file.parent.mkdir(parents=True, exist_ok=True)
     images_file.write_text(''.join(lines), encoding='utf-8')
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('smoke', 'check-inputs', 'summarize-scans', 'publish'))
-    parser.add_argument('--output', type=Path)
-    parser.add_argument('--release')
-    parser.add_argument('--repository')
-    parser.add_argument('--images-file', type=Path)
-    args = parser.parse_args()
-    if args.action == 'check-inputs':
-        release_inputs()
-        return
-    if args.output is None:
-        parser.error('이 작업에는 --output이 필요합니다.')
-    if args.action == 'summarize-scans':
-        raise SystemExit(0 if summarize_scans(args.output) else 1)
-    if args.action == 'publish':
-        if not args.repository or args.images_file is None:
-            parser.error('publish에는 --repository와 --images-file이 필요합니다.')
-        publish(args.output, args.repository, args.images_file)
-        return
-    if args.action == 'smoke':
-        if not args.release:
-            parser.error('smoke에는 --release가 필요합니다.')
-        smoke(args.output, args.release)
-
-
-if __name__ == '__main__':
-    main()

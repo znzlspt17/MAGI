@@ -23,7 +23,7 @@ class Execution:
     @classmethod
     def from_job(cls, job):
         initial = job.get('_initial_reservation')
-        return cls(job['id'], job['execution_id'], job['lease_generation'],
+        return cls(job['id'], job['execution_id'], job['execution_generation'],
                    tuple(initial) if initial else None)
 
 
@@ -91,35 +91,31 @@ class WorkerRecovery:
         with manager.lock:
             job = manager.jobs.get(execution.ident)
             if job is not None and (job.get('execution_id') != execution.execution_id
-                                    or job.get('lease_generation') != execution.generation):
+                                    or job.get('execution_generation') != execution.generation):
                 return
             with service.store.transaction() as c:
-                lease = service.access.lease(c)
+                lease = c.execute('SELECT * FROM execution_leases WHERE execution_id=%s AND generation=%s FOR UPDATE',
+                                  (execution.execution_id,execution.generation)).fetchone()
                 row = c.execute('SELECT data FROM jobs WHERE id=%s', (execution.ident,)).fetchone()
                 if (not row or row['data'].get('execution_id') != execution.execution_id
-                    or row['data'].get('lease_generation') != execution.generation):
+                    or row['data'].get('execution_generation') != execution.generation
+                    or not lease or lease['phase'] not in {'queued','running','recovery'}):
                     return
-                if lease['job_id'] != execution.ident or lease['generation'] != execution.generation:
-                    # COMMIT 응답만 잃은 경우 영구 기록을 메모리에 반영한다.
-                    if row['data'].get('status') != 'error':
-                        return
-                    updated = dict(row['data'])
-                else:
-                    updated = dict(row['data'] if job is None else job)
-                    updated.pop('_initial_reservation', None)
-                    updated.update(status='error', message='작업 실행에 실패했습니다. 입력과 기록은 보존됩니다.',
-                                   updated_at=datetime.now(UTC).isoformat())
-                    # 메모리 상태는 COMMIT이 성공한 뒤에만 바꾼다.
-                    service.store._save_job(c, updated)
-                    c.execute('UPDATE executions SET data=data || %s WHERE id=%s AND job_id=%s',
-                              (service.store._json({'status': 'error', 'message': updated['message']}),
-                               execution.execution_id, execution.ident))
-                    if failure.unused:
-                        service.access.settle(failure.unused[0], Decimal(0))
-                    if failure.entered:
-                        c.execute("UPDATE service_lease SET phase='recovery',deadline=NULL WHERE singleton=1")
-                    else:
-                        service.access.finish(execution.ident, execution.generation)
+                updated = dict(row['data'])
+                updated.pop('_initial_reservation',None)
+                updated.update(status='interrupted' if lease['stopping'] else 'error',
+                               message='작업이 중지되었습니다.' if lease['stopping'] else '작업 실행에 실패했습니다. 입력과 기록은 보존됩니다.',
+                               updated_at=datetime.now(UTC).isoformat())
+                service.store._save_job(c,updated)
+                c.execute('UPDATE executions SET data=data || %s WHERE id=%s AND job_id=%s',
+                          (service.store._json({'status':updated['status'],'message':updated['message']}),execution.execution_id,execution.ident))
+                if failure.unused:
+                    unused = c.execute('SELECT called_at FROM cost_calls WHERE id=%s', (failure.unused[0],)).fetchone()
+                    if unused and unused['called_at'] is None:
+                        service.access.settle(failure.unused[0],Decimal(0),generation=execution.generation,execution_id=execution.execution_id)
+                c.execute("UPDATE cost_calls SET state='uncertain' WHERE execution_id=%s AND execution_generation=%s AND state='reserved'",
+                          (execution.execution_id,execution.generation))
+                service.access.finish(execution.ident,execution.generation,execution.execution_id)
             if job is None:
                 manager.jobs[execution.ident] = updated
                 job = updated

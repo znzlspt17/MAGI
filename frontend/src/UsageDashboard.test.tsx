@@ -16,8 +16,8 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 function mount() { return render(<MemoryRouter><UsageDashboard version={0} save={save} /></MemoryRouter>); }
 
-it("호출별 표에서 이전 산정과 사용량 기반 산정·수동 정산을 구분한다", async () => {
-  const evidence = ["legacy", "complete", "manual", "missing_usage"];
+it("호출별 표에서 사용량 기반 산정·수동 정산·불완전한 근거를 구분한다", async () => {
+  const evidence = ["unknown", "complete", "manual", "missing_usage"];
   vi.mocked(api).mockImplementation(async (path: string) => path.includes("/rows?") ? {
     rows: evidence.map((value, i) => ({ ...row, id: "call-" + i, state: value === "missing_usage" ? "uncertain" : "settled",
       settlement_source: value === "manual" ? "manual" : value === "missing_usage" ? null : "calculated", cost_evidence: value })), total: 4,
@@ -25,7 +25,7 @@ it("호출별 표에서 이전 산정과 사용량 기반 산정·수동 정산�
   mount();
   await screen.findAllByRole("link", { name: "조회할 작업" });
   fireEvent.mouseDown(screen.getByRole("tab", { name: "호출별" }), { button: 0, ctrlKey: false });
-  for (const label of ["이전 보수적 산정", "사용량 기반 산정", "수동 정산", "정산 근거 불완전"])
+  for (const label of ["정산 근거 기록 없음", "사용량 기반 산정", "수동 정산", "정산 근거 불완전"])
     expect(await screen.findByText(label, { selector: "small" })).toBeTruthy();
 });
 

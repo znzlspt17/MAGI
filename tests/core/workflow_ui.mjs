@@ -19,7 +19,7 @@ try{
    emit(value){this.onmessage?.({data:JSON.stringify(value)});}
   };
  });
- let current=null,expired=false,status={busy:false};
+ let current=null,expired=false,status={ready:true,active_count:0,queued_count:0,max_parallel:2,own_active_count:0};
  const id='a'.repeat(32),english={content:'# English specification\n\nStore notes for 30 days.',filename:'spec.en.md',source_hash:'fixture'},korean={content:'# 한국어 명세\n\n메모를 30일 동안 보관합니다.',filename:'spec.ko.md',source_hash:'fixture',language:'ko'};
  const forms={A:{question_id:'A',question:'보관 기간',input_type:'text',options:[],form_version:'A-v1'},B:{question_id:'B',question:'저장 방식',input_type:'text',options:[],form_version:'B-v1'}};
  const node={id:'current',stage:'await_user',status:'waiting',detail_available:true};
@@ -35,7 +35,7 @@ try{
   else if(path==='/api/commands'&&data.kind==='generate'){
    assert.equal(data.input,'오프라인 메모 앱을 만들어주세요.');
    current={id,request:data.input,status:'NEEDS_USER_INPUT',execution_id:'execution-1',state:{candidate_hash:'f'.repeat(64),status:'NEEDS_USER_INPUT',question_forms:forms,blocking_questions:['[A] 보관 기간','[B] 저장 방식'],saved_answers:[]},session_events:[{id:'event-generate',action:'generate',input:{request:data.input},status:'NEEDS_USER_INPUT',summary:'메모 앱을 만들기 위해 두 가지를 확인합니다.',questions:['[A] 보관 기간','[B] 저장 방식'],started_at:'2026-10-21T00:00:00Z'}],execution_graph:{nodes:[node]}};
-   status={phase:'waiting',busy:true,mine:true,deadline:Date.now()/1000+120};body=current;
+   body=current;
   }else if(path==='/api/commands'&&data.kind==='answer'){
    assert.equal(data.execution_id,'execution-1');
    const answers=data.input;current.state.saved_answers.push(...answers);
@@ -49,18 +49,16 @@ try{
     else if(path.endsWith('/document'))body=korean;
   else if(path.includes('/steps/'))body={result:{summary:'요구사항 확인'},...(current.status==='NEEDS_USER_INPUT'?{}:{document:english})};
   else if(path==='/api/jobs/'+id)body=current;
-  else if(path==='/api/lease/release'){status={busy:false};body={ok:true};}
-  else if(path==='/api/lease/resume'||path==='/api/lease/keep'){status={phase:'waiting',busy:true,mine:true,deadline:Date.now()/1000+120};body={ok:true};}
   else if(path==='/api/projects')body=[];
   else throw new Error('검증되지 않은 API: '+path);
   return route.fulfill({json:structuredClone(body)});
  });
  await page.goto(process.argv[3]);
  await page.getByRole('textbox',{name:'개발 요청',exact:true}).fill('오프라인 메모 앱을 만들어주세요.');
- status={busy:true,mine:false,phase:'running'};
- await page.evaluate(()=>window.dispatchEvent(new CustomEvent('service-status',{detail:{busy:true,mine:true}})));
- await page.getByText('다른 사용자가 이용 중입니다',{exact:true}).first().waitFor();
- assert.equal(await page.getByRole('button',{name:'명세 생성 시작',exact:true}).isDisabled(),true);
+ status={...status,active_count:2};
+ await page.evaluate(()=>window.dispatchEvent(new Event('service-status')));
+ await page.getByText('실행 2/2 · 대기 0',{exact:true}).waitFor();
+ assert.equal(await page.getByRole('button',{name:'명세 생성 시작',exact:true}).isDisabled(),false);
  const draft=page.getByRole('textbox',{name:'개발 요청',exact:true});
  await draft.fill('점유 중에도 보존할 요청');
  for(const width of [1440,390]){
@@ -69,8 +67,8 @@ try{
   await page.screenshot({path:`.cache/ai-chat-preview/service-busy-${width}.png`,fullPage:true});
  }
  await page.setViewportSize({width:1440,height:1000});
- assert.equal(await page.getByRole('button',{name:'지식 검색',exact:true}).isDisabled(),true);
- status={busy:false,mine:false,phase:'idle'};
+ assert.equal(await page.getByRole('button',{name:'지식 검색',exact:true}).isDisabled(),false);
+ status={...status,active_count:0};
  await page.evaluate(()=>window.dispatchEvent(new Event('service-status')));
  await page.getByText('MAGI를 사용할 수 있습니다',{exact:true}).waitFor();
  assert.equal(await draft.inputValue(),'점유 중에도 보존할 요청');
@@ -104,10 +102,9 @@ try{
  await page.getByRole('button',{name:'English',exact:true}).click();await page.getByRole('heading',{name:'English specification',exact:true}).waitFor();
  const englishDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Markdown 다운로드',exact:true}).click();
  const original=await englishDownload;assert.equal(original.suggestedFilename(),'spec.en.md');assert.equal(readFileSync(await original.path(),'utf8'),english.content);
- await page.getByRole('button',{name:'계속 사용',exact:true}).click();
- await page.getByRole('button',{name:'사용 종료',exact:true}).click();
- await page.getByRole('button',{name:'이 작업 사용권 다시 얻기',exact:true}).click();
- assert(calls.some(c=>c.path==='/api/lease/keep'));assert(calls.some(c=>c.path==='/api/lease/release'));assert(calls.some(c=>c.path==='/api/lease/resume'&&c.data.id===id));
+ assert.equal(await page.getByRole('button',{name:'계속 사용',exact:true}).count(),0);
+ assert.equal(await page.getByRole('button',{name:'사용 종료',exact:true}).count(),0);
+ assert.equal(calls.some(c=>c.path.startsWith('/api/lease/')),false);
  assert.equal(await page.evaluate(()=>window.__sockets.filter(s=>s.readyState===1).length),1,'StrictMode 재마운트 뒤 활성 소켓은 하나여야 합니다.');
  assert.equal(calls.find(c=>c.path==='/api/me').headers['x-csrf-token'],undefined);
  for(const call of calls.filter(c=>c.data)){assert.equal(call.headers['x-csrf-token'],'fixture-csrf');assert(call.headers['idempotency-key']);}

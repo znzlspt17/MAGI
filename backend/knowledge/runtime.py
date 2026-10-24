@@ -282,7 +282,11 @@ class RunKnowledge:
             "approve",
         }:
             return
-        self.service.store.commit_stage(
-            self.job, self.job["execution_id"], stage, state, self.documents.all()
-        )
+        with self.service.store.transaction() as conn:
+            if self.meter is not None:
+                meter = self.meter
+                meter.access.execution(conn, meter.uid, meter.jid, meter.generation, meter.execution_id)
+            self.service.store.commit_stage(
+                self.job, self.job["execution_id"], stage, state, self.documents.all(), connection=conn
+            )
         self.service.schedule()

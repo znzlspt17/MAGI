@@ -114,20 +114,11 @@ export default function Admin() {
               <h2>운영 현황</h2>
               {data ? (
                 <>
-                  <p>
-                    사용권 상태:{" "}
-                    {(
-                      {
-                        idle: "사용 가능",
-                        waiting: "답변 대기",
-                        running: "처리 중",
-                        recovery: "복구 확인 필요",
-                      } as Record<string, string>
-                    )[data.lease?.phase] || data.lease?.phase}
-                  </p>
-                  <button onClick={() => void act("/api/admin/stop")}>
-                    현재 실행 종료 요청
-                  </button>
+                  <p>현재 실행 {data.executions?.filter((item: any) => item.phase === "running").length || 0}개</p>
+                  {(data.executions || []).map((item: any) => <div key={item.execution_id}>
+                    <span>{item.job_id} · {item.kind} · {item.phase}</span>
+                    <button disabled={item.stopping} onClick={() => void act("/api/admin/stop", { id: item.job_id, execution_id: item.execution_id })}>{item.stopping ? "중지 요청됨" : "이 실행 종료 요청"}</button>
+                  </div>)}
                 </>
               ) : (
                 <p>운영 현황 조회 중…</p>
@@ -158,8 +149,8 @@ export default function Admin() {
         {view === "costs" && <Suspense fallback={<p role="status">사용량 화면을 불러오는 중…</p>}><UsageDashboard version={version} save={act} /></Suspense>}
         {view === "data" && (
           <Suspense fallback={<p role="status">작업 목록을 불러오는 중…</p>}>
-            <JobData users={data?.users || []} unowned={data?.unowned || []}
-              version={version} busy={busy} save={act}
+            <JobData users={data?.users || []}
+              version={version} busy={busy}
               refresh={() => setVersion((v) => v + 1)} />
           </Suspense>
         )}

@@ -8,7 +8,7 @@ Google 로그인과 PostgreSQL을 사용하는 MAGI 서비스의 설정, 배포,
 브라우저 → HTTPS 리버스 프록시 → Flask 게이트웨이 → 백엔드 → PostgreSQL
 ```
 
-게이트웨이는 `127.0.0.1:5000`, 백엔드는 `127.0.0.1:8765`를 사용합니다. 게이트웨이는 loopback WebSocket으로 백엔드와 통신하며, 모델 호출과 작업 저장은 백엔드가 담당합니다. 공개 백엔드는 하나만 실행합니다.
+게이트웨이는 `127.0.0.1:5000`, 백엔드는 `127.0.0.1:8765`를 사용합니다. 게이트웨이는 loopback WebSocket으로 백엔드와 통신하며, 모델 호출과 작업 저장은 백엔드가 담당합니다. 공개 백엔드는 하나만 실행하며, 모델을 사용하는 워크플로와 부가 요청은 최대 2개까지 병렬 실행합니다.
 
 소스에서 직접 설치할 때는 화면을 미리 빌드해야 합니다. 제공되는 컨테이너 이미지에는 빌드된 화면이 포함됩니다.
 
@@ -42,39 +42,37 @@ Google 로그인과 PostgreSQL을 사용하는 MAGI 서비스의 설정, 배포,
 
 공개 모드에는 PostgreSQL과 pgvector가 필요합니다. 전용 DB에서 `vector` 확장을 활성화하고, DB 접속·스키마 사용과 앱 객체의 조회·변경 권한이 있는 서비스 계정을 사용합니다. 서비스 계정은 `SUPERUSER`나 `BYPASSRLS` 권한을 가질 수 없습니다.
 
-스키마 설치·갱신은 관리자 명령으로 수행합니다. 서버 시작과 작업 실행은 DDL을 수행하지 않습니다. 서비스 계정은 생성 권한 없이 준비된 객체의 조회·변경 권한으로 실행합니다.
+백엔드 시작 시 `backend/knowledge/migrations/001.sql`부터 번호순으로 미적용 SQL을 자동 적용하고 LangGraph 공식 checkpoint 저장소를 준비합니다. 준비가 모두 끝난 뒤 요청을 받습니다. 접속 계정은 `SUPERUSER`·`BYPASSRLS` 없는 일반 서비스 계정이어야 하며, 앱 객체의 소유자로서 DDL과 조회·변경 권한이 필요합니다.
 
 제공 backend 이미지는 서비스 프로세스를 한 번만 실행합니다. 초기화 실패나 실행 중 종료 시 오류 로그를 남기고 컨테이너를 실행 상태로 유지하며, 서비스가 응답하지 않으므로 healthcheck는 `unhealthy`가 됩니다. Portainer 콘솔에서 상태를 점검하고 원인을 해결한 뒤 backend 컨테이너를 재시작하세요. 컨테이너 중지 요청은 실행 중인 서비스에 전달됩니다. 컨테이너 자체가 강제 종료되는 경우에는 Docker 재시작 정책이 적용됩니다.
 
 업무 자료는 `core`, 공식 실행 상태는 `workflow`, 계정·비용·사용권은 `public`에 저장됩니다. 백업·복원에는 세 스키마를 함께 포함합니다.
 
-새 DB에서 `vector` 확장을 준비한 뒤, 관리 연결 환경을 주입한 터미널에서 실행합니다. 서비스 역할은 `app_user`입니다.
+처음에는 관리자 계정으로 새 전용 DB에 확장과 서비스 계정 권한을 준비합니다. 아래는 DB 이름이 `vectordb`, 서비스 계정이 `app_user`인 경우입니다. 계정 생성과 인증 설정은 운영 환경에서 별도로 관리합니다.
 
-```sh
-uv run python -m backend.knowledge install
-uv run python -m backend.knowledge verify --application-role app_user
+```sql
+CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
+GRANT CONNECT,CREATE ON DATABASE vectordb TO app_user;
+GRANT USAGE,CREATE ON SCHEMA public TO app_user;
 ```
 
-기존 DB를 이번 버전으로 전환할 때는 다음 순서로 진행합니다.
+이후 backend를 `app_user` 연결 환경으로 시작하면 자동 설치됩니다. DB 준비용 별도 CLI는 제공하지 않습니다.
 
-1. 복구 가능한 DB 백업과 현재 이미지 태그를 확보하고 backend·gateway를 중지합니다. PostgreSQL과 Caddy는 유지할 수 있습니다.
-2. 새 backend 이미지의 일회성 관리 컨테이너에서 같은 DB 네트워크와 관리자 연결 환경을 주입해 `python -m backend.knowledge migrate`를 실행합니다. 원본 업무 테이블은 보존하며 인증 자료와 비용 원장은 복제하지 않습니다.
-3. `python -m backend.knowledge verify --application-role app_user`로 내용·참조·소유권·checkpoint를 검증하고 활성화합니다. 예상하지 못한 자료나 원본 변경이 발견되면 중단합니다.
-4. 프런트엔드를 포함한 gateway와 backend를 같은 버전으로 교체하고 시작합니다. 작업 조회·질문 답변·승인·명시적 재개를 확인합니다. 시작만으로 모델 호출을 재개하지 않습니다.
-5. 이전 업무 테이블의 제거는 백업과 운영 확인 후 별도 승인 단계로 수행합니다. 이 명령들은 이전 테이블을 삭제하지 않습니다.
+`public.schema_migrations`에는 적용 번호·파일 SHA-256·적용 시각을 기록합니다. 미적용 SQL과 이력은 하나의 트랜잭션으로 저장하며 실패하면 전체를 롤백합니다. SQL 파일은 `001.sql`, `002.sql`처럼 연속된 세 자리 번호를 사용하고, 적용한 파일을 고치거나 삭제하지 않습니다. 파일에는 명시적인 트랜잭션 제어문이나 `CREATE INDEX CONCURRENTLY` 등 트랜잭션 밖에서 실행해야 하는 구문을 넣지 않습니다. SQL은 LF 줄바꿈으로 저장합니다.
 
-전환 검증 동안 보존한 `public` 업무 원본은 새 서비스의 조회·수정·삭제 대상이 아닙니다. 검증 기간의 접근과 보존 책임을 운영자가 관리하고, 운영 전환 확인과 백업 검증 후 별도 승인으로 폐기합니다. 계정·비용·사용권 테이블은 이 폐기 대상에 포함하지 않습니다.
+DB 버전이 코드보다 높거나 파일 번호·해시가 맞지 않으면 시작하지 않습니다. 이력 없이 MAGI 테이블이 존재해도 자동으로 적용 완료로 등록하지 않습니다. 빈 DB에서 시작해야 하며 과거 자료 전환 기능은 제공하지 않습니다. 백엔드는 프로세스 잠금을 유지해 동시 시작과 실행 중 스키마 변경을 차단합니다.
 
-전환 중 실패하면 서비스를 중지한 상태로 같은 명령을 재실행합니다. 복구는 전환 전 DB 백업과 이전 서비스 이미지를 함께 복원하는 방식으로 수행합니다. 새 버전에서 사용자 작업을 받기 시작한 뒤에는 추가 입력 보존과 정합성을 별도로 확인해야 합니다.
+앱 SQL과 별도 연결에서 실행되는 LangGraph `setup()`은 하나의 트랜잭션이 아닙니다. checkpoint 준비 실패 시 이미 커밋된 앱 SQL 이력은 유지하고 서비스는 시작하지 않습니다. 원인을 해결한 뒤 재시작하면 앱 SQL을 중복 적용하지 않고 공식 checkpoint 준비를 재시도합니다. 라이브러리 내부 테이블은 직접 수정하지 않습니다.
 
-로컬 임베딩 모델은 다음 명령으로 준비합니다.
+로컬 임베딩 모델은 준비된 폴더를 연결하거나, 프로젝트의 embedding extra와 gateway 그룹 의존성을 설치한 Python 환경에서 준비 API를 호출합니다. 모델 준비·검색 평가용 CLI는 제공하지 않습니다.
 
-```sh
-uv sync --extra embedding --group gateway
-uv run python -m backend.knowledge.prepare_model --output ./models/bge-m3
+```python
+from backend.knowledge.model_files import prepare
+
+prepare("./models/bge-m3")
 ```
 
-기본적으로 최신 BGE-M3 revision을 내려받고 실제 revision과 파일 해시를 `model_revision.json`에 기록합니다. 특정 버전을 재현하려면 `--revision <40자리-commit-SHA>`를 지정할 수 있습니다.
+기본적으로 최신 BGE-M3 revision을 내려받고 실제 revision과 파일 해시를 `model_revision.json`에 기록합니다. 특정 버전을 재현하려면 `prepare("./models/bge-m3", revision="<40자리 commit SHA>")`로 지정합니다. 서버 시작 시에는 이 기록을 검증하며 다운로드하지 않습니다.
 
 준비된 폴더를 `EMBEDDING_MODEL_PATH`에 지정합니다. 서비스 시작 시 모델을 자동 다운로드하지 않습니다. 제공 컨테이너에서는 모델을 외부 폴더에서 읽기 전용으로 마운트합니다.
 
@@ -176,50 +174,67 @@ Stack에서 입력받는 나머지 변수는 다음과 같습니다.
 
 ## 관리자와 비용 관리
 
-첫 가입자에게 관리자 권한이 자동으로 부여되지 않습니다. Google 로그인 후 내 계정 메뉴에서 내부 사용자 ID를 복사하고, 백엔드를 중지한 상태에서 DB 설정이 주입된 운영 터미널로 관리자 지정 명령을 실행합니다.
+첫 가입자에게 관리자 권한이 자동으로 부여되지 않습니다. Google 로그인 후 내 계정 메뉴에서 내부 사용자 ID를 복사합니다. 첫 관리자 지정은 backend를 중지한 상태에서 관리자 DB 연결로 아래 SQL을 실행합니다. `<내부사용자ID>`를 실제 ID로 바꿉니다.
 
-```sh
-uv run python -m backend.access make-admin --user-id <내부사용자ID>
+```sql
+BEGIN;
+DO $$
+DECLARE selected_id text := '<내부사용자ID>';
+BEGIN
+    IF NOT pg_try_advisory_xact_lock(72410635) THEN
+        RAISE EXCEPTION 'backend를 먼저 중지하세요.';
+    END IF;
+    UPDATE public.users SET role='admin' WHERE id=selected_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION '사용자 ID를 확인하세요.';
+    END IF;
+    UPDATE public.sessions SET revoked=true WHERE user_id=selected_id;
+    INSERT INTO public.admin_audit(id,actor_id,action,target_id)
+    VALUES (gen_random_uuid()::text,'operator','make-admin',selected_id);
+END $$;
+COMMIT;
 ```
 
-사용자 목록은 `uv run python -m backend.access users`로 확인할 수 있습니다. 권한 변경 후에는 다시 로그인해야 합니다.
+권한 변경 후에는 다시 로그인해야 합니다. 이후 계정·권한 관리는 관리자 화면에서 수행합니다.
 
 관리자 화면은 `/admin`입니다. 계정·권한·사용 한도, 기록 삭제, 지식 조회·색인과 비용을 관리합니다. 마지막 활성 관리자는 강등하거나 정지할 수 없습니다. 공개 모드의 영구 기록 삭제는 관리자만 수행하며, 삭제 전 대상과 영향을 미리 확인할 수 있습니다.
 
-계정별 일일 실행 횟수·비용 한도와 서비스 전체 비용 한도가 적용됩니다. 관리자에게도 실행 독점과 비용 상한이 적용됩니다. 실행 횟수는 접수 기준이며 시작 실패 시 자동으로 돌려주지 않습니다.
+계정별 일일 실행 횟수·비용 한도와 서비스 전체 비용 한도가 적용됩니다. 관리자에게도 작업별 실행 보호와 비용 상한이 적용됩니다. 실행 횟수는 접수 기준이며 시작 실패 시 자동으로 돌려주지 않습니다.
 
-질문·승인 대기의 사용권은 3분 뒤 만료됩니다. 모델 실행·번역·저장 중에는 이 대기 만료를 적용하지 않습니다. 호출 전 비용을 예약하며, 화면의 산정 비용은 제공자 청구서와 다를 수 있습니다.
+질문·승인 대기는 실행 슬롯을 점유하지 않으며 사용권 만료·연장·재획득 절차가 없습니다. 다른 사용자의 이용 여부와 관계없이 새 작업을 접수할 수 있습니다. 최대 2개가 실행되고 초과 작업은 전체 20개 상한의 대기열에서 기다립니다. 번역·변경 영향 분석은 같은 슬롯을 공유하며 슬롯이 없으면 재시도 가능한 503 응답을 반환합니다. 호출 전 비용을 예약하며, 화면의 산정 비용은 제공자 청구서와 다를 수 있습니다.
 
-호출 후에는 일반 입력·캐시 읽기·캐시 쓰기·출력 사용량으로 비용을 산정합니다. 필요한 사용량이 누락되거나 합계가 맞지 않으면 예약액을 유지하고 확인 필요 상태로 남깁니다. 호출별 내역은 `사용량 기반 산정`, `이전 보수적 산정`, `수동 정산`을 구분합니다.
+호출 후에는 일반 입력·캐시 읽기·캐시 쓰기·출력 사용량으로 비용을 산정합니다. 필요한 사용량이 누락되거나 합계가 맞지 않으면 예약액을 유지하고 확인 필요 상태로 남깁니다. 호출별 내역은 `사용량 기반 산정`, `수동 정산`, `정산 근거 불완전`을 구분합니다.
 
-기존 자동 산정 기록의 보정은 백엔드를 중지하고 DB 설정이 주입된 운영 터미널에서 수행합니다. 기본 동작은 미리보기이며, 작업 ID 또는 시작일·종료일로 범위를 지정합니다. 기간은 관리자 화면과 같은 한국 시간의 호출일 기준입니다.
-
-```sh
-uv run python -m backend.access reprice-costs --job-id <작업ID>
-uv run python -m backend.access reprice-costs --start 2026-10-21 --end 2026-10-22
-uv run python -m backend.access reprice-costs --job-id <작업ID> --apply
-```
-
-`--apply`는 원장과 일일 사용액을 함께 보정하고 이전·이후 금액을 감사 기록에 남깁니다. 수동 정산, 미확정 기록, 지원되지 않는 계산 정책, 사용량 근거가 부족한 기록은 제외합니다. 과거 캐시 쓰기 사용량이 없는 기록은 추정해서 변경하지 않습니다. 결과의 `eligible`·`applied`·`excluded`는 각각 보정 대상·적용·제외 건수이며, `rows`에 건별 사유가 포함됩니다.
+미정산 비용은 관리자 사용량 화면에서 제공자의 실제 사용량을 확인한 뒤 수동 정산합니다. 별도 비용 보정 CLI는 제공하지 않습니다.
 
 ## 지식 색인
 
-공개 모드의 임베딩 재색인은 다른 작업이 실행 중이지 않을 때 관리자 화면에서 수행합니다. 독립 명령은 백엔드를 중지한 상태에서 같은 OS 계정으로 실행합니다.
-
-```sh
-uv run python -m backend.knowledge reindex
-```
+공개 모드의 임베딩 재색인과 기록 삭제는 대기·실행 중인 작업이 없을 때 관리자 화면에서 수행합니다. 별도 재색인 CLI는 제공하지 않습니다.
 
 ## 백업과 복구
 
-비용 산정이 미확정이어도 종료된 실행의 사용권은 정상적으로 반환합니다. 질문·승인 대기는 기존 대기 시간을 적용합니다. 미확정 비용의 예약액은 유지되며 사용자별·서비스 전체 일일 예산에 포함됩니다. 예약을 포함한 예산이 부족하면 추가 모델 호출이 제한됩니다. 미확정 건수와 예약액은 관리자 사용량 화면에서 확인할 수 있습니다.
+비용 산정이 미확정이어도 종료된 실행의 슬롯은 정상적으로 반환합니다. 미확정 예약액과 복구 상태는 해당 실행에만 연결되며 다른 작업을 차단하지 않습니다. 미확정 비용의 예약액은 유지되며 사용자별·서비스 전체 일일 예산에 포함됩니다. 예약을 포함한 예산이 부족하면 추가 모델 호출이 제한됩니다. 미확정 건수와 예약액은 관리자 사용량 화면에서 확인할 수 있습니다.
 
 세 스키마를 포함한 DB를 백업하고, 모델 revision 기록과 사용 중인 이미지·설정을 보관합니다.
 
-프로세스가 중단되거나 외부 호출 결과가 불확실해지면 운영자 복구가 필요할 수 있습니다. 이전 백엔드와 외부 호출이 종료된 상태에서 DB 환경변수를 주입해 다음 명령을 실행합니다.
+프로세스가 중단되거나 외부 호출 결과가 불확실해지면 운영자 복구가 필요할 수 있습니다. 이전 백엔드와 외부 호출이 모두 종료된 것을 확인한 뒤 관리자 DB 연결로 아래 SQL을 실행합니다.
 
-```sh
-uv run python -m backend.access recover --confirm-stopped
+```sql
+BEGIN;
+DO $$
+BEGIN
+    IF NOT pg_try_advisory_xact_lock(72410635) THEN
+        RAISE EXCEPTION 'backend를 먼저 중지하세요.';
+    END IF;
+    UPDATE public.cost_calls SET state='uncertain' WHERE state='reserved';
+    UPDATE public.execution_leases SET phase='interrupted',stopping=true
+    WHERE phase IN ('queued','running','recovery');
+    INSERT INTO public.admin_audit(id,actor_id,action)
+    VALUES (gen_random_uuid()::text,'operator','recover');
+END $$;
+COMMIT;
 ```
 
-복구 명령은 모델 호출을 다시 보내거나 미정산 예약을 자동 환불하지 않습니다. 관리자 화면에서 미정산 예약을 확인하고 제공자의 실제 사용량에 맞춰 정산할 수 있습니다.
+이 SQL은 모델 호출을 다시 보내거나 미정산 예약을 자동 환불하지 않습니다. 관리자 화면에서 미정산 예약을 확인하고 제공자의 실제 사용량에 맞춰 정산할 수 있습니다.
+
+002.sql은 기존 전역 사용권을 실행별 보호로 바꿉니다. backend를 중지하고 DB를 백업한 뒤 backend·gateway를 같은 버전으로 배포합니다. 중단 전 예약액은 추정 환불하지 않으며, 재시작 시 모델 호출을 자동 재개하지 않습니다. 종료 요청은 작업별로 처리하고 로그아웃은 본인 실행에만 적용됩니다.

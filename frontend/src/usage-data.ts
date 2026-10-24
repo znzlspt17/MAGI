@@ -17,7 +17,7 @@ export type UsageRow = Partial<UsageStats> & {
   called_at?: string | null; reserved_at?: string | null; settled_at?: string | null;
   settlement_source?: "calculated" | "manual" | null;
   cost_policy?: string | null;
-  cost_evidence?: "manual" | "legacy" | "unknown" | "complete" | "missing_usage" | "invalid_usage";
+  cost_evidence?: "manual" | "unknown" | "complete" | "missing_usage" | "invalid_usage";
   cache_write_tokens?: number | null; cache_write_30m_tokens?: number | null; cache_write_12h_tokens?: number | null;
   usage_day?: string; latest_day?: string; latest_at?: string | null; is_call?: boolean;
 };
@@ -27,7 +27,6 @@ export const count = (value: number | null | undefined) => value == null ? "기�
 
 export function settlementLabel(row: UsageRow) {
   if (row.settlement_source === "manual") return "수동 정산";
-  if (row.settlement_source === "calculated" && row.cost_evidence === "legacy") return "이전 보수적 산정";
   if (row.settlement_source === "calculated" && row.cost_evidence === "complete") return "사용량 기반 산정";
   if (row.cost_evidence === "missing_usage" || row.cost_evidence === "invalid_usage") return "정산 근거 불완전";
   return "정산 근거 기록 없음";

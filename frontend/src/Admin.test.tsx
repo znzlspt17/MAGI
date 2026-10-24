@@ -11,7 +11,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 it("통합 목록의 사용자 필터와 작업 ID 직접 조회를 연결한다", async () => {
   vi.mocked(api).mockImplementation(async (path: string) => {
-    if (path === "/api/admin/overview") return { users: [{ id: "one" }, { id: "empty" }], unowned: [] };
+    if (path === "/api/admin/overview") return { users: [{ id: "one" }, { id: "empty" }] };
     if (path.includes("cleanup/catalog")) return { jobs: [{ id: "job-one", request: "사용자 작업", owner_id: "one", status: "FINALIZED" }], pending: [] };
     return { id: "job-one", request: "사용자 작업", owner_id: "one", status: "FINALIZED" };
   });

@@ -11,9 +11,9 @@ import { filterJobs, jobTime, type CleanupOperation, type JobCatalog, type JobDe
 import "./job-data.css";
 
 const PAGE_SIZE = 25;
-export default function JobData({ users, unowned, version, busy, save, refresh }: {
-  users: { id: string }[]; unowned: { id: string }[]; version: number; busy: boolean;
-  save: (path: string, payload: unknown) => Promise<any>; refresh: () => void;
+export default function JobData({ users, version, busy, refresh }: {
+  users: { id: string }[]; version: number; busy: boolean;
+  refresh: () => void;
 }) {
   const [catalog, setCatalog] = useState<JobCatalog>({ jobs: [], pending: [] });
   const [loading, setLoading] = useState(true), [catalogError, setCatalogError] = useState("");
@@ -156,15 +156,6 @@ export default function JobData({ users, unowned, version, busy, save, refresh }
         </CardContent>
       </Card>
       <div className="jobs-management">
-        <Card><CardHeader><CardTitle>이관 전 기록 <span className="jobs-count">{unowned.length}</span></CardTitle><CardDescription>소유자가 없는 기존 기록에 사용자를 지정합니다.</CardDescription></CardHeader><CardContent>
-          <details className="jobs-claim"><summary>소유자 없는 기록 관리</summary>
-            {!unowned.length ? <p className="jobs-muted">소유자 없는 기록이 없습니다.</p> : unowned.map(item => <form key={item.id} onSubmit={async event => {
-              event.preventDefault(); const result = await save("/api/admin/claim", { id: item.id, owner_id: new FormData(event.currentTarget).get("owner_id") });
-              if (result && alive.current) setNotice("소유자를 지정했습니다.");
-            }}><RecordId value={item.id} /><label>소유 사용자 ID<input name="owner_id" list="jobs-known-users" required /></label><Button variant="outline">소유자 지정</Button></form>)}
-            <datalist id="jobs-known-users">{users.map(user => <option value={user.id} key={user.id} />)}</datalist>
-          </details>
-        </CardContent></Card>
         <Card><CardHeader><CardTitle id="cleanup-title">데이터 정리</CardTitle><CardDescription>삭제할 기록을 미리 확인한 뒤 정리합니다.</CardDescription></CardHeader><CardContent>
           <div className="jobs-selection"><span><strong>{selected.size}개</strong> 작업 선택됨</span><Button id="cleanup-selected" variant="outline" disabled={!selected.size || loading || !!catalogError} onClick={() => void preview("jobs")}><TrashIcon size={16} aria-hidden />선택 작업 삭제 미리보기</Button></div>
           <div id="cleanup-pending">{catalog.pending.map(id => <Button key={id} variant="outline" disabled={loading || !!catalogError} onClick={() => void execute(id, "")}><ArrowsClockwiseIcon size={16} aria-hidden />남은 파일 정리 재시도 · {id}</Button>)}</div>

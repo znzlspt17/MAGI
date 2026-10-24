@@ -31,7 +31,7 @@ class AgentWorkflow:
     def persist(self, stage, state):
         meter = self.engine.runtime.meter
         if meter is not None:
-            meter.access.check_execution(meter.uid, meter.jid, meter.generation)
+            meter.access.check_execution(meter.uid, meter.jid, meter.generation, meter.execution_id)
         self.writer.write_json("evidence/evidence_registry.json", self.evidence.to_dict())
         self.writer.state = State.from_dict(state).to_dict()
         self.engine.runtime.commit(stage, self.writer.state)

@@ -176,12 +176,6 @@ def install(app, client):
             response.delete_cookie(cookie,secure=secure,httponly=True,samesite='Lax',path='/')
         return response
 
-    @app.post('/api/lease/<action>')
-    def lease(action):
-        if action not in {'keep','release','resume'}:
-            abort(404)
-        return relay('lease.'+action,request.get_json(silent=True) or {})
-
     @app.route('/api/admin/<action>',methods=['GET','POST'])
     def admin(action):
         allowed={'overview','job','user_jobs','usage','projects','jobs','graph','search','node','document'} if request.method=='GET' else {'user','claim','stop','settle','settings'}

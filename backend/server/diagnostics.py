@@ -110,7 +110,11 @@ def diagnose_exception(exc: BaseException) -> dict[str, Any]:
 
 
 def _normalization_error(chain: list[BaseException]) -> dict[str, str] | None:
+    from backend.knowledge.setup import MigrationError
+
     for item in chain:
+        if isinstance(item, MigrationError):
+            return {"code": "DATABASE_PREPARATION_FAILED", "stage": "database", "reason": str(item)}
         if isinstance(item, ReviewValidationError):
             stage = getattr(item, "stage", None)
             return {"code": "REVIEW_VALIDATION_FAILED",

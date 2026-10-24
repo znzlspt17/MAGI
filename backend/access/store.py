@@ -94,21 +94,15 @@ class AccessStore:
             raise AccessError('로그인 요청이 만료되었습니다.', 'unauthorized')
         return row
 
-    def lease(self, c):
-        row = dict(c.execute('SELECT * FROM service_lease WHERE singleton=1 FOR UPDATE').fetchone())
-        if row['phase'] == 'waiting' and row['deadline'] <= self.clock():
-            self.clear(c)
-            row.update(owner_id=None, job_id=None, phase='idle', deadline=None)
-        return row
-
-    @staticmethod
-    def clear(c):
-        c.execute("UPDATE service_lease SET owner_id=NULL,job_id=NULL,phase='idle',deadline=NULL,stopping=false WHERE singleton=1")
-
-    def acquire(self, c, uid, jid, *, count=False, initial=Decimal('0')):
-        lease = self.lease(c)
-        if lease['phase'] != 'idle' and (lease['owner_id'] != uid or lease['job_id'] != jid or lease['phase'] != 'waiting'):
-            raise AccessError('다른 작업이 사용 중입니다. 잠시 후 다시 시도하세요.', 'busy')
+    def acquire(self, c, uid, jid, *, execution_id, kind='workflow', queued=True, count=False, initial=Decimal('0')):
+        if kind == 'workflow' and c.execute(
+            "SELECT count(*) AS total FROM execution_leases WHERE kind='workflow' AND phase IN ('queued','running')"
+        ).fetchone()['total'] >= 20:
+            raise AccessError('작업 대기열이 가득 찼습니다.', 'capacity')
+        if kind == 'workflow' and c.execute(
+            "SELECT 1 FROM execution_leases WHERE job_id=%s AND kind='workflow' AND phase IN ('queued','running')", (jid,),
+        ).fetchone():
+            raise AccessError('이 작업은 이미 실행 중입니다.', 'conflict')
         user = c.execute('SELECT * FROM users WHERE id=%s AND NOT suspended', (uid,)).fetchone()
         if not user:
             raise AccessError('이 계정은 이용할 수 없습니다.', 'unauthorized')
@@ -119,9 +113,37 @@ class AccessStore:
         self.check_money(c, uid, initial, day)
         if count:
             c.execute('UPDATE daily_usage SET runs=runs+1 WHERE day=%s AND user_id=%s', (day, uid))
-        c.execute("UPDATE service_lease SET owner_id=%s,job_id=%s,phase='running',deadline=NULL,stopping=false,generation=generation+1 WHERE singleton=1",
-                  (uid, jid))
-        return c.execute('SELECT generation FROM service_lease WHERE singleton=1').fetchone()['generation']
+        return c.execute(
+            "INSERT INTO execution_leases(execution_id,owner_id,job_id,kind,phase) VALUES (%s,%s,%s,%s,%s) RETURNING generation",
+            (execution_id, uid, jid, kind, 'queued' if queued else 'running'),
+        ).fetchone()['generation']
+
+    def execution(self, c, uid, jid, generation, execution_id, *, queued=False):
+        row = c.execute(
+            'SELECT * FROM execution_leases WHERE execution_id=%s AND generation=%s AND owner_id=%s AND job_id=%s FOR UPDATE',
+            (execution_id, generation, uid, jid),
+        ).fetchone()
+        phases = {'queued','running'} if queued else {'running'}
+        if not row or row['phase'] not in phases or row['stopping']:
+            raise AccessError('작업이 중지되었거나 이전 실행입니다.', 'busy')
+        if not c.execute('SELECT id FROM users WHERE id=%s AND NOT suspended', (uid,)).fetchone():
+            raise AccessError('이 계정은 이용할 수 없습니다.', 'unauthorized')
+        return row
+
+    def start(self, uid, jid, generation, execution_id):
+        with self.store.transaction() as c:
+            self.execution(c, uid, jid, generation, execution_id, queued=True)
+            c.execute("UPDATE execution_leases SET phase='running' WHERE execution_id=%s AND generation=%s", (execution_id,generation))
+
+    def stop(self, c, uid, jid, execution_id, *, admin=False):
+        row = c.execute("SELECT * FROM execution_leases WHERE execution_id=%s AND job_id=%s AND phase IN ('queued','running') FOR UPDATE", (execution_id,jid)).fetchone()
+        if not row or (not admin and row['owner_id'] != uid):
+            raise AccessError('종료할 최신 실행을 확인하세요.', 'conflict')
+        c.execute('UPDATE execution_leases SET stopping=true WHERE execution_id=%s', (execution_id,))
+
+    def stop_owner(self, uid):
+        with self.store.transaction() as c:
+            c.execute("UPDATE execution_leases SET stopping=true WHERE owner_id=%s AND phase IN ('queued','running')", (uid,))
 
     def _usage(self, c, day, uid):
         c.execute('INSERT INTO daily_usage(day,user_id) VALUES (%s,%s) ON CONFLICT DO NOTHING', (day, uid))
@@ -135,35 +157,42 @@ class AccessStore:
         if Decimal(str(usage['spent'])) + Decimal(str(usage['reserved'])) + amount > Decimal(str(user['daily_usd'])) or Decimal(str(total)) + amount > Decimal(str(cap)):
             raise AccessError('오늘 API 비용 한도에 도달했습니다.', 'quota')
 
-    def reserve(self, uid, jid, generation, model, amount):
+    def reserve(self, uid, jid, generation, model, amount, *, execution_id, queued=False):
         with self.store.transaction() as c:
-            lease = self.lease(c)
-            if lease['owner_id'] != uid or lease['job_id'] != jid or lease['generation'] != generation or lease['phase'] != 'running' or lease['stopping']:
-                raise AccessError('작업 사용권이 종료되었습니다.', 'busy')
-            if not c.execute('SELECT id FROM users WHERE id=%s AND NOT suspended',(uid,)).fetchone():
-                raise AccessError('이 계정은 이용할 수 없습니다.')
+            self.execution(c, uid, jid, generation, execution_id, queued=queued)
             day = day_at(self.clock())
             self.check_money(c, uid, amount, day)
             ident = uuid4().hex
             c.execute('UPDATE daily_usage SET reserved=reserved+%s WHERE day=%s AND user_id=%s', (amount, day, uid))
-            c.execute('INSERT INTO cost_calls(id,day,user_id,job_id,model,reserved,reserved_at) VALUES (%s,%s,%s,%s,%s,%s,to_timestamp(%s))',
-                      (ident, day, uid, jid, model, amount, self.clock()))
+            c.execute('INSERT INTO cost_calls(id,day,user_id,job_id,model,reserved,reserved_at,execution_id,execution_generation) VALUES (%s,%s,%s,%s,%s,%s,to_timestamp(%s),%s,%s)',
+                      (ident, day, uid, jid, model, amount, self.clock(), execution_id,generation))
         return ident
 
-    def check_execution(self, uid, jid, generation):
+    def check_execution(self, uid, jid, generation, execution_id):
         with self.store.transaction() as c:
-            lease=self.lease(c)
-            if lease['owner_id']!=uid or lease['job_id']!=jid or lease['generation']!=generation or lease['phase']!='running' or lease['stopping']:
-                raise AccessError('작업 사용권이 종료되었습니다.', 'busy')
-            if not c.execute('SELECT id FROM users WHERE id=%s AND NOT suspended',(uid,)).fetchone():
-                raise AccessError('이 계정은 이용할 수 없습니다.')
+            self.execution(c, uid, jid, generation, execution_id)
 
-    def mark_called(self, ident):
+    def _check_call(self, c, ident, generation, execution_id):
+        if generation is None:
+            return  # 관리자 수동 정산은 별도의 권한 검사 후 호출한다.
+        row = c.execute('SELECT * FROM cost_calls WHERE id=%s', (ident,)).fetchone()
+        if not row or row['execution_id'] != execution_id or row['execution_generation'] != generation:
+            raise AccessError('이전 실행의 비용 변경을 차단했습니다.', 'conflict')
+        execution = c.execute('SELECT * FROM execution_leases WHERE execution_id=%s AND generation=%s', (execution_id,generation)).fetchone()
+        if not execution or execution['phase'] not in {'queued','running','recovery'}:
+            raise AccessError('종료된 실행의 비용 변경을 차단했습니다.', 'conflict')
+        if execution['kind'] == 'workflow':
+            job = c.execute('SELECT data FROM jobs WHERE id=%s', (execution['job_id'],)).fetchone()
+            if not job or job['data'].get('execution_id') != execution_id:
+                raise AccessError('이전 실행의 비용 변경을 차단했습니다.', 'conflict')
+
+    def mark_called(self, ident, *, generation=None, execution_id=None):
         with self.store.transaction() as c:
+            self._check_call(c,ident,generation,execution_id)
             c.execute('UPDATE cost_calls SET called_at=COALESCE(called_at,to_timestamp(%s)) WHERE id=%s',
                       (self.clock(),ident))
 
-    def record_tokens(self, ident, incoming, outgoing, cached, written=None, write_30m=None, write_12h=None, *, policy=None):
+    def record_tokens(self, ident, incoming, outgoing, cached, written=None, write_30m=None, write_12h=None, *, policy=None, generation=None, execution_id=None):
         # 누락·잘못된 값은 0으로 채우지 않고 관측한 값만 저장한다.
         incoming = incoming if type(incoming) is int and incoming >= 0 else None
         outgoing = outgoing if type(outgoing) is int and outgoing >= 0 else None
@@ -172,11 +201,13 @@ class AccessStore:
         writes = [value if type(value) is int and 0 <= value <= 2**63-1 else None
                   for value in (written,write_30m,write_12h)]
         with self.store.transaction() as c:
+            self._check_call(c,ident,generation,execution_id)
             c.execute('UPDATE cost_calls SET input_tokens=%s,output_tokens=%s,cached_tokens=%s,cache_write_tokens=%s,cache_write_30m_tokens=%s,cache_write_12h_tokens=%s,cost_policy=%s WHERE id=%s',
                       (incoming,outgoing,cached,*writes,policy,ident))
 
-    def settle(self, ident, actual=None, *, source='calculated', policy=None):
+    def settle(self, ident, actual=None, *, source='calculated', policy=None, generation=None, execution_id=None):
         with self.store.transaction() as c:
+            self._check_call(c,ident,generation,execution_id)
             row = c.execute('SELECT * FROM cost_calls WHERE id=%s FOR UPDATE', (ident,)).fetchone()
             if not row or row['state'] == 'settled':
                 return
@@ -191,26 +222,16 @@ class AccessStore:
             c.execute("UPDATE cost_calls SET actual=%s,state='settled',settled_at=to_timestamp(%s),settlement_source=%s,cost_policy=%s WHERE id=%s",
                       (actual,self.clock(),source,policy,ident))
 
-    def finish(self, jid, generation, waiting=False):
+    def finish(self, jid, generation, execution_id):
         with self.store.transaction() as c:
-            row = self.lease(c)
-            if row['job_id'] != jid or row['generation'] != generation:
-                return
-            uncertain=c.execute("SELECT count(*) AS count FROM cost_calls WHERE job_id=%s AND state='uncertain'",(jid,)).fetchone()['count']
-            # 비용 예약은 유지하고, 종료가 확인된 실행의 사용권만 정상적으로 반환한다.
-            if waiting and not row['stopping']:
-                c.execute("UPDATE service_lease SET phase='waiting',deadline=%s WHERE singleton=1", (self.clock()+180,))
-            else:
-                self.clear(c)
-        if uncertain:
-            LOGGER.warning('billing settlement pending job_id=%s count=%s', jid, uncertain)
+            c.execute("UPDATE execution_leases SET phase='finished' WHERE job_id=%s AND generation=%s AND execution_id=%s AND phase IN ('queued','running','recovery')", (jid,generation,execution_id))
 
     def status(self, uid):
-        with self.store.transaction() as c:
-            row = self.lease(c)
-            return {'busy': row['phase'] != 'idle', 'mine': row['owner_id'] == uid, 'phase': row['phase'],
-                    'deadline': row['deadline'] if row['owner_id'] == uid else None,
-                    'recovering': row['phase'] == 'recovery'}
+        with self.store.transaction(mode='read') as c:
+            rows = c.execute("SELECT owner_id,phase FROM execution_leases WHERE phase IN ('queued','running')").fetchall()
+        return {'ready': True, 'active_count': sum(row['phase']=='running' for row in rows),
+                'queued_count': sum(row['phase']=='queued' for row in rows), 'max_parallel': 2,
+                'own_active_count': sum(row['owner_id']==uid and row['phase']=='running' for row in rows)}
 
     def usage(self, uid):
         with self.store.transaction() as c:

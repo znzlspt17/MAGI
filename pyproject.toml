@@ -42,8 +42,7 @@ include = ["backend*", "gateway*", "protocol*", "frontend*"]
 
 [tool.setuptools.package-data]
 "backend" = ["prompts/*.md"]
-"backend.knowledge" = ["core.sql"]
-"backend.access" = ["schema.sql"]
+"backend.knowledge" = ["migrations/*.sql"]
 "frontend" = ["templates/*.html", "static/dist/manifest.json", "static/dist/assets/*", "static/vendor/*.txt", "static/vendor/*.json"]
 
 [tool.pytest.ini_options]

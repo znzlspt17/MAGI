@@ -4,12 +4,12 @@ export interface User {
   csrf?: string;
 }
 export interface ServiceStatus {
-  phase?: "idle" | "running" | "waiting" | "recovery";
   checkState?: "loading" | "ready" | "error";
-  busy?: boolean;
-  mine?: boolean;
-  recovering?: boolean;
-  deadline?: number;
+  ready?: boolean;
+  active_count?: number;
+  queued_count?: number;
+  max_parallel?: number;
+  own_active_count?: number;
 }
 export interface Usage {
   runs?: number;

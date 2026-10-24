@@ -112,8 +112,8 @@ class KnowledgeStore(ChunkStore, CleanupStore, ProjectDecisionStore):
 
     def _save_job(self, conn, job, *, expected_generation=None):
         if expected_generation is not None:
-            lease=conn.execute('SELECT job_id,generation,phase FROM service_lease WHERE singleton=1').fetchone()
-            if lease['job_id']!=job['id'] or lease['generation']!=expected_generation or lease['phase']!='running':
+            lease=conn.execute("SELECT job_id,generation,phase,execution_id FROM public.execution_leases WHERE job_id=%s AND kind='workflow' AND phase='running'", (job['id'],)).fetchone()
+            if not lease or lease['generation']!=expected_generation or lease['execution_id']!=job['execution_id']:
                 raise AccessError('이전 작업의 저장을 차단했습니다.', 'busy')
         if conn.execute("SELECT 1 FROM deleted_jobs WHERE id=%s", (job["id"],)).fetchone():
             raise ValueError("삭제된 작업은 다시 저장할 수 없습니다.")
@@ -212,10 +212,9 @@ class KnowledgeStore(ChunkStore, CleanupStore, ProjectDecisionStore):
         return dict(self.documents(job_id).workflow_snapshot().values)
 
     def require_ready(self):
-        with self.transaction(mode="read") as conn:
-            row = conn.execute("SELECT version,verified FROM core.installation WHERE singleton").fetchone()
-            if not row or row["version"] != 2 or not row["verified"]:
-                raise KnowledgeError("업무 저장소 전환 검증을 먼저 완료하세요.")
+        from backend.knowledge.setup import require_ready
+
+        require_ready(self)
 
     def _edge(self, conn, source, target, kind, attrs=None):
         # 다른 작업의 생성 중 원본이 정리되면 본문은 보존하고 끊긴 재사용 연결만 생략한다.

@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from backend.access.context import ACTOR, DEFERRED
+from backend.access.context import ACTOR, DEFERRED, ADMISSION
 from backend.engine import Engine
 from backend.server.cleanup import Cleanup, CleanupConflict, synchronized, tracked
 from backend.server.diagnostics import diagnose_exception, safe_user_error
@@ -29,7 +29,7 @@ class JobManager:
             on_change,
         )
         self.lock = threading.RLock()
-        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="workflow")
+        self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="workflow")
         self._futures, self._activities = {}, {}
         self.closed = False
         from backend.server.workspace import Workspace
@@ -82,7 +82,7 @@ class JobManager:
         if decision_reuse is not None and not isinstance(decision_reuse, list):
             raise ValueError("공통 결정 선택은 목록이어야 합니다.")
         self._next_order += 1
-        ident, now = uuid4().hex, _utc_now()
+        ident, now = (ADMISSION.get() or (uuid4().hex, None))[0], _utc_now()
         job = dict(
             id=ident,
             project_id=project_id or ident,
@@ -97,7 +97,7 @@ class JobManager:
             queued_at=now,
             order=self._next_order,
             queue_order=self._next_order,
-            execution_id=uuid4().hex,
+            execution_id=(ADMISSION.get() or (None, uuid4().hex))[1],
             _decision_selections=decision_reuse or [],
         )
         with self.knowledge.store.transaction():
@@ -137,7 +137,7 @@ class JobManager:
             queued_at=now,
             updated_at=now,
             queue_order=self._next_order,
-            execution_id=uuid4().hex,
+            execution_id=(ADMISSION.get() or (None, uuid4().hex))[1],
         )
         try:
             self.knowledge.store.record_action(job, payload)
