@@ -50,7 +50,7 @@ _TITLES = {
     "checklist_critic": "명세 검토",
     "review_resolution": "해결 방법 판단",
     "compose_candidate": "승인 후보 준비",
-    "critical_report": "명세 보완 실패 보고",
+    "critical_report": "명세 진행 중단 보고",
     "workflow": "실행 흐름",
 }
 
@@ -675,6 +675,8 @@ def _summary_node(node: dict) -> dict:
 
 def _safe_result(value: dict) -> dict:
     allowed = {
+        "stop_reason",
+        "wait_reason",
         "research",
         "status",
         "blocking_questions",
@@ -759,6 +761,8 @@ def _issue_key(issue: dict) -> tuple[str, str] | None:
 
 
 def _summary(stage: str, result: dict) -> str:
+    if result.get("stop_reason") and result.get("wait_reason"):
+        return result["wait_reason"]
     if stage == "await_user":
         return (
             "사용자 답변을 기다리고 있습니다."
@@ -795,7 +799,7 @@ def _terminal_title(status: str) -> str:
     return {
         "NEEDS_USER_INPUT": "요구사항 확인 필요",
         "PASS_PENDING_USER_APPROVAL": "승인 대기",
-        "CRITICAL_BLOCKED": "명세 보완 실패",
+        "CRITICAL_BLOCKED": "명세 진행 중단",
         "FINALIZED": "승인 완료",
         "error": "실행 오류",
         "interrupted": "실행 중단",

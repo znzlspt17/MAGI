@@ -36,7 +36,9 @@ def allowed_tasks(state, config):
     done = set(state.get("completed_tasks", []))
     if state.get("blocking_questions"):
         return ["ask_user", "blocked"]
-    actions = ["blocked", "interview", "knowledge_search"]
+    actions = ["blocked", "knowledge_search"]
+    if "interview" not in done:
+        actions.append("interview")
     if "project_context" not in done:
         actions.append("project_context")
     if "web_research" not in done and state.get("web_search_mode") != "off":
@@ -103,4 +105,5 @@ def plan_next(state, context):
             raise
     return {"goal": "명세 계획 확인", "tasks": [], "action": "blocked", "target": "",
             "input_refs": [], "expected_result": "사용자 확인", "affected_requirement_ids": [],
+            "stop_reason": "invalid_plan",
             "reason": "유효한 실행 계획을 만들지 못했습니다. 요청을 보완하거나 추가 실행을 선택해주세요."}

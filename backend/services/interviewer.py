@@ -117,6 +117,8 @@ def _build_messages(
         "saved_answers": [item.to_dict() for item in answers],
         "validated_requirements": state.get("requirement_lock_sheet"),
         "actual_user_sources": state.get("confirmed_user_sources", {}),
+        "stop_reason": state.get("stop_reason", ""),
+        "previous_task_outcomes": state.get("task_results", [])[-8:] if state.get("stop_reason") else [],
     }
     candidate_text = "\n".join(
         f"- [{item.question_id}] {item.text}" for item in candidates

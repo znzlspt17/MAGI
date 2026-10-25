@@ -43,3 +43,13 @@ it("제출 실패 시 작성 내용을 유지한다", async () => {
   expect(screen.getByRole("textbox")).toHaveValue("초안 유지");
   expect(screen.getByText("연결을 확인해주세요.")).toBeVisible();
 });
+
+it("시스템 중단 시 추가 실행의 한계와 요구사항 확인 완료의 의미를 표시한다", async () => {
+  const user = userEvent.setup();
+  render(<><AgentPlan job={{ ...job, state: { ...job.state, stop_reason: "no_progress", task_results: [{ action: "interview", revision: 0, status: "completed", reason: "조작 키 확인" }] } }} /><AgentComposer job={job} onAction={vi.fn()} busy={false} /></>);
+  await user.click(screen.getByText("현재 계획 · 메모 명세 보완"));
+  expect(screen.getByText("진전 없는 반복")).toBeVisible();
+  await user.click(screen.getByText("수행한 작업과 근거"));
+  expect(screen.getByText(/확인 작업 완료 · 결정 해결 여부/)).toBeVisible();
+  expect(screen.getByText(/입력 변경 없이 추가 실행하면 같은 문제가/)).toBeVisible();
+});

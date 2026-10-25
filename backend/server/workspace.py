@@ -124,6 +124,7 @@ class Workspace:
             "question_forms",
             "plan",
             "wait_reason",
+            "stop_reason",
             "revision",
             "candidate_hash",
             "document_versions",

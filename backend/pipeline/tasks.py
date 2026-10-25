@@ -358,7 +358,7 @@ class WorkflowTasks:
             "created_artifacts": created,
         }
 
-    def review_resolution(self, state):
+    def review_resolution(self, state, *, final=False):
         sheet = validate_locked_sources(
             RequirementLockSheet.from_dict(
                 state.get("requirement_lock_sheet")
@@ -397,7 +397,7 @@ class WorkflowTasks:
         draft = self.writer.read_text("draft/approval_candidate_spec.en.md")
         basis = confirmed_basis(state, sheet.to_dict())
         pending_resolution = [
-            issue for issue in selected if defect_identity(issue) not in exhausted
+            issue for issue in selected if final or defect_identity(issue) not in exhausted
         ]
         reconfirm = set()
         if pending_resolution:
@@ -408,7 +408,8 @@ class WorkflowTasks:
                 if state.get("critic_pass_count", 0) > 1
                 else [],
                 "review_questions": state.get("review_questions", []),
-                "diagnose_keys": sorted(to_diagnose),
+                "diagnose_keys": sorted(repeated if final else to_diagnose),
+                "final_assessment": final,
                 "draft_hash": text_hash(draft),
             }
             payload = messages(
@@ -433,19 +434,6 @@ class WorkflowTasks:
                 state,
             )
             diagnosed.update(to_diagnose)
-        if stop:
-            for issue in selected:
-                if defect_identity(issue) in prior:
-                    previous = prior[defect_identity(issue)]
-                    for key in (
-                        "resolution_kind",
-                        "resolution_reason",
-                        "missing_information",
-                        "required_change",
-                        "decision_question",
-                        "basis_refs",
-                    ):
-                        setattr(issue, key, previous[key])
         questions, pending = collect_review_questions(
             issues, state, len(history) + 1, reconfirm_keys=reconfirm
         )
@@ -464,7 +452,7 @@ class WorkflowTasks:
             "review_round": len(history) + 1,
             "pass": state.get("critic_pass_count", 0),
             "draft_hash": text_hash(draft),
-            "diagnosed_keys": sorted(to_diagnose) if pending_resolution else [],
+            "diagnosed_keys": sorted(repeated if final else to_diagnose) if pending_resolution else [],
             "issues": data,
             "action": action,
         }

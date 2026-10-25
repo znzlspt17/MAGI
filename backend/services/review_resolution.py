@@ -80,7 +80,7 @@ def validate_resolutions(packet, issues, basis, records, state):
 
 
 def failure_report(state):
-    lines = ["# 명세 보완 실패", "", "자동 보완으로 남은 결함을 해결하지 못했습니다. 사용자 요구사항 부족으로 판정한 결과가 아닙니다.", ""]
+    lines = ["# 명세 진행 중단", "", state.get("wait_reason") or "자동 보완으로 남은 결함을 해결하지 못했습니다. 사용자 요구사항 부족으로 판정한 결과가 아닙니다.", ""]
     for attempt in state.get("resolution_history", []):
         lines += [f"## 검토 {attempt['review_round']} · {attempt['draft_hash'][:12]}",
                   "원인 진단: " + ("실행" if attempt.get("diagnosed_keys") else "없음")]
@@ -92,5 +92,5 @@ def failure_report(state):
     for issue in state.get("structured_issues", []):
         if issue.get("status") != "resolved" and (issue.get("severity") in {"blocking", "major"} or issue.get("decision_answer_id")):
             lines.append(f"- [{issue['decision_key']}] {issue['problem']}")
-    lines += ["", "종료 이유: " + ("원인 진단 후에도 동일 결함이 남았습니다." if state.get("resolution_stop") else "설정된 검토·보완 횟수를 모두 사용했습니다.")]
+    lines += ["", "종료 이유: " + (state.get("wait_reason") or ("원인 진단 후에도 동일 결함이 남았습니다." if state.get("resolution_stop") else "설정된 검토·보완 횟수를 모두 사용했습니다."))]
     return "\n".join(lines) + "\n"

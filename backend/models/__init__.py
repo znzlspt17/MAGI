@@ -378,6 +378,8 @@ class State:
     segment_steps: int = 0
     execution_segment: int = 0
     wait_reason: str = ""
+    stop_reason: str = ""
+    final_resolution_keys: list[str] = field(default_factory=list)
     allowed_actions: list[str] = field(default_factory=list)
     candidate_hash: str = ""
     document_versions: list[dict[str, Any]] = field(default_factory=list)

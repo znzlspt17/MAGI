@@ -187,7 +187,7 @@ class JobManager:
                 ),
             )
             status = result.status
-            message = _message_for_status(status)
+            message = result.wait_reason if status == "CRITICAL_BLOCKED" and result.wait_reason else _message_for_status(status)
             diagnostic = None
         except Exception as exc:
             status, message, diagnostic = (
@@ -369,7 +369,7 @@ def _message_for_status(status: str) -> str:
     return {
         "NEEDS_USER_INPUT": "진행에 필요한 요구사항을 확인해주세요.",
         "PASS_PENDING_USER_APPROVAL": "검토를 통과했습니다. 내용을 확인한 뒤 승인하세요.",
-        "CRITICAL_BLOCKED": "자동 보완으로 명세의 결함을 해결하지 못했습니다. 보완 내역과 실패 원인을 확인하세요.",
+        "CRITICAL_BLOCKED": "진행이 중단되었습니다. 저장된 결과를 확인하고 수정 의견이나 추가 실행을 선택해주세요.",
         "FINALIZED": "최종 명세가 준비되었습니다.",
         "APPROVED": "승인이 처리되었습니다.",
     }.get(status, "작업이 완료되었습니다.")

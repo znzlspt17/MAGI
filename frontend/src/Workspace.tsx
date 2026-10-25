@@ -39,7 +39,7 @@ const stageLabel = (node?: Step) =>
     review_resolution: "해결 방법 판단",
     approve: "최종 승인",
     compose_candidate: "검토본 준비",
-    critical_report: "명세 보완 실패 보고",
+    critical_report: "명세 진행 중단 보고",
   }[node?.stage || ""] ||
   "실행 단계";
 export default function Workspace() {
@@ -172,7 +172,7 @@ export default function Workspace() {
             <option value="NEEDS_USER_INPUT">요구사항 확인 필요</option>
             <option value="FINALIZED">최종 완료</option>
             <option value="error">오류</option>
-            <option value="CRITICAL_BLOCKED">명세 보완 실패</option>
+            <option value="CRITICAL_BLOCKED">명세 진행 중단</option>
           </select>
           <SidebarGroupLabel asChild><h2>
             대화 세션 <span>{filtered.length}</span>

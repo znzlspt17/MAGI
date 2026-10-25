@@ -50,6 +50,17 @@ try {
   const box=await input.boundingBox();assert(box&&box.y>=0&&box.y+box.height<=height);
   await page.getByRole('textbox',{name:'메모를 며칠 동안 보관할까요?'}).scrollIntoViewIfNeeded();
   await page.screenshot({path:'.cache/agent-workflow-preview/'+name+'.png',fullPage:true});
+  job.status='CRITICAL_BLOCKED';
+  job.message='진전 없는 반복 · 확정된 조작 키를 명세에 반영하지 못했습니다.';
+  job.state={...job.state,status:'CRITICAL_BLOCKED',stop_reason:'no_progress',blocking_questions:[],allowed_actions:['message','retry'],wait_reason:job.message,
+   plan:{...job.state.plan,action:'blocked',reason:job.message}};
+  await page.reload();
+  await page.getByRole('button',{name:'저장된 결과로 추가 실행',exact:true}).waitFor({state:'visible'});
+  assert(await page.getByRole('button',{name:'저장된 결과로 추가 실행',exact:true}).isVisible());
+  assert(await page.getByText(/입력 변경 없이 추가 실행하면 같은 문제가/).isVisible());
+  assert.equal(await page.getByRole('textbox',{name:'메모를 며칠 동안 보관할까요?'}).count(),0);
+  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.screenshot({path:'.cache/agent-workflow-preview/'+name+'-blocked.png',fullPage:true});
   assert.deepEqual(errors,[]);await page.close();
  }
  console.log('Agent conversation desktop/mobile, keyboard, draft retention, message API: passed');
