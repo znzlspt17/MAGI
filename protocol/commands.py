@@ -2,7 +2,7 @@
 
 from typing import Any, Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 CommandKind = Literal[
@@ -20,9 +20,12 @@ class JobCommand(BaseModel):
     input: Any = None
     project_id: str | None = None
     decision_reuse: list[dict] | None = None
+    replay_pending: bool = Field(default=False, strict=True)
 
     @model_validator(mode="after")
     def target(self):
+        if self.kind != "retry" and "replay_pending" in self.model_fields_set:
+            raise ValueError("미완료 단계 재실행 동의는 retry에만 지정할 수 있습니다.")
         if self.kind == "generate":
             if (
                 self.job_id is not None
@@ -67,4 +70,5 @@ class JobCommand(BaseModel):
             "execution_id": self.execution_id,
             "candidate_hash": self.candidate_hash,
             "payload": self.input,
+            **({"replay_pending": True} if self.kind == "retry" and self.replay_pending else {}),
         }

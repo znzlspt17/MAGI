@@ -1,4 +1,7 @@
-.requirement-review { margin: 1.25rem 0; padding: 1.1rem; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-card); min-width: 0; overflow-wrap: anywhere; }
+.requirement-review { margin: 1rem 0; padding: 1rem; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-card); min-width: 0; overflow-wrap: anywhere; }
+.document-review { margin-bottom: 12px; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 10px 12px; }
+.document-review > summary { cursor: pointer; color: var(--color-primary); font-size: 13px; font-weight: 600; }
+.document-review > .requirement-review { border: 0; padding: 0; margin-bottom: 0; }
 .requirement-review .rr-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .rr-header h3 { margin: .35rem 0; font-size: 1.1rem; }
 .rr-header p, .rr-limit, .rr-review-status { font-size: .85rem; line-height: 1.65; }

@@ -42,7 +42,7 @@ class ChatModelProvider:
         options: dict[str, Any] = {
             "model_provider": "openai", "use_responses_api": True,
             "use_previous_response_id": False, "max_retries": 0,
-            "timeout": 300, "max_tokens": meter.price(model)[3] if meter else MAX_OUTPUT_TOKENS,
+            "timeout": 300, "max_tokens": MAX_OUTPUT_TOKENS,
             "service_tier": SERVICE_TIER, "truncation": "disabled",
         }
         if self.api_key is not None:
@@ -63,13 +63,17 @@ class ChatModelProvider:
             client = httpx2.Client(timeout=300, event_hooks={"response": [observation]})
             options["http_client"] = client
             llm = init_chat_model(model, **options)
+            from backend.infrastructure.workflow_store import provider_entered
             if text_format is not None:
-                packet = llm.with_structured_output(
+                structured = llm.with_structured_output(
                     text_format, method="json_schema", include_raw=True, strict=True,
-                ).invoke(inputs)
+                )
+                provider_entered()
+                packet = structured.invoke(inputs)
                 raw, parsed = packet["raw"], packet["parsed"]
                 parsing_error = packet["parsing_error"]
             else:
+                provider_entered()
                 raw, parsed, parsing_error = llm.invoke(inputs), None, None
             if not isinstance(raw, AIMessage):
                 raise Error("모델 응답 형식을 확인할 수 없습니다.")

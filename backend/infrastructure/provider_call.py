@@ -114,6 +114,9 @@ def _complete_once(
         if recorder is not None:
             recorder[stage] = [{"role": "system", "content": instructions},
                                *(item for item in messages if item.get("role") != "system")]
+        if not isinstance(provider, ChatModelProvider):
+            from backend.infrastructure.workflow_store import provider_entered
+            provider_entered()
         result = provider.complete_result(
             messages, model=model, temperature=temperature, cache_key=_cache_key(stage),
             instructions=instructions, text_format=schema,

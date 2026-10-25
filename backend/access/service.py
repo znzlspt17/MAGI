@@ -23,7 +23,7 @@ PUBLIC_FIELDS.update('research search_method mode performed outcome result_count
 PUBLIC_FIELDS.update('change_review before_id after_id before_hash after_hash before after item_id start end line meaning relation evidence analysed remaining calls diff'.split())
 PUBLIC_FIELDS.update('review_snapshot_id review_status rows unlinked unlinked_total specification acceptance verification spec_status acceptance_status verification_status test_status spec_linked acceptance_linked verification_linked group shared category specification_total acceptance_total verification_total'.split())
 PUBLIC_FIELDS.update('impact recommendation option_ids'.split())
-PUBLIC_FIELDS.update('can_retry retry_unavailable_reason retry_of'.split())
+PUBLIC_FIELDS.update('can_retry retry_unavailable_reason retry_requires_replay retry_of'.split())
 PUBLIC_FIELDS.update('reused_decisions reused_decision_count source_available registry_id decision_reuse decision_id'.split())
 PUBLIC_FIELDS.update('completed_id bundle_id format_version files size sha256 completeness korean_included task_count available total_size file_limit total_limit eof'.split())
 PUBLIC_FIELDS.update('plan goal tasks allowed_actions wait_reason revision document_versions task_results action target input_refs expected_result affected_requirement_ids requirements_hash result_hash hash'.split())
@@ -275,7 +275,7 @@ class PublicService:
                         model = Config().model_routing['interviewer'].model
                         if method != 'approve':
                             maximum = meter.maximum(model)
-                            self.access.check_money(c,actor['id'],maximum,day_at(self.access.clock()))
+                            self.access.check_money(c,actor['id'],maximum or Decimal(0),day_at(self.access.clock()))
                         result = self.result(dispatch(request))
                         job = self.manager.jobs[jid]
                         job['execution_generation'] = generation

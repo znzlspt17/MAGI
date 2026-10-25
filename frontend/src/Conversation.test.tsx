@@ -6,6 +6,17 @@ import { Conversation } from "./Conversation";
 
 vi.mock("./Auth", () => ({ useAuth: () => ({ publicMode: false, user: null, status: {} }) }));
 afterEach(cleanup);
+it('질문 답변 중에는 추가 의견을 접고 초안과 키보드 접근을 유지한다',async()=>{
+ const user=userEvent.setup();sessionStorage.clear();
+ render(<Conversation job={{id:'compact',status:'NEEDS_USER_INPUT',state:{blocking_questions:['[Q] 사용할 사람'],plan:{goal:'요청 확인'},allowed_actions:['message']}}} select={vi.fn()} onAction={vi.fn()} busy={false}/>);
+ const toggle=screen.getByRole('button',{name:'수정 의견 또는 추가 요청'});
+ expect(screen.queryByRole('textbox',{name:'수정 의견 또는 추가 요청'})).toBeNull();
+ toggle.focus();await user.keyboard('{Enter}');
+ await user.type(screen.getByRole('textbox',{name:'수정 의견 또는 추가 요청'}),'보관 30일');
+ await user.click(toggle);await user.click(toggle);
+ expect(screen.getByRole('textbox',{name:'수정 의견 또는 추가 요청'})).toHaveValue('보관 30일');
+ sessionStorage.clear();
+});
 
 it("답변 아래 질문 참조를 독립적으로 클릭과 키보드로 펼친다", async () => {
   const user = userEvent.setup();

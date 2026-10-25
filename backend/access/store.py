@@ -10,6 +10,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 from backend.access.context import AccessError
+from backend.access.limits import LIMIT_MODE
 
 
 LOGGER = logging.getLogger('backend.server')
@@ -109,7 +110,7 @@ class AccessStore:
         day = day_at(self.clock())
         usage = self._usage(c, day, uid)
         if count and usage['runs'] >= user['daily_runs']:
-            raise AccessError('오늘 실행 횟수를 모두 사용했습니다.', 'quota')
+            LOGGER.info('usage threshold exceeded kind=runs mode=%s', LIMIT_MODE)
         self.check_money(c, uid, initial, day)
         if count:
             c.execute('UPDATE daily_usage SET runs=runs+1 WHERE day=%s AND user_id=%s', (day, uid))
@@ -155,9 +156,11 @@ class AccessStore:
         total = c.execute('SELECT COALESCE(sum(spent+reserved),0) AS amount FROM daily_usage WHERE day=%s', (day,)).fetchone()['amount']
         cap = c.execute('SELECT daily_usd FROM service_settings WHERE singleton=1').fetchone()['daily_usd']
         if Decimal(str(usage['spent'])) + Decimal(str(usage['reserved'])) + amount > Decimal(str(user['daily_usd'])) or Decimal(str(total)) + amount > Decimal(str(cap)):
-            raise AccessError('오늘 API 비용 한도에 도달했습니다.', 'quota')
+            LOGGER.info('usage threshold exceeded kind=cost mode=%s', LIMIT_MODE)
 
     def reserve(self, uid, jid, generation, model, amount, *, execution_id, queued=False):
+        estimated = amount is not None
+        amount = amount if estimated else Decimal(0)
         with self.store.transaction() as c:
             self.execution(c, uid, jid, generation, execution_id, queued=queued)
             day = day_at(self.clock())
@@ -166,6 +169,8 @@ class AccessStore:
             c.execute('UPDATE daily_usage SET reserved=reserved+%s WHERE day=%s AND user_id=%s', (amount, day, uid))
             c.execute('INSERT INTO cost_calls(id,day,user_id,job_id,model,reserved,reserved_at,execution_id,execution_generation) VALUES (%s,%s,%s,%s,%s,%s,to_timestamp(%s),%s,%s)',
                       (ident, day, uid, jid, model, amount, self.clock(), execution_id,generation))
+            if not estimated:
+                c.execute("UPDATE cost_calls SET state='uncertain' WHERE id=%s", (ident,))
         return ident
 
     def check_execution(self, uid, jid, generation, execution_id):
@@ -215,8 +220,10 @@ class AccessStore:
                 c.execute("UPDATE cost_calls SET state='uncertain' WHERE id=%s", (ident,))
                 return
             if actual < 0 or actual > Decimal(str(row['reserved'])):
+                if source == 'manual':
+                    raise AccessError('비용 산정을 확인해야 합니다.', 'unavailable')
                 c.execute("UPDATE cost_calls SET state='uncertain' WHERE id=%s", (ident,))
-                raise AccessError('비용 산정을 확인해야 합니다.', 'unavailable')
+                return
             c.execute('UPDATE daily_usage SET reserved=reserved-%s,spent=spent+%s WHERE day=%s AND user_id=%s',
                       (row['reserved'], actual, row['day'], row['user_id']))
             c.execute("UPDATE cost_calls SET actual=%s,state='settled',settled_at=to_timestamp(%s),settlement_source=%s,cost_policy=%s WHERE id=%s",
@@ -237,6 +244,8 @@ class AccessStore:
         with self.store.transaction() as c:
             row = self._usage(c, day_at(self.clock()), uid)
             user = c.execute('SELECT daily_runs,daily_usd FROM users WHERE id=%s', (uid,)).fetchone()
-            return {'runs': row['runs'], 'remaining_runs': max(0,user['daily_runs']-row['runs']),
+            return {'limit_mode': LIMIT_MODE, 'runs': row['runs'], 'daily_runs': user['daily_runs'],
+                    'runs_exceeded': row['runs'] >= user['daily_runs'],
+                    'remaining_runs': max(0,user['daily_runs']-row['runs']),
                     'limit_reached': Decimal(str(row['spent']))+Decimal(str(row['reserved'])) >= Decimal(str(user['daily_usd'])),
                     'resets_at': (datetime.fromtimestamp(self.clock(), timezone(timedelta(hours=9))).replace(hour=0,minute=0,second=0,microsecond=0)+timedelta(days=1)).isoformat()}

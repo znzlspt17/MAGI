@@ -114,6 +114,7 @@ export function useJobSession() {
     try {
       const result = await post<Job>("/api/commands", kind === "generate" ? { kind, input, ...selections }
         : { kind, job_id: id, execution_id: job?.execution_id, input,
+          ...(kind === "retry" && selections.replay_pending ? { replay_pending: true } : {}),
           candidate_hash: kind === "approve" ? job?.state?.candidate_hash : undefined });
       refresh();
       return result;

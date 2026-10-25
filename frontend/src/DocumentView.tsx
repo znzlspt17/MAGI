@@ -127,7 +127,9 @@ export function DocumentView({
     <section aria-label="명세 문서">
       {document.kind === "final" && document.completed_id && <ApprovedDecisions key={`decisions:${jobId}:${document.completed_id}`} jobId={jobId} completedId={document.completed_id} />}
       {document.kind === "final" && document.completed_id && <ImplementationPackage key={`${jobId}:${document.completed_id}`} jobId={jobId} completedId={document.completed_id} />}
-      {["candidate", "final"].includes(document.kind || "") && <RequirementReview key={`${jobId}:${stepId}:${hash || source}`} jobId={jobId} stepId={stepId} sourceHash={hash} onLocate={locate} onQuestion={onQuestion} />}
+      {["candidate", "final"].includes(document.kind || "") && (reviewOnly
+        ? <RequirementReview key={`${jobId}:${stepId}:${hash || source}`} jobId={jobId} stepId={stepId} sourceHash={hash} onLocate={locate} onQuestion={onQuestion} />
+        : <details className="document-review" key={`${jobId}:${stepId}:${hash || source}`}><summary>요구사항별 검토 근거</summary><RequirementReview jobId={jobId} stepId={stepId} sourceHash={hash} onLocate={locate} onQuestion={onQuestion} /></details>)}
       {reviewOnly ? <Button onClick={onShowDocument}>명세 문서 보기</Button> : <>
       <div className="document-controls">
         {[

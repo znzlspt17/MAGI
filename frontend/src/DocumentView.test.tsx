@@ -1,16 +1,26 @@
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
 import {DocumentView} from './DocumentView';
-import {post} from './api';
+import {post,api} from './api';
 vi.mock('./api',()=>({post:vi.fn(),api:vi.fn().mockResolvedValue({status:'unavailable',message:'기준 없음'})}));
 afterEach(()=>{cleanup();vi.restoreAllMocks();});
-beforeEach(()=>vi.mocked(post).mockReset());
+beforeEach(()=>{vi.mocked(post).mockReset();vi.mocked(api).mockReset().mockResolvedValue({status:'unavailable',message:'기준 없음'});});
 const english={content:'# English document',filename:'spec.en.md',source_hash:'snapshot'};
 const korean={content:'# 한국어 문서',filename:'spec.ko.md',source_hash:'snapshot',language:'ko'};
 function deferred(){let resolve!:(v:any)=>void,reject!:(v:any)=>void;const promise=new Promise<any>((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};}
 const click=(name:string)=>fireEvent.click(screen.getByRole('button',{name}));
 const blobText=(blob:Blob)=>new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=reject;reader.readAsText(blob);});
 const download=()=>screen.getByRole('button',{name:'Markdown 다운로드'}) as HTMLButtonElement;
+it('문서 본문은 바로 표시하고 검토 근거는 별도로 펼친다',async()=>{
+ const view=render(<DocumentView jobId="job" stepId="read" initialLanguage="en" document={{...english,kind:'candidate'}}/>);
+ await screen.findByRole('heading',{name:'English document'});
+ const disclosure=view.container.querySelector<HTMLDetailsElement>('.document-review')!;
+ expect(disclosure.open).toBe(false);
+ fireEvent.click(disclosure.querySelector('summary')!);
+ expect(disclosure.open).toBe(true);
+ expect(await screen.findByText('기준 없음')).toBeTruthy();
+ expect(post).not.toHaveBeenCalled();
+});
 it('근거표만 열면 번역 생성과 모델 호출을 시작하지 않는다',async()=>{
  const open=vi.fn();
  render(<DocumentView jobId="job" stepId="one" document={{...english,kind:'candidate'}} reviewOnly onShowDocument={open}/>);

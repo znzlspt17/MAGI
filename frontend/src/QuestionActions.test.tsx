@@ -103,6 +103,18 @@ describe('질문 답변',()=>{
 });
 
 describe('대화 입력과 승인',()=>{
+ it('불확실한 단계는 동의 후 명시적으로 재실행하며 실행 변경 시 동의를 해제한다',async()=>{
+  const action=vi.fn().mockResolvedValue(undefined);
+  const value:Job={id:'pending',execution_id:'e1',status:'error',can_retry:true,retry_requires_replay:true};
+  const view=render(<QuestionActions job={value} onAction={action} busy={false}/>);
+  const button=screen.getByRole('button',{name:'미완료 단계 다시 실행'});
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole('checkbox',{name:'호출 반복과 추가 비용 가능성을 확인했습니다.'}));
+  await act(async()=>fireEvent.click(button));
+  expect(action).toHaveBeenCalledWith('retry',{replay_pending:true});
+  view.rerender(<QuestionActions job={{...value,execution_id:'e2'}} onAction={action} busy={false}/>);
+  expect((screen.getByRole('button',{name:'미완료 단계 다시 실행'}) as HTMLButtonElement).disabled).toBe(true);
+ });
  const continued:Job={id:'continue',execution_id:'e1',status:'FINALIZED',can_continue:true};
  it('Enter는 줄바꿈으로 남기고 Ctrl+Enter만 전송하며 IME 조합을 보호한다',async()=>{
   const action=vi.fn().mockResolvedValue(undefined);

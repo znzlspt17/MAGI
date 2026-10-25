@@ -89,9 +89,11 @@ export function QuestionActions({
     ),
     [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [replayConsent, setReplayConsent] = useState(false);
   const [approvedExecution, setApprovedExecution] = useState(() => sessionStorage.getItem(prefix + "approved-execution") || "");
   const submitting = useRef(false);
   const executionKey = `${job.id}:${job.execution_id}:${job.status}`;
+  useEffect(() => { setReplayConsent(false); }, [executionKey]);
   const disabled = busy || pending || approvedExecution === executionKey || serviceState(publicMode, status).blocked;
   const retryApproval = job.action === "approve" && job.retry_status === "PASS_PENDING_USER_APPROVAL" && !job.read_only;
   const actionClass = conversational ? "action-card conversation-action" : "action-card";
@@ -194,14 +196,17 @@ export function QuestionActions({
     return (
       <section className={actionClass} id="job-actions">
         <h3>작업이 중단되었습니다</h3>
-        <p>{retryApproval ? "검토가 완료된 명세의 승인을 다시 저장할 수 있습니다." : job.can_retry
+        <p>{retryApproval ? "검토가 완료된 명세의 승인을 다시 저장할 수 있습니다." : job.retry_requires_replay
+          ? "이전 단계의 호출 완료 여부를 확인할 수 없습니다. 미완료 단계를 다시 실행하면 이미 성공한 호출도 반복되어 추가 비용이 발생할 수 있습니다."
+          : job.can_retry
           ? "저장된 답변을 유지하고 마지막 저장 지점부터 다시 시도합니다."
-          : job.retry_unavailable_reason || job.continuation_error || "저장된 처리 상태를 복원할 수 없어 다시 시도할 수 없습니다."}</p>
+          : job.retry_unavailable_reason || job.continuation_error || "재시도 가능 여부를 확인할 수 없습니다. 최신 작업 상태를 확인해주세요."}</p>
+        {job.retry_requires_replay && <label><input type="checkbox" checked={replayConsent} onChange={e => setReplayConsent(e.target.checked)} />호출 반복과 추가 비용 가능성을 확인했습니다.</label>}
         <ServiceStatusNotice inline />
         {(job.can_retry || retryApproval) && controls(<div className="chat-answer-controls"><Button
-          className="primary" disabled={disabled}
-          onClick={() => void perform(retryApproval ? "approve" : "retry", null).catch(() => {})}
-        >{pending ? "재시도 요청 중…" : retryApproval ? "승인 다시 저장" : "다시 시도"}</Button></div>)}
+          className="primary" disabled={disabled || (!!job.retry_requires_replay && !replayConsent)}
+          onClick={() => void perform(retryApproval ? "approve" : "retry", job.retry_requires_replay ? { replay_pending: true } : null).catch(() => {})}
+        >{pending ? "재시도 요청 중…" : retryApproval ? "승인 다시 저장" : job.retry_requires_replay ? "미완료 단계 다시 실행" : "다시 시도"}</Button></div>)}
       </section>
     );
   if (job.read_only || (job.status === "FINALIZED" && !job.can_continue))

@@ -88,7 +88,7 @@ export default function Workspace() {
   async function mutate(action: string, payload: unknown) {
     const target = id;
     try {
-      if (await session.command(action, payload) && selectedId.current === target) auth.setNotice(action === "stop" ? "이 작업의 중지를 요청했습니다." : "작업을 대기열에 넣었습니다.");
+      if (await session.command(action, action === "retry" ? null : payload, action === "retry" && payload ? payload as RecordData : {}) && selectedId.current === target) auth.setNotice(action === "stop" ? "이 작업의 중지를 요청했습니다." : "작업을 대기열에 넣었습니다.");
     } catch (e) {
       if (action !== "message") auth.setNotice((e as Error).message);
       throw e;
@@ -178,6 +178,7 @@ export default function Workspace() {
             대화 세션 <span>{filtered.length}</span>
           </h2></SidebarGroupLabel>
           <nav aria-label="작업 기록"><SidebarMenu>
+            {!filtered.length && (query || filter) && <li className="history-empty" role="status">조건에 맞는 작업이 없습니다.</li>}
             {filtered.map((item) => (
               <SidebarMenuItem key={item.id}><SidebarMenuButton asChild isActive={id === item.id} className="session-menu-link"><Link
                 to={`/jobs/${item.id}`}
@@ -204,8 +205,7 @@ export default function Workspace() {
         <main>
           <header className={`workspace-header ${id && surface === "workspace" ? "chat-header" : ""}`}>
             <div><span className="eyebrow">MAGI / {surface === "knowledge" ? "KNOWLEDGE" : "WORKSPACE"}</span>
-              <h1>{surface === "knowledge" ? "지식 검색" : id ? actualJob?.request?.slice(0, 70) || "작업 불러오는 중…" : "아이디어의 다음 문장을 함께."}</h1>
-              {!id && surface === "workspace" && <p>만들고 싶은 것을 들려주세요. 필요한 질문부터 명세 완성까지 함께합니다.</p>}
+              <h1>{surface === "knowledge" ? "지식 검색" : id ? actualJob?.request?.slice(0, 70) || "작업 불러오는 중…" : "새 명세 만들기"}</h1>
             </div>
             {actualJob && surface === "workspace" && <div className="chat-header-actions"><Badge variant="secondary">{statusLabel(actualJob.status)}</Badge>{currentDocument && <Button onClick={() => selectStep(currentDocument.id)}><FileTextIcon size={17} aria-hidden />명세 열기</Button>}</div>}
           </header>
@@ -216,10 +216,9 @@ export default function Workspace() {
             <>
               {!id ? (
                 <section className="chat-welcome">
-                  <div className="welcome-mark"><SparkleIcon weight="duotone" size={38} aria-hidden /></div>
+                  <div className="welcome-mark"><SparkleIcon weight="duotone" size={28} aria-hidden /></div>
                   <h2>무엇을 만들고 싶으신가요?</h2>
                   <p>완벽하게 정리하지 않아도 괜찮습니다.<br />요청을 바탕으로 필요한 내용을 함께 구체화합니다.</p>
-                  <ServiceStatusNotice inline />
                   <ProjectDecisionPicker key={auth.user?.id || "local"} projectId={projectId} onProject={setProjectId} selections={decisionSelections} onSelections={setDecisionSelections} />
                   <label htmlFor="request-text">개발 요청</label>
                   <PromptInput id="request-text" label="개발 요청" buttonLabel={decisionSelections.length ? `선택한 결정 ${decisionSelections.length}개와 함께 생성` : "명세 생성 시작"} rows={5} value={request} disabled={blocked}
@@ -252,7 +251,7 @@ export default function Workspace() {
                   ) : (
                     <div className="document-action-layout">
                       <section className="document-panel">
-                        <ChangeReview review={detail?.change_review} />
+                        {detail?.change_review && <details className="document-change-review"><summary>명세 변경 검토 · {detail.change_review.changes?.length || 0}건</summary><ChangeReview review={detail.change_review} /></details>}
                         {tab === "history" && actualJob.usage && <p className="subtle">{usageLabel(actualJob.usage)}</p>}
                         {tab === "history" && (
                           <>
@@ -290,7 +289,7 @@ export default function Workspace() {
                           result.report) && <Issues result={result} />}
                       </section>
                       <aside className="action-panel">
-                        <section className="action-card document-chat-cta"><h3>대화에서 다음 단계를 진행하세요</h3><p>답변·수정·승인은 대화의 최신 상태에서만 진행할 수 있습니다.</p><Button className="primary" onClick={showConversation}><ChatCircleDotsIcon size={18} aria-hidden />대화에서 답변하기</Button></section>
+                        <section className="action-card document-chat-cta"><p>답변·수정·승인은 대화에서 진행합니다.</p><Button className="primary" onClick={showConversation}><ChatCircleDotsIcon size={18} aria-hidden />대화에서 답변하기</Button></section>
                       </aside>
                     </div>
                   )}
@@ -324,7 +323,7 @@ function CompletedDocuments({
 }) {
   const [selected, setSelected] = useState("");
   return (
-    <div className="completed-documents">
+    <details className="completed-documents"><summary>완료 명세·다운로드</summary><div className="completed-document-controls">
       {(job.latest_completed || job.status === "FINALIZED") && <ImplementationPackage key={`${job.id}:${job.latest_completed?.id || "latest"}`} jobId={job.id} completedId={job.latest_completed?.id} label="최근 승인본 구현 묶음" />}
       <span>
         {job.status === "FINALIZED"
@@ -360,7 +359,7 @@ function CompletedDocuments({
           </Button>
         </>
       )}
-    </div>
+    </div></details>
   );
 }
 function StepResult({ node, detail, hideQuestions = false }: { node?: Step; detail: RecordData; hideQuestions?: boolean }) {

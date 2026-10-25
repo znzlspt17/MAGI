@@ -32,6 +32,11 @@ try {
    const doc={content:`# ${step==='old-doc'?'이전':'현재'} 명세\n\n저장된 실제 검토본입니다.`,language:'ko',source_hash:step,filename:step+'.md'};
    body=path.endsWith('/document')?doc:{document:doc,result:{summary:'저장된 명세'}};
   }else if(path === '/api/commands' && request.postDataJSON().kind === 'continue'){mutations.push(request.postDataJSON());return route.fulfill({status:503,json:{error:'테스트용 일시적 연결 오류'}});}
+  else if(path === '/api/commands' && request.postDataJSON().kind === 'retry'){
+   const command=request.postDataJSON();mutations.push(command);
+   assert.equal(command.replay_pending,true);assert.equal(command.execution_id,'current');assert.equal(command.input,null);
+   job.status='queued';body=job;
+  }
   else throw new Error('unexpected request '+path);
   return route.fulfill({json:structuredClone(body)});
  });
@@ -100,5 +105,14 @@ try {
  await page.getByText('테스트용 일시적 연결 오류',{exact:true}).waitFor();
  assert.equal(mutations.length,1);assert.equal(mutations[0].execution_id,'current');
  assert((await input.inputValue()).includes('문서 탭에 다녀와도 유지되는 초안'));
+ job.status='error';job.can_retry=true;job.retry_requires_replay=true;
+ await refresh();
+ const replay=page.getByRole('button',{name:'미완료 단계 다시 실행',exact:true});
+ await replay.waitFor();assert.equal(await replay.isDisabled(),true);
+ assert.equal(mutations.length,1);
+ await page.getByRole('checkbox',{name:'호출 반복과 추가 비용 가능성을 확인했습니다.',exact:true}).check();
+ await replay.click();
+ await page.waitForFunction(()=>document.body.textContent.includes('이 작업 중지'));
+ assert.equal(mutations.length,2);assert.equal(mutations[1].kind,'retry');
  assert.deepEqual(errors,[]);
 } finally { await browser.close(); }

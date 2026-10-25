@@ -1,4 +1,9 @@
 .change-review { min-width: 0; margin-block: 1rem; padding: 1rem; border: 1px solid var(--line, #e7e4ec); border-radius: .75rem; }
+.change-review h3 { margin: 0 0 8px; font-size: 15px; }
+.change-review h4 { margin: 8px 0 4px; font-size: 13px; }
+.change-review > p { margin: 6px 0; font-size: 12px; }
+.change-review ul { margin: 4px 0; padding-left: 20px; }
+.change-item > summary { font-size: 13px; line-height: 1.6; cursor: pointer; }
 .change-review h3 { margin: 0 0 .6rem; }
 .change-review h4 { margin: 1rem 0 .5rem; }
 .change-review h5 { margin: .75rem 0 .25rem; font-size: .9rem; }

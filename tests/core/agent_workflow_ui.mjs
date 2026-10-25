@@ -38,6 +38,7 @@ try {
   await plan.focus();await plan.press('Enter');
   await page.getByText('저장 정책은 사용자 결정을 확인한 뒤 명세에 반영합니다.').waitFor({state:'visible'});
   assert(await page.getByRole('textbox',{name:'메모를 며칠 동안 보관할까요?'}).isVisible());
+  await page.getByRole('button',{name:'수정 의견 또는 추가 요청',exact:true}).click();
   const input=page.getByRole('textbox',{name:'수정 의견 또는 추가 요청',exact:true});
   await input.fill('보관 기간은 30일로 정해주세요.');
   await page.getByRole('button',{name:'의견 보내기',exact:true}).click();

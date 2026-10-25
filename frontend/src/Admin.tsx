@@ -11,7 +11,7 @@ const views = [
   ["users", "사용자"],
   ["data", "작업·데이터"],
   ["knowledge", "지식 그래프"],
-  ["costs", "비용·한도"],
+  ["costs", "비용·관측 기준"],
 ];
 export default function Admin() {
   const auth = useAuth(),
@@ -105,6 +105,7 @@ export default function Admin() {
       </nav>
       <p id="admin-error" role="alert">
         {error}
+        {error && <button onClick={() => { setError(""); setVersion(value => value + 1); }}>다시 조회</button>}
       </p>
       <p role="status">{notice}</p>
       <fieldset className="admin-content" disabled={busy} aria-busy={busy}>
@@ -136,7 +137,9 @@ export default function Admin() {
         {view === "users" && (
           <section data-admin-section="users">
             <h2>사용자</h2>
-            <p>역할이나 한도를 저장하면 해당 계정의 기존 세션을 폐기합니다.</p>
+            <p>실행·비용 기준은 관측용이며 실행을 차단하지 않습니다. 역할이나 기준을 저장하면 해당 계정의 기존 세션을 폐기합니다.</p>
+            {!data && !error && <p role="status">사용자 목록을 불러오는 중…</p>}
+            {data && !data.users?.length && <p>등록된 사용자가 없습니다.</p>}
             {data?.users?.map((user: any) => (
               <UserEditor
                 key={user.id + ":" + version}
@@ -190,7 +193,7 @@ function UserEditor({
         </select>
       </label>
       <label>
-        일일 실행 횟수
+        일일 실행 관측 기준 (차단 없음)
         <input
           name="daily_runs"
           type="number"
@@ -199,7 +202,7 @@ function UserEditor({
         />
       </label>
       <label>
-        일일 비용 US$
+        일일 예상 비용 관측 기준 US$ (차단 없음)
         <input
           name="daily_usd"
           type="number"

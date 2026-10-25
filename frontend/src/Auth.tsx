@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api, post, configureAuth, clearRequests } from "./api";
+import { api, post, configureAuth, clearRequests, ApiError } from "./api";
 import type { ServiceStatus, Usage, User } from "./types";
 import { clearAccountDrafts } from "./session-drafts";
 interface AuthState {
@@ -113,7 +113,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             location.replace(path!);
           sessionStorage.removeItem("return-path");
         } catch (e) {
-          if (live) setNotice((e as Error).message);
+          // 미로그인 응답은 정상적인 로그인 진입이므로 오류로 표시하지 않는다.
+          if (live && !(e instanceof ApiError && e.status === 401)) setNotice((e as Error).message);
         }
       } catch (e) {
         if (live) setNotice((e as Error).message);

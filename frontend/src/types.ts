@@ -12,6 +12,9 @@ export interface ServiceStatus {
   own_active_count?: number;
 }
 export interface Usage {
+  limit_mode?: "observe";
+  daily_runs?: number;
+  runs_exceeded?: boolean;
   runs?: number;
   remaining_runs?: number;
   resets_at?: string;
@@ -56,6 +59,7 @@ export interface Job extends RecordData {
   status: string;
   execution_id?: string;
   can_retry?: boolean;
+    retry_requires_replay?: boolean;
   retry_unavailable_reason?: string;
   state?: RecordData;
   change_review?: ChangeReviewData;

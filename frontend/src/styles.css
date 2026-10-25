@@ -8,7 +8,8 @@
   --primary-light: #f0ebff;
   --line: #e5e3ec;
   --muted: #757184;
-  --radius: 16px;
+  --radius: 12px;
+  --control-height: 34px;
 }
 * {
   box-sizing: border-box;
@@ -58,7 +59,7 @@ select {
   border: 1px solid var(--line);
   background: #fff;
   border-radius: 9px;
-  padding: 11px 13px;
+  padding: 7px 10px;
   color: inherit;
 }
 textarea {
@@ -92,6 +93,7 @@ h3,
 h4 {
   line-height: 1.35;
   overflow-wrap: anywhere;
+  word-break: keep-all;
 }
 h1 {
   font-size: 29px;
@@ -109,7 +111,7 @@ h3 {
   border-radius: 9px;
   background: white;
   color: inherit;
-  padding: 10px 14px;
+  padding: 6px 10px;
   font-size: 13px;
   font-weight: 600;
   display: inline-flex;
@@ -497,7 +499,7 @@ h3 {
   margin-top: 12px;
 }
 .question-form {
-  margin: 22px 0;
+  margin: 14px 0;
   padding: 0;
   border: 0;
 }

@@ -260,7 +260,7 @@ class Server:
                     )
                 else:
                     payload = (
-                        {"retry_of": params["execution_id"]}
+                        {"retry_of": params["execution_id"], "replay_pending": params.get("replay_pending", False)}
                         if method == "retry"
                         else {"candidate_hash": params["candidate_hash"]}
                         if method == "approve"

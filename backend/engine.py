@@ -114,7 +114,7 @@ class Engine:
             evidence=evidence,
         )
         return AgentWorkflow(self, nodes, writer, evidence, on_progress).run(
-            state, action=action
+            state, action=action, replay_pending=action == "retry" and isinstance(payload, dict) and payload.get("replay_pending") is True
         )
 
     def _answer(self, state, answers):

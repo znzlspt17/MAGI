@@ -40,6 +40,11 @@
   [data-slot] { border-style: solid; border-width: 0; border-color: #e7e4ec; }
 }
 [data-slot="button"] { font-family: inherit; cursor: pointer; }
+/* Preflight를 쓰지 않으므로 브라우저의 문단 여백을 컴포넌트 안에서만 초기화한다. */
+[data-slot="dialog-title"], [data-slot="dialog-description"],
+[data-slot="card-title"], [data-slot="card-description"],
+[data-slot="item-title"], [data-slot="item-description"],
+[data-slot="field-description"] { margin: 0; }
 a[data-slot="button"] { text-decoration: none; }
 a[data-slot="button"][data-variant="default"],
 a[data-slot="button"][data-variant="default"]:visited { color: #fff; }

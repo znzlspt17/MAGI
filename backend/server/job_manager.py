@@ -128,6 +128,11 @@ class JobManager:
         ):
             raise CleanupConflict("작업 상태가 바뀌었습니다. 최신 대화를 확인하세요.")
         previous = copy.deepcopy(job)
+        if action == "retry":
+            from backend.infrastructure.workflow_store import retry_state
+            recovery = retry_state(self.workspace.documents(ident))
+            if recovery["retry_requires_replay"] and not (isinstance(payload, dict) and payload.get("replay_pending") is True):
+                raise CleanupConflict("이전 호출의 완료 여부가 불확실합니다. 추가 비용 가능성을 확인하고 미완료 단계를 다시 실행하세요.")
         self._next_order += 1
         now = _utc_now()
         job.update(
@@ -150,11 +155,11 @@ class JobManager:
             raise
         return copy.deepcopy(job)
 
-    def retry(self, ident, execution_id):
+    def retry(self, ident, execution_id, *, replay_pending=False):
         return self.action(
             ident,
             "retry",
-            {"retry_of": execution_id},
+            {"retry_of": execution_id, "replay_pending": replay_pending},
             expected_execution_id=execution_id,
         )
 

@@ -142,7 +142,7 @@ def test_two_workers_overlap_third_waits_and_context_is_isolated(real_store, mon
 
 
 @pytest.mark.parametrize("same_user", [False, True])
-def test_budget_reservation_and_duplicate_settlement_use_independent_connections(real_store, same_user):
+def test_observed_budget_does_not_block_reservation_and_settlement_is_once(real_store, same_user):
     access = AccessStore(real_store)
     _, one = account(access, "budget-one")
     _, other = account(access, "budget-two")
@@ -166,7 +166,7 @@ def test_budget_reservation_and_duplicate_settlement_use_independent_connections
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         calls = list(pool.map(reserve,range(2)))
-    assert sum(value is not None for value in calls) == 1
+    assert all(calls)
     call = next(value for value in calls if value is not None)
     barrier = threading.Barrier(2)
 
@@ -178,7 +178,7 @@ def test_budget_reservation_and_duplicate_settlement_use_independent_connections
         list(pool.map(settle,range(2)))
     with real_store.transaction(mode="read") as conn:
         total = conn.execute("SELECT sum(reserved) AS reserved,sum(spent) AS spent FROM daily_usage").fetchone()
-        assert Decimal(total["reserved"]) == 0 and Decimal(total["spent"]) == Decimal("0.02")
+        assert Decimal(total["reserved"]) == Decimal("0.75") and Decimal(total["spent"]) == Decimal("0.02")
 
 
 def test_old_generation_cannot_save_reserve_finish_or_settle_new_execution(real_store):
@@ -439,3 +439,53 @@ def test_restart_interrupts_execution_and_preserves_uncertain_reservation(real_s
         assert row['state']=='uncertain' and Decimal(row['reserved'])==Decimal('0.25') and row['actual'] is None
         assert conn.execute('SELECT phase FROM execution_leases').fetchone()['phase']=='interrupted'
     assert access.status(user['id'])['active_count']==0
+
+
+@pytest.mark.parametrize("same_key", [False, True])
+def test_pending_replay_admission_race_accepts_one_execution(real_store, monkeypatch, same_key):
+    from backend.errors import Error
+    from backend.models import InterviewResponse
+    from fakes import DecisionProvider
+
+    class Broken(DecisionProvider):
+        def complete_result(self, messages, **kwargs):
+            if kwargs["text_format"] is InterviewResponse:
+                raise Error("test transport failure")
+            return super().complete_result(messages,**kwargs)
+
+    manager, _ = manager_for(real_store,monkeypatch,Broken([[]]))
+    service = PublicService(manager,google=Mock(),pepper="fake-test-pepper")
+    sid, user = account(service.access,"replay-race")
+
+    def dispatch(request):
+        params = request["params"]
+        job = manager.create(params["request"]) if request["method"] == "generate" else manager.action(
+            params["id"],"retry",{"replay_pending":params.get("replay_pending",False)},expected_execution_id=params["execution_id"])
+        return manager.workspace.summary(job["id"])
+
+    def packet(params,key):
+        return {"method":"job.command","params":params,"session":sid,"csrf":user["csrf"],"idempotency_key":key}
+
+    try:
+        job = service.invoke(packet({"kind":"generate","input":"메모를 저장해주세요"},"replay-generate"),dispatch)
+        service.worker(job["id"],"generate","메모를 저장해주세요")
+        summary = manager.workspace.summary(job["id"])
+        assert summary["can_retry"] and summary["retry_requires_replay"]
+        barrier = threading.Barrier(2)
+        def race(index):
+            barrier.wait(timeout=10)
+            try:
+                return service.invoke(packet({"kind":"retry","job_id":job["id"],"execution_id":job["execution_id"],"replay_pending":True},
+                                             "replay-key" if same_key else f"replay-key-{index}"),dispatch)
+            except AccessError as exc:
+                return exc.code
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(race,range(2)))
+        accepted = [result for result in results if isinstance(result,dict)]
+        assert len(accepted) == (2 if same_key else 1)
+        assert len({result["execution_id"] for result in accepted}) == 1
+        with real_store.transaction(mode="read") as conn:
+            assert conn.execute("SELECT count(*) AS n FROM execution_leases WHERE phase='queued'").fetchone()["n"] == 1
+            assert conn.execute("SELECT count(*) AS n FROM cost_calls").fetchone()["n"] == 2
+    finally:
+        manager.close()

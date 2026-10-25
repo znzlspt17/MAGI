@@ -70,28 +70,13 @@ class Workspace:
         job = self.get(ident)
         if job["status"] in _ACTIVE:
             return []
+        if job["status"] in {"error", "interrupted"}:
+            from backend.infrastructure.workflow_store import retry_state
+            recovery = retry_state(self.documents(ident))
+            return ["message", "retry"] if recovery["can_retry"] else ["message"]
         state = self.state(ident)
         if not state:
             return []
-        if job["status"] in {"error", "interrupted"}:
-            from backend.infrastructure.workflow_store import workflow_store
-            from backend.pipeline.agent_workflow import task_id
-
-            snapshot = self.documents(ident).workflow_snapshot()
-            node = snapshot.next[0] if snapshot.next else ""
-            name = (
-                state.get("plan", {}).get("action")
-                if node == "execute"
-                else "approve"
-                if node == "finalize"
-                else node
-            )
-            with workflow_store(self.knowledge.store, ident) as (_, journal):
-                uncertain = (
-                    name != "approve"
-                    and journal.status(task_id(state, name)) == "pending"
-                )
-            return ["message"] if uncertain else ["message", "retry"]
         if state.get("status") == "FINALIZED":
             return ["message", "continue"]
         return state.get("allowed_actions", [])
@@ -100,6 +85,10 @@ class Workspace:
         job = self.get(ident)
         state = self.state(ident)
         actions = self.allowed(ident)
+        recovery = {}
+        if job["status"] in {"error", "interrupted"}:
+            from backend.infrastructure.workflow_store import retry_state
+            recovery = {k:v for k,v in retry_state(self.documents(ident)).items() if k != "task_id"}
         keys = (
             "id",
             "request",
@@ -119,6 +108,7 @@ class Workspace:
             "read_only": not state,
             "latest_completed": state.get("latest_completed"),
             "reused_decision_count": len(job.get("reused_decisions", [])),
+            **recovery,
         }
 
     def public(self, ident):

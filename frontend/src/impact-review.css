@@ -1,4 +1,4 @@
-.impact-review { display: grid; gap: 20px; min-width: 0; padding-top: 20px; margin-top: 20px; border-top: 1px solid var(--line); color: var(--color-foreground); }
+.impact-review { display: grid; gap: 12px; min-width: 0; padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--line); color: var(--color-foreground); }
 .inspector-drawer:has(.impact-review) { width: 440px; background: var(--color-card); border-color: var(--color-border); border-radius: var(--radius-lg); }
 .knowledge-drawer .impact-review > header { display: block; padding: 0; margin: 0; border: 0; }
 .impact-review header h3 { margin: 6px 0 8px; font-size: 18px; line-height: 1.5; }
@@ -12,7 +12,7 @@
 .impact-review [data-slot="native-select"] { width: 100%; min-height: 38px; border: 1px solid var(--color-input); border-radius: var(--radius-md); background: var(--color-card); padding: 8px 32px 8px 12px; appearance: none; }
 .impact-review [data-slot="native-select-wrapper"] > svg { position: absolute; right: 12px; top: 12px; width: 16px; height: 16px; pointer-events: none; }
 .impact-review [data-slot="native-select"]:focus-visible { outline: 2px solid var(--color-ring); outline-offset: 2px; }
-.impact-review .chat-prompt textarea { min-height: 105px; font-size: 13px; }
+.impact-review .chat-prompt textarea { min-height: 48px; font-size: 13px; }
 .impact-review .chat-prompt-footer { flex-wrap: wrap; }
 .impact-review .chat-prompt-footer > span { font-size: 10px; }
 .impact-section { display: grid; gap: 10px; min-width: 0; }

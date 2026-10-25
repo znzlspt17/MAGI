@@ -1,20 +1,35 @@
 .admin-react,
 .knowledge-react {
   min-width: 0;
-  color: var(--ink, #263344);
+  color: var(--ink, #262434);
 }
 .admin-react {
   max-width: 1240px;
   margin: 0 auto;
-  padding: 32px;
+  padding: 24px;
 }
+.admin-heading { margin-bottom: 12px; }
+.admin-heading h1 { font-size: 24px; margin: 4px 0 6px; }
+.admin-heading p { margin: 0; font-size: 13px; }
+.admin-heading > a { font-size: 12px; }
+.admin-react > p:empty { display: none; }
+.admin-react .admin-user { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto auto; gap: 12px; }
+.admin-user > strong { grid-column: 1 / -1; }
+.admin-user > label { min-width: 0; }
+.admin-user label input, .admin-user label select { width: 100%; }
+.admin-user .check-label { white-space: nowrap; align-self: end; min-height: var(--control-height); }
+.admin-user .check-label input { width: 16px; }
+.admin-user label { font-size: 12px; }
+.admin-user > button { align-self: end; }
+.admin-content [data-admin-section="overview"] > div { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 8px 0; }
+.admin-content [data-admin-section="overview"] > div > span { overflow-wrap: anywhere; min-width: 0; }
 .admin-heading,
 .section-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 24px;
+  gap: 16px;
+  margin-bottom: 16px;
 }
 .admin-heading h1,
 .section-heading h2 {
@@ -22,30 +37,30 @@
 }
 .admin-heading p,
 .section-heading p {
-  color: #68778a;
+  color: #6d687b;
 }
 .admin-nav {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  border-bottom: 1px solid #dce3eb;
+  border-bottom: 1px solid #e7e4ec;
   padding: 16px 0;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 .admin-nav a {
-  padding: 10px 16px;
+  padding: 7px 12px;
   border-radius: 6px;
-  color: #53647a;
+  color: #6d687b;
   text-decoration: none;
 }
 .admin-nav a[aria-current="page"] {
-  background: #eaf0f7;
-  color: #173d73;
+  background: #eee8fb;
+  color: #5636a8;
   font-weight: 650;
 }
 .admin-account {
-  background: #f6f8fb;
-  border: 1px solid #e0e6ed;
+  background: #f7f6fa;
+  border: 1px solid #e7e4ec;
   border-radius: 8px;
   padding: 12px 16px;
 }
@@ -57,8 +72,8 @@
 }
 .admin-content > section {
   background: #fff;
-  border: 1px solid #e0e6ed;
-  padding: 24px;
+  border: 1px solid #e7e4ec;
+  padding: 16px;
   border-radius: 10px;
   margin: 0 0 20px;
 }
@@ -77,8 +92,8 @@
 }
 .admin-user,
 .cost-row {
-  padding: 20px 0;
-  border-bottom: 1px solid #e4e9f0;
+  padding: 14px 0;
+  border-bottom: 1px solid #e7e4ec;
 }
 .admin-user strong {
   width: 100%;
@@ -91,8 +106,9 @@
   flex-direction: column;
   gap: 7px;
   font-size: 14px;
-  color: #526174;
+  color: #6d687b;
 }
+.admin-user label { font-size: 12px; }
 .admin-react input,
 .admin-react select,
 .knowledge-react input,
@@ -100,25 +116,27 @@
   min-width: 0;
   max-width: 100%;
   background: #fff;
-  color: #263344;
-  border: 1px solid #cbd5e1;
+  color: #262434;
+  border: 1px solid #ded9e7;
   border-radius: 6px;
-  padding: 9px 10px;
+  padding: 7px 10px;
   font: inherit;
 }
 .admin-react button,
 .knowledge-react button {
-  border: 1px solid #cad5e2;
+  border: 1px solid #ded9e7;
   border-radius: 6px;
   background: #fff;
-  color: #263c59;
-  padding: 9px 12px;
+  color: #423950;
+  padding: 6px 10px;
   font: inherit;
+  font-size: 13px;
+  min-height: var(--control-height);
   cursor: pointer;
 }
 .admin-react button:hover,
 .knowledge-react button:hover {
-  background: #edf3fa;
+  background: #eee8fb;
 }
 .admin-react button:disabled,
 .knowledge-react button:disabled {
@@ -144,7 +162,7 @@
   gap: 12px;
   align-items: center;
   padding: 12px 0;
-  border-bottom: 1px solid #e4e9f0;
+  border-bottom: 1px solid #e7e4ec;
 }
 .cleanup-row span {
   overflow-wrap: anywhere;
@@ -159,7 +177,7 @@
 .knowledge-react dialog {
   max-width: min(620px, 90vw);
   padding: 28px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #ded9e7;
   border-radius: 12px;
   box-shadow: 0 24px 100px #16283c33;
 }
@@ -204,9 +222,9 @@
   white-space: nowrap;
 }
 .knowledge-controls [aria-pressed="true"] {
-  background: #e5edf7;
-  border-color: #9bb4d1;
-  color: #173d73;
+  background: #eee8fb;
+  border-color: #c8b5e9;
+  color: #5636a8;
 }
 .knowledge-controls .graph-menu {
   position: relative;
@@ -217,8 +235,8 @@
   font-size: 14px;
 }
 .graph-menu[open] {
-  background: #f4f7fb;
-  border: 1px solid #d3deea;
+  background: #f7f6fa;
+  border: 1px solid #e7e4ec;
   border-radius: 6px;
   padding: 8px;
 }
@@ -228,9 +246,9 @@
 .react-graph-workspace {
   position: relative;
   isolation: isolate;
-  background: radial-gradient(#dce3eb 0.7px, transparent 0.7px);
+  background: radial-gradient(#e7e4ec 0.7px, transparent 0.7px);
   background-size: 18px 18px;
-  border: 1px solid #dce3eb;
+  border: 1px solid #e7e4ec;
   border-radius: 9px;
   min-height: 560px;
   height: 65vh;
@@ -262,7 +280,7 @@
   max-width: calc(100% - 24px);
   overflow: auto;
   background: #fffffff5;
-  border: 1px solid #d4deea;
+  border: 1px solid #e7e4ec;
   border-radius: 8px;
   box-shadow: 0 8px 30px #22395310;
   padding: 16px;
@@ -279,7 +297,7 @@
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  border-bottom: 1px solid #e1e7ef;
+  border-bottom: 1px solid #e7e4ec;
   padding-bottom: 10px;
   margin-bottom: 14px;
 }
@@ -305,7 +323,7 @@
   margin: 8px 0 16px;
   border-left: 2px solid #c9d5e3;
   padding-left: 12px;
-  color: #64748b;
+  color: #6d687b;
   font-size: 14px;
 }
 .graph-footer {
@@ -318,14 +336,14 @@
 }
 .graph-footer p {
   font-size: 14px;
-  color: #697b91;
+  color: #6d687b;
 }
 #graph-legend {
   display: flex;
   gap: 14px;
   flex-wrap: wrap;
   font-size: 14px;
-  color: #586b80;
+  color: #6d687b;
 }
 #graph-legend span {
   display: flex;
@@ -339,7 +357,7 @@
 }
 #knowledge-notice {
   font-size: 14px;
-  color: #66788e;
+  color: #6d687b;
   min-height: 20px;
 }
 #admin-error,
@@ -392,7 +410,7 @@
     align-items: start;
   }
   .admin-nav a {
-    padding: 9px 10px;
+    padding: 7px 10px;
   }
   .project-bar label {
     width: 100%;
@@ -402,6 +420,20 @@
   }
 }
 
+@media (max-width: 900px) {
+  .admin-react .admin-user { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .admin-user > button { justify-self: start; }
+  /* 상세 패널을 닫으면 목록이 다시 드러나도록 겹친 목록만 숨긴다. */
+  .react-graph-workspace:has(.inspector-drawer) .results-drawer { visibility: hidden; }
+}
+@media (max-width: 480px) {
+  .admin-heading { gap: 8px; }
+  .admin-heading h1 { font-size: 22px; }
+  .admin-react .admin-user { grid-template-columns: minmax(0, 1fr); }
+  .admin-nav { gap: 4px; padding: 10px 0; margin-bottom: 12px; }
+  .admin-nav a { font-size: 12px; }
+  .knowledge-controls { gap: 8px; }
+}
 .react-graph-labels {
   position: absolute;
   inset: 0;
@@ -426,10 +458,10 @@
   box-shadow: 0 1px 5px #23364c12;
 }
 .graph-node-label.selected {
-  background: #e5eefb;
-  color: #173d73;
+  background: #eee8fb;
+  color: #5636a8;
   font-weight: 600;
-  outline: 1px solid #adc2dd;
+  outline: 1px solid #c8b5e9;
 }
 .graph-node-label[data-priority="search"] {
   background: #fff5d9;

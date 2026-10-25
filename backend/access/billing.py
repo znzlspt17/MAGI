@@ -25,8 +25,16 @@ class Meter:
             raise AccessError('모델 단가와 검증된 문맥 상한을 설정해야 합니다.', 'configuration') from None
 
     def maximum(self, model):
+        try:
+            return self._maximum(model)
+        except (AccessError, KeyError, ValueError, TypeError, ArithmeticError):
+            return None
+
+    def _maximum(self, model):
         incoming, outgoing, context, output = self.price(model)
         incoming *= Decimal(str(self.prices[model].get('cache_write_multiplier',1)))
+        if not incoming.is_finite() or incoming <= 0:
+            raise ValueError()
         return ((context * incoming + output * outgoing) / Decimal(1000000)).quantize(Decimal('.00000001'), rounding='ROUND_UP')
 
     def reserve(self, model):
@@ -41,9 +49,8 @@ class Meter:
         return ident
 
     def record_usage(self, ident, model, incoming, outgoing, cached, written=None, write_30m=None, write_12h=None):
-        _, _, context, output = self.price(model)
-        incoming = incoming if type(incoming) is int and 0 <= incoming <= context else None
-        outgoing = outgoing if type(outgoing) is int and 0 <= outgoing <= output else None
+        incoming = incoming if type(incoming) is int and 0 <= incoming <= 2**63-1 else None
+        outgoing = outgoing if type(outgoing) is int and 0 <= outgoing <= 2**63-1 else None
         self.access.record_tokens(ident,incoming,outgoing,cached,written,write_30m,write_12h,policy=COST_POLICY, generation=self.generation, execution_id=self.execution_id)
 
     def settle(self, ident, model, result):
@@ -54,12 +61,15 @@ class Meter:
         if result is None or type(result.input_tokens) is not int or type(result.output_tokens) is not int:
             self.access.settle(ident, generation=self.generation, execution_id=self.execution_id)
             return
-        incoming, outgoing, context, output = self.price(model)
-        if not 0 <= result.input_tokens <= context or not 0 <= result.output_tokens <= output:
-            self.access.settle(ident, generation=self.generation, execution_id=self.execution_id)
-            raise AccessError('제공자 사용량 상한을 확인해야 합니다.', 'unavailable')
         usage = {key: getattr(result,key) for key in TOKEN_FIELDS}
-        if usage_problem(usage,self.prices[model]):
+        try:
+            self.price(model)
+            actual = None if usage_problem(usage,self.prices[model]) else calculate_cost(usage,self.prices[model])
+            if actual is not None and (not actual.is_finite() or actual < 0):
+                actual = None
+        except (AccessError, KeyError, ValueError, TypeError, ArithmeticError):
+            actual = None
+        if actual is None:
             self.access.settle(ident, generation=self.generation, execution_id=self.execution_id)
             return
-        self.access.settle(ident, calculate_cost(usage,self.prices[model]), source='calculated', policy=COST_POLICY, generation=self.generation, execution_id=self.execution_id)
+        self.access.settle(ident, actual, source='calculated', policy=COST_POLICY, generation=self.generation, execution_id=self.execution_id)

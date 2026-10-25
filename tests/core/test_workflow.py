@@ -200,7 +200,7 @@ def test_saved_task_result_is_reused_after_projection_failure(store, monkeypatch
         manager.close()
 
 
-def test_uncertain_model_call_requires_revision_and_restart_does_not_call_model(
+def test_uncertain_model_call_requires_consent_and_restart_does_not_call_model(
     store, monkeypatch
 ):
     class Provider(DecisionProvider):
@@ -217,24 +217,79 @@ def test_uncertain_model_call_requires_revision_and_restart_does_not_call_model(
     ident = manager.create("메모를 저장해주세요")["id"]
     manager._run(ident, "generate", None)
     before = len(provider.calls)
-    assert manager.workspace.allowed(ident) == ["message"]
+    assert manager.workspace.allowed(ident) == ["message", "retry"]
+    assert manager.workspace.summary(ident)["retry_requires_replay"]
     with pytest.raises(CleanupConflict):
         manager.retry(ident, manager.get(ident)["execution_id"])
+    # 배포 전 저널은 호출 횟수 없이 빈 payload만 남겼으므로 보수적으로 취급한다.
+    with store.transaction() as conn:
+        conn.execute("UPDATE workflow.workflow_task_results SET payload='{}' WHERE thread_id=%s AND status='pending'",(ident,))
     manager.close()
     restored, _ = manager_for(store, monkeypatch, provider)
     try:
         assert len(provider.calls) == before
         provider.broken = False
-        restored.action(
-            ident,
-            "message",
-            "메모를 저장해주세요",
-            expected_execution_id=restored.get(ident)["execution_id"],
-        )
-        restored._run(ident, "message", "메모를 저장해주세요")
+        restored.retry(ident,restored.get(ident)["execution_id"],replay_pending=True)
+        restored._run(ident,"retry",{"replay_pending":True})
         assert restored.get(ident)["status"] == "PASS_PENDING_USER_APPROVAL"
+        import json
+        with store.transaction(mode="read") as conn:
+            histories = [json.loads(row["payload"]).get("previous_attempts", []) for row in conn.execute("SELECT payload FROM workflow.workflow_task_results").fetchall()]
+        assert any(h and h[-1]["status"] == "pending" for h in histories)
     finally:
         restored.close()
+
+
+@pytest.mark.parametrize("called", [False, True])
+def test_task_failure_tracks_all_calls_and_replay_is_scoped(store, called):
+    import json
+    from backend.access.context import AccessError
+    from backend.infrastructure.workflow_store import workflow_store, provider_entered
+    from backend.pipeline.agent_workflow import task_id
+    from backend.infrastructure.evidence_registry import EvidenceRegistry
+
+    docs = Documents(store,"task-observation")
+    workflow = AgentWorkflow(None,None,docs,EvidenceRegistry())
+    workflow.persist = Mock()
+    state = {"run_id":"task-observation","revision":0,"plan_history":[]}
+    ident, other = task_id(state,"requirement_lock"), task_id(state,"interview")
+    with workflow_store(store,docs.job_id) as (_,journal):
+        workflow.journal = journal
+        def fail(current):
+            if called:
+                # 첫 호출은 완료됐지만 그 뒤 보정 호출의 예약이 차단된 과거 경로.
+                provider_entered()
+            raise AccessError("test quota","quota")
+        with pytest.raises(AccessError):
+            workflow.durable("requirement_lock",state,fail)
+        assert journal.status(ident) == ("pending" if called else "failed")
+        row = journal.conn.execute("SELECT payload FROM workflow_task_results WHERE thread_id=%s AND task_id=%s",(docs.job_id,ident)).fetchone()
+        assert json.loads(row["payload"])["call_count"] == int(called)
+        journal.begin(other)
+        if called:
+            from backend.errors import InvalidStateError
+            with pytest.raises(InvalidStateError):
+                workflow.durable("requirement_lock",state,lambda _: {})
+            workflow.replay_task_id = ident
+        assert workflow.durable("requirement_lock",state,lambda _: {"restored":True})["restored"]
+        assert journal.status(ident) == "completed" and journal.status(other) == "pending"
+        payload = journal.conn.execute("SELECT payload FROM workflow_task_results WHERE thread_id=%s AND task_id=%s",(docs.job_id,ident)).fetchone()["payload"]
+        assert json.loads(payload)["previous_attempts"][-1]["payload"]["call_count"] == int(called)
+
+
+def test_missing_and_unsupported_checkpoint_have_specific_retry_reasons(store,monkeypatch):
+    from backend.infrastructure.workflow_store import retry_state
+    manager, _ = manager_for(store,monkeypatch)
+    try:
+        job = manager.create("메모를 저장해주세요")
+        manager.jobs[job["id"]]["status"] = "error"
+        store.save_job(manager.jobs[job["id"]])
+        summary = manager.workspace.summary(job["id"])
+        assert not summary["can_retry"] and "checkpoint가 없어" in summary["retry_unavailable_reason"]
+        docs = SimpleNamespace(workflow_snapshot=lambda:SimpleNamespace(values={"workflow_schema":999},next=("planner",),tasks=[]))
+        assert "형식이 올바르지" in retry_state(docs)["retry_unavailable_reason"]
+    finally:
+        manager.close()
 
 
 def test_delete_cleans_documents_index_and_checkpoint_once(store, monkeypatch):

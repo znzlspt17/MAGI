@@ -70,6 +70,9 @@ export function Conversation({ job, select, onAction, busy }: { job: Job; select
       </MessageScroller>
     </MessageScrollerProvider>
     <div className="chat-actions" ref={setControlsTarget} />
-    {job.state?.plan && <AgentComposer key={job.id} job={job} onAction={onAction} busy={busy} />}
+    {job.state?.plan && (waiting ? <Collapsible className="chat-secondary-composer">
+      <CollapsibleTrigger className="chat-question-trigger">수정 의견 또는 추가 요청<CaretDownIcon size={14} aria-hidden /></CollapsibleTrigger>
+      <CollapsibleContent><AgentComposer key={job.id} job={job} onAction={onAction} busy={busy} /></CollapsibleContent>
+    </Collapsible> : <AgentComposer key={job.id} job={job} onAction={onAction} busy={busy} />)}
   </section>;
 }

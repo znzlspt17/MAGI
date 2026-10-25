@@ -38,7 +38,8 @@ class AgentWorkflow:
 
     def durable(self, name, state, operation):
         ident = task_id(state,name)
-        saved = self.journal.get(ident, retry_safe=name == "approve")
+        replay = ident == getattr(self, "replay_task_id", None)
+        saved = self.journal.get(ident, retry_safe=name == "approve" or replay)
         if saved is not None:
             self.writer.bind_versions(saved.get("documents", {}))
             from backend.infrastructure.evidence_registry import EvidenceRegistry
@@ -49,20 +50,33 @@ class AgentWorkflow:
                 self.engine.runtime.retrieved = result["knowledge_context"]
         else:
             self.journal.begin(ident)
+            if replay:
+                self.replay_task_id = None
             self.writer.changed = {}
             from backend.infrastructure.provider_call import WORKFLOW_MESSAGES
             recorded = {}
             token = WORKFLOW_MESSAGES.set(recorded)
+            from backend.infrastructure.workflow_store import CURRENT_ATTEMPT
+            attempt = {"journal": self.journal, "task_id": ident, "call_count": 0}
+            attempt_token = CURRENT_ATTEMPT.set(attempt)
             try:
                 result = operation(deepcopy(state))
             except Exception as exc:
                 from backend.errors import RequirementNormalizationError, ReviewValidationError, SpecCompilationError
                 from backend.infrastructure.output_language import OutputLanguageError
-                if isinstance(exc, (RequirementNormalizationError, ReviewValidationError, SpecCompilationError, OutputLanguageError)):
+                category = "validation" if isinstance(exc, (RequirementNormalizationError, ReviewValidationError, SpecCompilationError, OutputLanguageError)) else "not_called" if not attempt["call_count"] else "call_uncertain"
+                self.journal.progress(ident, attempt["call_count"], category=category)
+                import logging
+                logging.getLogger("backend.server").warning(
+                    "workflow task failed stage=%s category=%s provider_entered=%s call_count=%s",
+                    name, category, bool(attempt["call_count"]), attempt["call_count"],
+                )
+                if category in {"validation", "not_called"}:
                     # 반환된 결과의 검증 실패는 통신 완료 여부가 불명확한 오류와 구분한다.
                     self.journal.failed(ident)
                 raise
             finally:
+                CURRENT_ATTEMPT.reset(attempt_token)
                 WORKFLOW_MESSAGES.reset(token)
             result["task_messages"] = {**state.get("task_messages", {}), **recorded}
             self.journal.complete(ident, {"result": result, "evidence": self.evidence.to_dict(),
@@ -232,7 +246,7 @@ class AgentWorkflow:
         graph.add_edge("finalize", END)
         return graph.compile(checkpointer=saver)
 
-    def run(self, state, *, action="generate"):
+    def run(self, state, *, action="generate", replay_pending=False):
         if state.workflow_schema != 1:
             raise InvalidStateError("지원하지 않는 실행 상태 버전입니다. 원본은 보존됩니다.")
         thread_id = self.writer.job_id
@@ -241,6 +255,14 @@ class AgentWorkflow:
             self.journal = journal
             graph = self.build(saver)
             snapshot = graph.get_state(config)
+            self.replay_task_id = None
+            if action == "retry":
+                from backend.infrastructure.workflow_store import retry_state
+                recovery = retry_state(self.writer)
+                if not recovery["can_retry"] or (recovery["retry_requires_replay"] and not replay_pending):
+                    raise InvalidStateError("미완료 단계 재실행에는 명시적인 동의가 필요합니다." if recovery["retry_requires_replay"] else recovery["retry_unavailable_reason"])
+                if recovery["retry_requires_replay"]:
+                    self.replay_task_id = recovery["task_id"]
             if not snapshot.values and action != "generate":
                 raise InvalidStateError("저장된 그래프 상태를 찾을 수 없습니다. 실행 DB와 checkpoint 백업을 확인해주세요.")
             incoming = state.to_workflow_state()

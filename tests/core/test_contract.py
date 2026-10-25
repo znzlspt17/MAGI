@@ -25,6 +25,9 @@ def test_command_registry_and_removed_endpoints():
         {"kind": "approve", "job_id": "a", "execution_id": "e"},
         {"kind": "answer", "input": []},
         {"kind": "generate", "input": "메모", "execution_id": "e"},
+        {"kind": "generate", "input": "메모", "replay_pending": False},
+        {"kind": "retry", "job_id": "a", "execution_id": "e", "replay_pending": "true"},
     ]:
         with pytest.raises(ValidationError):
             JobCommand.model_validate(params)
+    assert JobCommand(kind="retry",job_id="a",execution_id="e",replay_pending=True).parameters()["replay_pending"] is True

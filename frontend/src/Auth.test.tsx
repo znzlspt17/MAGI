@@ -2,11 +2,22 @@ import {StrictMode} from 'react';
 import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {AuthProvider,useAuth} from './Auth';
-import {api,configureAuth} from './api';
-vi.mock('./api',()=>({api:vi.fn(),post:vi.fn().mockResolvedValue({}),configureAuth:vi.fn(),clearRequests:vi.fn()}));
+import {api,configureAuth,ApiError} from './api';
+vi.mock('./api',async importOriginal=>({...(await importOriginal<typeof import('./api')>()),api:vi.fn(),post:vi.fn().mockResolvedValue({}),configureAuth:vi.fn(),clearRequests:vi.fn()}));
 function Account(){const auth=useAuth();return <><p>{auth.user?.id}</p><p>{auth.status.active_count?'busy':'available'}</p><p>{auth.status.checkState}</p><p>{auth.status.own_active_count?'mine':'not-mine'}</p><button onClick={()=>void auth.logout()}>logout</button></>;}
 beforeEach(()=>{vi.mocked(api).mockImplementation(async(path:string)=>path==='/api/auth/info'?{public:true,login_available:true}:path==='/api/me'?{id:'owner',role:'user',csrf:'fake-csrf'}:path==='/api/service/status'?{ready:true,active_count:0,own_active_count:0}:{runs:1,remaining_runs:3});sessionStorage.clear();});
 afterEach(()=>{cleanup();vi.useRealTimers();vi.clearAllMocks();vi.restoreAllMocks();});
+it('미로그인 상태는 오류 안내 없이 로그인 화면을 표시한다',async()=>{
+ vi.mocked(api).mockImplementation(async path=>{if(path==='/api/auth/info')return {public:true,login_available:true};throw new ApiError('로그인이 필요합니다.',401);});
+ render(<AuthProvider><Account/></AuthProvider>);
+ expect(await screen.findByText('Google 계정으로 작업 공간을 시작하세요.')).toBeTruthy();
+ expect(screen.queryByText('로그인이 필요합니다.')).toBeNull();
+});
+it('인증 서버 오류는 로그인 화면에서 계속 안내한다',async()=>{
+ vi.mocked(api).mockImplementation(async path=>{if(path==='/api/auth/info')return {public:true,login_available:true};throw new ApiError('서버 응답 오류',503);});
+ render(<AuthProvider><Account/></AuthProvider>);
+ expect(await screen.findByText('서버 응답 오류')).toBeTruthy();
+});
 it('StrictMode 재마운트에서도 인증과 상태 갱신을 유지하고 타이머를 해제한다',async()=>{
  const intervals=vi.spyOn(window,'setInterval'),cleared=vi.spyOn(window,'clearInterval');
  const view=render(<StrictMode><AuthProvider><Account/></AuthProvider></StrictMode>);
