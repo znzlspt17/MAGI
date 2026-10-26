@@ -184,6 +184,10 @@ class PromptContext:
             if field == "basis_refs" and value in self.semantic_ids:
                 return value
             details = ["Cite only supplied S user sources, K knowledge references or confirmed requirement IDs in the appropriate reference field."]
+            if self.stage == "review_resolution":
+                allowed = self.resolution_references()
+                details = [f"Invalid reference in {field}. Use only values from allowed_resolution_refs.{field}: "
+                           + json.dumps(allowed.get(field, []), ensure_ascii=False)]
             if self.stage == "requirement_lock":
                 error = RequirementNormalizationError("Requirement source references could not be validated.")
                 error.category, error.validation_details = "source_reference", details
@@ -219,6 +223,13 @@ class PromptContext:
             return reference(value, key, workflow, evidence) if key in REFERENCE_FIELDS and value is not None else value
 
         return type(result).model_validate(walk(result.model_dump()))
+
+    def resolution_references(self):
+        """이번 확정 근거에 대응하는 참조만 모델의 수정 후보로 제공한다."""
+        sources = sorted({self.aliases[alias] for alias in self.basis_source_aliases if alias in self.aliases})
+        feedback = self.aliases.get("user_feedback")
+        return {"basis_refs": sorted(self.semantic_ids | set(sources)),
+                "conflicting_source": [feedback] if feedback in sources else []}
 
 
 def prepare_context(writer, payload, stage):
@@ -311,6 +322,8 @@ def prepare_context(writer, payload, stage):
     if stage == "review_resolution":
         context.basis_source_aliases = set(canonical.get("confirmed_basis", {}))
         canonical["confirmed_basis"] = {key: value for key, value in canonical.get("confirmed_basis", {}).items() if not key.startswith(("user_", "project_decision:"))}
+        # 잠금 계약은 특정 접두사를 강제하지 않으므로 실제 확정 ID를 사용한다.
+        context.semantic_ids.update(canonical["confirmed_basis"])
         canonical["issues"] = [{key: value for key, value in issue.items() if key in ISSUE_FIELDS} for issue in canonical.get("issues", [])]
         canonical["previous_resolutions"] = [{"issues": [{key: issue[key] for key in ("issue_id", "requirement_id", "checklist_id", "decision_key", "required_change", "resolution_reason", "basis_refs") if key in issue}
                                                                for issue in entry.get("issues", [])], "action": entry.get("action")}
@@ -327,6 +340,8 @@ def prepare_context(writer, payload, stage):
             for item in value:
                 semantic(item)
     semantic(canonical)
+    if stage == "review_resolution":
+        canonical["allowed_resolution_refs"] = context.resolution_references()
     canonical = context.project(canonical)
     if "user_feedback" in context.aliases:
         canonical["current_feedback"] = context.aliases["user_feedback"]
