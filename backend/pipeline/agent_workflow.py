@@ -12,7 +12,10 @@ from backend.errors import InvalidStateError
 from backend.infrastructure.workflow_store import workflow_store
 from backend.models import State, WorkflowState
 from backend.pipeline.builder import _stage
-from backend.pipeline.planner import allowed_tasks, plan_next
+from backend.pipeline.planner import (
+    DECISION_STEP_RESERVE, EXECUTION_STEP_LIMIT, allowed_tasks,
+    execution_constraints, plan_next, task_signature,
+)
 
 
 def digest(value):
@@ -97,6 +100,7 @@ class AgentWorkflow:
             done = [name for name in done if name in preserved]
         result = {"workflow_schema": 1, "revision": revision, "completed_tasks": done,
                   "segment_steps": 0, "allowed_actions": [], "pending_input": {},
+                  "execution_constraints": {},
                   "execution_segment": state.get("execution_segment", 0) + 1,
                   "wait_reason": "", "stop_reason": ""}
         if action == "retry":
@@ -110,13 +114,18 @@ class AgentWorkflow:
         return result
 
     def planner(self, state):
-        if state.get("segment_steps", 0) >= 20:
-            return self.blocked(state, "자동 실행 한도에 도달했습니다.", "execution_limit")
+        if state.get("blocking_questions"):
+            return {"plan": {**state.get("plan", {}), "action": "ask_user"}, "allowed_actions": []}
+        if state.get("segment_steps", 0) >= EXECUTION_STEP_LIMIT + DECISION_STEP_RESERVE:
+            return {"plan": {**state.get("plan", {}), "action": "blocked", "stop_reason": "execution_limit",
+                             "reason": "자동 실행 한도에 도달했습니다."}, "allowed_actions": []}
+        state = {**state, "execution_constraints": execution_constraints(state, self.engine.config)}
         from backend.pipeline.builder import _progress
         _progress(self.progress, "planner", "started")
         plan = self.durable("planner", state, lambda current: {"plan": plan_next(current, self.nodes)})["plan"]
         history = [*state.get("plan_history", []), {**plan, "revision": state.get("revision", 0)}]
         result = {"plan": plan, "plan_history": history, "allowed_actions": [],
+                  "execution_constraints": state["execution_constraints"],
                   "segment_steps": state.get("segment_steps", 0) + 1}
         self.persist("planner", {**state, **result})
         _progress(self.progress, "planner", "completed")
@@ -125,37 +134,15 @@ class AgentWorkflow:
     def blocked(self, state, reason=None, stop_reason=None):
         if state.get("blocking_questions"):
             return self.ask(state)
-        stop_reason = stop_reason or state.get("plan", {}).get("stop_reason") or "repair_limit"
+        stop_reason = stop_reason or state.get("plan", {}).get("stop_reason") or "model_blocked"
         reason = reason or state.get("plan", {}).get("reason") or "추가 확인이 필요합니다."
         label = {"repair_limit": "자동 보완 한계", "no_progress": "진전 없는 반복",
                  "execution_limit": "자동 실행 한도", "invalid_plan": "유효한 계획 생성 실패"}.get(stop_reason, "진행 중단")
         if not reason.startswith(label + " · "):
             reason = label + " · " + reason
-        key = digest([state.get("revision"), stop_reason, state.get("original_user_request"),
-                      state.get("revision_feedback"), state.get("confirmed_user_sources"),
-                      state.get("requirement_lock_sheet"), self._candidate_hash()])
-        keys = list(state.get("final_resolution_keys", []))
-        if key not in keys:
-            # 실패 후 재개에서도 같은 입력의 마지막 판단을 중복 호출하지 않는다.
-            keys.append(key)
-            state = {**state, "final_resolution_keys": keys, "stop_reason": stop_reason}
-            self.persist("stop_assessment", state)
-            try:
-                if state.get("requirement_lock_sheet") and state.get("structured_issues"):
-                    operation = lambda current: self.nodes.review_resolution(current, final=True)
-                else:
-                    operation = self.nodes.interview
-                assessment = self.durable("stop_assessment", state, operation)
-                state = {**state, **assessment}
-            except Exception:
-                import logging
-                logging.getLogger("backend.server").warning("마지막 해결 판단을 완료하지 못했습니다.")
-                reason += " 마지막 해결 판단을 완료하지 못했습니다."
-            if state.get("blocking_questions"):
-                return {**state, **self.ask(state)}
         reason += " 남은 문제와 보완 내역을 확인하고 수정 의견을 보내거나 저장된 결과로 추가 실행해주세요. 같은 문제가 남을 수 있습니다."
         result = {"status": "CRITICAL_BLOCKED", "wait_reason": reason,
-                  "stop_reason": stop_reason, "final_resolution_keys": keys,
+                  "stop_reason": stop_reason,
                   "allowed_actions": ["message", "revise", "retry"],
                   "plan": {**state.get("plan", {}), "action": "blocked", "reason": reason}}
         if state.get("requirement_lock_sheet") and state.get("structured_issues"):
@@ -166,17 +153,16 @@ class AgentWorkflow:
 
     def execute(self, state):
         action = state["plan"]["action"]
+        constraints = execution_constraints(state, self.engine.config)
+        if action in constraints["repeated_actions"]:
+            # 오래된 계획 재개에서도 같은 작업을 반복하지 않고 모델에 재계획을 맡긴다.
+            result = {"execution_constraints": constraints, "allowed_actions": []}
+            self.persist("replan", {**state, **result})
+            return result
         if action not in allowed_tasks(state, self.engine.config):
             raise InvalidStateError("현재 상태에서 실행할 수 없는 계획입니다.")
-        # 동일한 입력과 동일한 결과가 반복되면 추가 호출 전에 멈춘다.
-        signature = digest([action, state.get("revision"), state.get("requirement_lock_sheet"),
-                            state.get("structured_issues"), self._candidate_hash(),
-                            state.get("critic_pass_count", 0), state.get("diagnosed_keys", []),
-                            state.get("confirmed_user_sources"), state.get("knowledge_context")])
+        signature = task_signature(state, action)
         recent = state.get("task_results", [])
-        if sum(item.get("signature") == signature and item.get("segment") == state.get("execution_segment")
-               for item in recent[-8:]) >= 2:
-            return self.blocked(state, "동일한 작업이 진전 없이 반복되었습니다.", "no_progress")
         if action == "knowledge_search":
             def operation(current):
                 runtime = self.engine.runtime
@@ -225,21 +211,41 @@ class AgentWorkflow:
         if action == "compose_candidate":
             result.update(candidate_hash=self._candidate_hash(), wait_reason="검토를 마친 명세를 승인하거나 수정해주세요.",
                           allowed_actions=["approve", "message", "revise"])
-        if action == "review_resolution" and not result.get("blocking_questions") and (
-            result.get("resolution_stop") or state.get("critic_pass_count", 0) >= self.engine.config.max_critic_passes
-        ) and any(item.get("status") != "resolved" and (
-            item.get("severity") in {"blocking", "major"} or item.get("decision_answer_id")
-        ) for item in result.get("structured_issues", [])):
-            return self.blocked({**state, **result}, stop_reason="repair_limit")
         self.persist("requirement_lock" if action == "requirement_lock_stage" else action, {**state, **result})
         return result
 
     def ask(self, state):
+        if not state.get("blocking_questions"):
+            constraints = execution_constraints(state, self.engine.config)
+            if "ask_user" in constraints["repeated_actions"]:
+                result = {"execution_constraints": constraints, "allowed_actions": []}
+                self.persist("replan", {**state, **result})
+                return result
+            review = bool(state.get("requirement_lock_sheet") and any(
+                item.get("status") != "resolved" and (
+                    item.get("severity") in {"blocking", "major"}
+                    or item.get("resolution_kind") == "user_decision" or item.get("decision_answer_id")
+                ) for item in state.get("structured_issues", [])
+            ))
+            stage = "review_resolution" if review else "interview"
+            operation = (lambda current: self.nodes.review_resolution(current, final=True)) if review else self.nodes.interview
+            # 질문 생성은 별도 저널에 기록해 실패 후 재개 시 호출 중복을 막는다.
+            assessment = self.durable("ask", state, _stage(stage, operation, self.progress))
+            result = {**assessment, "allowed_actions": [], "task_results": [*state.get("task_results", []), {
+                "action": "ask_user", "revision": state.get("revision", 0),
+                "segment": state.get("execution_segment"), "signature": task_signature(state, "ask_user"),
+                "result_hash": digest(assessment), "reason": state.get("plan", {}).get("reason", ""),
+                "status": "completed" if assessment.get("blocking_questions") else "no_questions",
+            }]}
+            state = {**state, **result}
+            if not state.get("blocking_questions"):
+                self.persist("question_assessment", state)
+                return result
         result = {**self.nodes.await_user(state), "allowed_actions": ["answer", "message", "revise"],
                   "plan": {**state.get("plan", {}), "action": "ask_user"}, "stop_reason": "",
                   "wait_reason": "미확정 요구사항에 대한 답변이나 수정 의견이 필요합니다."}
         self.persist("await_user", {**state, **result})
-        return result
+        return {**state, **result}
 
     def wait(self, state) -> Command[Literal["prepare", "finalize"]]:
         # 이 노드는 재개 시 처음부터 실행되므로 영속 쓰기와 외부 호출을 하지 않는다.
@@ -279,7 +285,7 @@ class AgentWorkflow:
             "ask_user": "ask", "blocked": "blocked",
         }.get(state["plan"]["action"], "execute"))
         graph.add_conditional_edges("execute", lambda state: "wait" if state.get("allowed_actions") else "planner")
-        graph.add_edge("ask", "wait")
+        graph.add_conditional_edges("ask", lambda state: "wait" if state.get("allowed_actions") else "planner")
         graph.add_edge("blocked", "wait")
         graph.add_edge("finalize", END)
         return graph.compile(checkpointer=saver)

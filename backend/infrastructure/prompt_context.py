@@ -17,12 +17,14 @@ SHEET_FIELDS = {"request_type", "request_summary", "mandatory_requirements", "re
 ISSUE_FIELDS = {"issue_id", "section", "severity", "blocking", "checklist_id", "problem", "required_change",
                 "requirement_id", "evidence", "status", "decision_key"}
 CANONICAL_FIELDS = {
-    "interview": {"file_count", "files", "request_types", "saved_answers", "validated_requirements"},
+    "interview": {"file_count", "files", "request_types", "saved_answers", "validated_requirements",
+                  "planner_intent", "execution_constraints", "previous_task_outcomes"},
     "requirement_lock": {"project_manifest", "request_type", "assumptions", "saved_answers",
                          "unresolved_blocking_questions", "previous_lock_sheet"},
     "spec_compile": {"file_count", "files", "requirement_lock_sheet", "previous_trace"},
     "checklist_critic": {"requirement_lock_sheet", "previous_issues"},
-    "review_resolution": {"issues", "confirmed_basis", "previous_resolutions", "review_questions", "diagnose_keys"},
+    "review_resolution": {"issues", "confirmed_basis", "previous_resolutions", "review_questions", "diagnose_keys",
+                          "final_assessment", "planner_intent", "execution_constraints"},
 }
 REFERENCE_RULES = (
     "Reference supplied source records using S references and retrieved knowledge using K references. S type project_decision is structured user confirmation, not a user-authored quote; preserve its original_actor and conditions. "

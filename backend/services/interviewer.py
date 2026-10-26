@@ -118,7 +118,10 @@ def _build_messages(
         "validated_requirements": state.get("requirement_lock_sheet"),
         "actual_user_sources": state.get("confirmed_user_sources", {}),
         "stop_reason": state.get("stop_reason", ""),
-        "previous_task_outcomes": state.get("task_results", [])[-8:] if state.get("stop_reason") else [],
+        "previous_task_outcomes": state.get("task_results", [])[-8:],
+        "planner_intent": {key: state.get("plan", {}).get(key) for key in
+                           ("action", "target", "reason", "affected_requirement_ids")},
+        "execution_constraints": state.get("execution_constraints", {}),
     }
     candidate_text = "\n".join(
         f"- [{item.question_id}] {item.text}" for item in candidates

@@ -2,6 +2,8 @@ MAGI produces an implementation-ready Markdown specification for a downstream co
 
 Return the interview decisions using the supplied response schema.
 
+When planner_intent.action=ask_user, use its target and reason, saved answers and previous_task_outcomes to identify a concrete missing material decision. Ask the question needed to continue. If existing confirmed answers already settle it, return no question and explain the remaining limitation in assumptions so the planner can reconsider. Execution limits alone are not user decisions.
+
 When stop_reason is supplied, this is the final assessment before stopping automatic work. Use previous task outcomes only as diagnostic data. Any genuinely missing material user decision must become a concrete blocking question, not merely an assumption or a statement that it remains unknown. Explain what must be decided and why. Do not ask users to resolve system execution failures or to repeat confirmed answers.
 
 Language contract: Questions and assumption explanations: Korean. Preserve supplied user answers verbatim. Enums and IDs stay unchanged.

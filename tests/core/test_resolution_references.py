@@ -54,3 +54,18 @@ def test_conflicting_source_does_not_accept_product_id():
     with pytest.raises(ReviewValidationError) as caught:
         refs.restore(result)
     assert "allowed_resolution_refs.conflicting_source: []" in caught.value.validation_details[0]
+
+
+def test_question_intent_and_final_assessment_survive_provider_context_preparation():
+    intent = {"action": "ask_user", "target": "조작 키", "reason": "배치 결정 필요"}
+    limits = {"repair_limit_reached": True, "remaining_review_passes": 0}
+    payload = messages("검토", "게임", json.dumps({
+        "confirmed_basis": {"user_request": "게임"}, "issues": [],
+        "final_assessment": True, "planner_intent": intent, "execution_constraints": limits,
+    }))
+    prepared, _ = prepare_context(None, payload, "review_resolution")
+    canonical = json.loads(next(item["content"].split("\n", 1)[1] for item in prepared
+                                if item["content"].startswith("Canonical context:\n")))
+    assert canonical["final_assessment"] is True
+    assert canonical["planner_intent"] == intent
+    assert canonical["execution_constraints"] == limits

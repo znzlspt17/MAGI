@@ -377,6 +377,7 @@ class State:
     completed_tasks: list[str] = field(default_factory=list)
     segment_steps: int = 0
     execution_segment: int = 0
+    execution_constraints: dict[str, Any] = field(default_factory=dict)
     wait_reason: str = ""
     stop_reason: str = ""
     final_resolution_keys: list[str] = field(default_factory=list)

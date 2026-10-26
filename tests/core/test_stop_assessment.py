@@ -34,15 +34,12 @@ def test_completed_interview_requires_new_user_input():
 
 
 @pytest.mark.parametrize("reason", ["execution_limit", "no_progress", "invalid_plan", "repair_limit"])
-def test_stop_asks_material_product_question(reason):
+def test_explicit_stop_does_not_hide_another_model_classification(reason):
     flow = workflow()
-    question = "[CONTROLS] 이동·사격 키와 게임 내 키 변경 지원 여부를 정해주세요."
-    flow.nodes.interview.return_value = {"blocking_questions": [question]}
     result = flow.blocked({"revision": 0}, stop_reason=reason)
-    assert result["status"] == "NEEDS_USER_INPUT"
-    assert result["blocking_questions"] == [question]
-    assert result["plan"]["action"] == "ask_user"
-    flow.nodes.critical_report.assert_not_called()
+    assert result["status"] == "CRITICAL_BLOCKED"
+    flow.nodes.interview.assert_not_called()
+    flow.nodes.review_resolution.assert_not_called()
 
 
 def test_pending_question_skips_final_call():
@@ -57,18 +54,16 @@ def test_final_review_reclassifies_exhausted_defect_and_preserves_result():
         "blocking_questions": ["[Q] 키 변경을 지원할까요?"],
         "structured_issues": [{"resolution_kind": "user_decision"}],
     }
-    state = {"requirement_lock_sheet": {"validated": True}, "structured_issues": [{"resolution_kind": "auto_fix"}]}
-    result = flow.blocked(state)
+    state = {"requirement_lock_sheet": {"validated": True}, "structured_issues": [{"resolution_kind": "auto_fix", "severity": "major"}],
+             "final_resolution_keys": ["legacy-assessment"]}
+    result = flow.ask({**state, "plan": {"action": "ask_user", "reason": "키 정책을 확인해야 합니다."}})
     assert flow.nodes.review_resolution.call_args.kwargs == {"final": True}
     assert result["structured_issues"][0]["resolution_kind"] == "user_decision"
     assert result["status"] == "NEEDS_USER_INPUT"
 
 
-@pytest.mark.parametrize("fails", [True, False])
-def test_system_limit_keeps_cause_and_does_not_repeat_assessment(fails):
+def test_system_limit_keeps_cause_and_does_not_call_assessment():
     flow = workflow()
-    if fails:
-        flow.nodes.interview.side_effect = ValueError("invalid assessment")
     result = flow.blocked({"revision": 0}, "동일한 작업이 반복되었습니다.", "no_progress")
     assert result["status"] == "CRITICAL_BLOCKED"
     assert result["stop_reason"] == "no_progress"
@@ -76,7 +71,7 @@ def test_system_limit_keeps_cause_and_does_not_repeat_assessment(fails):
     assert "같은 문제가 남을 수" in result["wait_reason"]
     again = flow.blocked(result, stop_reason="no_progress")
     assert again["status"] == "CRITICAL_BLOCKED"
-    assert flow.nodes.interview.call_count == 1
+    flow.nodes.interview.assert_not_called()
 
 
 def test_model_plan_wording_cannot_bypass_repeat_detection():
@@ -88,11 +83,14 @@ def test_model_plan_wording_cannot_bypass_repeat_detection():
     flow.persist = lambda name, current: captured.append(current)
     first = flow.execute(state)
     signature = first["task_results"][-1]["signature"]
-    state.update(task_results=[{"signature": signature, "segment": 1}] * 2,
+    state.update(task_results=[{"action": "knowledge_search", "signature": signature, "segment": 1}] * 2,
                  plan={"action": "knowledge_search", "reason": "다른 표현", "target": "second", "input_refs": ["new"]})
     flow.blocked = Mock(return_value={"status": "CRITICAL_BLOCKED"})
-    flow.execute(state)
-    assert flow.blocked.call_args.args[2] == "no_progress"
+    result = flow.execute(state)
+    flow.blocked.assert_not_called()
+    assert "knowledge_search" in result["execution_constraints"]["repeated_actions"]
+    assert "knowledge_search" not in allowed_tasks({**state, **result}, flow.engine.config)
+    assert "ask_user" in allowed_tasks({**state, **result}, flow.engine.config)
 
 
 @pytest.mark.parametrize("answered", [False, True])
@@ -104,6 +102,8 @@ def test_exhausted_review_is_reclassified_but_confirmed_answer_is_not_asked(monk
 
     issue = IssuePacket("I1", "controls", "major", True, "controls", "키 변경 여부가 미정입니다.",
                         "키 변경 정책을 반영하세요.", decision_key="key_binding")
+    auto_issue = IssuePacket("I2", "tests", "major", True, "controls_tests", "검증 시나리오가 누락됐습니다.",
+                             "확정 동작의 검증 시나리오를 보완하세요.", decision_key="controls_tests")
     sheet = Mock()
     sheet.require_validated.return_value = sheet
     sheet.to_dict.return_value = {}
@@ -111,7 +111,7 @@ def test_exhausted_review_is_reclassified_but_confirmed_answer_is_not_asked(monk
     monkeypatch.setattr(tasks, "validate_locked_sources", lambda value, _: value)
     packet = ReviewResolutionResponse.model_validate(resolution_value([{
         **issue.to_dict(), "resolution_kind": "user_decision", "decision_question": "키 변경을 지원할까요?",
-    }]))
+    }, auto_issue.to_dict()]))
     complete = Mock(return_value=packet)
     monkeypatch.setattr(tasks, "complete_with_usage", complete)
     node = object.__new__(tasks.WorkflowTasks)
@@ -121,7 +121,7 @@ def test_exhausted_review_is_reclassified_but_confirmed_answer_is_not_asked(monk
     node.provider = None
     state = {
         "user_request": "키보드 게임", "requirement_lock_sheet": {}, "critic_pass_count": 3,
-        "structured_issues": [issue.to_dict()], "diagnosed_keys": [defect_identity(issue)],
+        "structured_issues": [issue.to_dict(), auto_issue.to_dict()], "diagnosed_keys": [defect_identity(issue)],
         "resolution_history": [{"issues": [issue.to_dict()]}],
     }
     if answered:
@@ -131,5 +131,7 @@ def test_exhausted_review_is_reclassified_but_confirmed_answer_is_not_asked(monk
     assert complete.call_count == 1
     assert bool(result["blocking_questions"]) is not answered
     assert result["structured_issues"][0]["resolution_kind"] == ("auto_fix" if answered else "user_decision")
+    assert result["structured_issues"][1]["resolution_kind"] == "auto_fix"
+    assert result["structured_issues"][1]["decision_question"] is None
     if answered:
         assert result["structured_issues"][0]["decision_answer_id"] == "Q1"

@@ -37,6 +37,8 @@ def retry_state(documents):
         State.from_workflow_state(snapshot.values)
         if snapshot.values.get("workflow_schema") != 1:
             raise ValueError()
+        if any(task.interrupts for task in snapshot.tasks) and snapshot.values.get("status") == "CRITICAL_BLOCKED" and "retry" in snapshot.values.get("allowed_actions", []):
+            return {**result, "can_retry": True}
         if not snapshot.next or any(task.interrupts for task in snapshot.tasks):
             return {**result, "retry_unavailable_reason": "다시 실행할 미완료 단계가 없습니다. 대화에서 다음 요청을 입력하세요."}
         name = pending_task(snapshot)

@@ -404,12 +404,15 @@ class WorkflowTasks:
             canonical = {
                 "issues": [issue.to_dict() for issue in pending_resolution],
                 "confirmed_basis": basis,
-                "previous_resolutions": history[-1:]
-                if state.get("critic_pass_count", 0) > 1
+                "previous_resolutions": history[-3:]
+                if final or state.get("critic_pass_count", 0) > 1
                 else [],
                 "review_questions": state.get("review_questions", []),
                 "diagnose_keys": sorted(repeated if final else to_diagnose),
                 "final_assessment": final,
+                "planner_intent": {key: state.get("plan", {}).get(key) for key in
+                                   ("action", "target", "reason", "affected_requirement_ids")},
+                "execution_constraints": state.get("execution_constraints", {}),
                 "draft_hash": text_hash(draft),
             }
             payload = messages(
