@@ -124,9 +124,14 @@ class JobManager:
         if (
             expected_execution_id != job.get("execution_id")
             or action not in self.workspace.allowed(ident)
-            or self._activities.get(ident)
         ):
             raise CleanupConflict("작업 상태가 바뀌었습니다. 최신 대화를 확인하세요.")
+        if self._activities.get(ident):
+            # 번역은 작업 상태를 바꾸지 않지만 완료 전 새 실행과 겹치지 않게 한다.
+            if any(job_id == ident and guard.locked()
+                   for (job_id, _), guard in self.workspace._document_locks.items()):
+                raise CleanupConflict("문서 번역이 진행 중입니다. 번역이 끝난 뒤 다시 보내주세요.")
+            raise CleanupConflict("이전 작업의 처리가 마무리되고 있습니다. 잠시 후 다시 시도해주세요.")
         previous = copy.deepcopy(job)
         if action == "retry":
             from backend.infrastructure.workflow_store import retry_state

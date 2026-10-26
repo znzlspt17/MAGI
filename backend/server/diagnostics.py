@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 from protocol.diagnostics import traceback_frames as _traceback_frames
+from backend.server.cleanup import CleanupConflict
 
 from backend.errors import (
     ArtifactError,
@@ -18,6 +19,9 @@ from backend.errors import (
 
 
 _KNOWN_REASONS = {
+    "작업 상태가 바뀌었습니다. 최신 대화를 확인하세요.": "작업 상태가 바뀌었습니다. 최신 대화를 확인하세요.",
+    "문서 번역이 진행 중입니다. 번역이 끝난 뒤 다시 보내주세요.": "문서 번역이 진행 중입니다. 번역이 끝난 뒤 다시 보내주세요.",
+    "이전 작업의 처리가 마무리되고 있습니다. 잠시 후 다시 시도해주세요.": "이전 작업의 처리가 마무리되고 있습니다. 잠시 후 다시 시도해주세요.",
     "공개 서비스 DB 계정은 superuser/BYPASSRLS 권한을 가질 수 없습니다.": "접속한 PostgreSQL 계정에 superuser 또는 BYPASSRLS 권한이 있습니다. DB_USER를 일반 서비스 계정으로 설정하세요. localhost 로그인도 사용자 격리를 위해 같은 조건을 적용합니다.",
     "다른 공개 백엔드 프로세스가 실행 중입니다.": "다른 공개 백엔드 프로세스가 실행 중입니다. 기존 프로세스를 확인하세요.",
     "공개 모드에는 PostgreSQL 설정이 필요합니다.": "공개 모드에는 PostgreSQL 설정이 필요합니다.",
@@ -152,7 +156,7 @@ def _known_reason(chain: list[BaseException]) -> str | None:
     for item in chain:
         if isinstance(item, MissingCredentialError):
             return "선택한 제공자 설정을 확인하거나 데모 모드로 실행하세요."
-        if not isinstance(item, (InvalidStateError, ArtifactError, Error)):
+        if not isinstance(item, (InvalidStateError, ArtifactError, Error, CleanupConflict)):
             continue
         args = item.args
         if len(args) != 1 or not isinstance(args[0], str):
