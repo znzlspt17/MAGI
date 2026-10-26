@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import logging
 from backend.infrastructure.stage_retry import CURRENT_RETRY, MAX_RETRIES
 
 
@@ -33,6 +34,18 @@ def _stage(name: str, node, callback):
                         OutputLanguageError,
                     ),
                 )
+                if retryable:
+                    from backend.server.diagnostics import diagnose_exception
+
+                    diagnostic = diagnose_exception(exc)
+                    # 원문 대신 허용된 검증 코드만 남겨 반복 실패 원인을 구분한다.
+                    logging.getLogger("backend.server").warning(
+                        "stage validation failed stage=%s attempt=%s max_attempts=%s "
+                        "error_code=%s error_stage=%s failed_checks=%s exception_type=%s",
+                        name, attempt + 1, MAX_RETRIES + 1,
+                        diagnostic["error_code"], diagnostic["error_stage"],
+                        diagnostic["failed_checks"], type(exc).__name__,
+                    )
                 if not retryable or attempt == MAX_RETRIES:
                     _progress(
                         callback,
