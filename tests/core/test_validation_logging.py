@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from backend.errors import ReviewValidationError
+from backend.errors import ReviewValidationError, SpecCompilationError
 from backend.infrastructure.stage_retry import CURRENT_RETRY
 from backend.pipeline.builder import _stage
 
@@ -49,3 +49,69 @@ def test_review_log_filters_untrusted_check_codes(caplog):
 
     assert "resolution_basis" in caplog.text
     assert "UNTRUSTED_RESPONSE_TEXT" not in caplog.text
+
+
+def test_compiler_retries_log_each_check_without_response_text(caplog):
+    checks = ["source_reference", "implementation_plan", "spec_blocks", "quote_anchor"]
+
+    def fail(state):
+        raise SpecCompilationError(
+            ["MODEL_RESPONSE_MUST_NOT_BE_LOGGED"],
+            check=checks[CURRENT_RETRY.get()["attempt"]],
+        )
+
+    with caplog.at_level(logging.WARNING, logger="backend.server"):
+        with pytest.raises(SpecCompilationError):
+            _stage("spec_compile", fail, None)({})
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert len(messages) == 4
+    for message, check in zip(messages, checks):
+        assert f"failed_checks=['{check}']" in message
+        assert "error_code=SPEC_COMPILATION_INVALID" in message
+        assert "error_stage=spec_compile" in message
+    assert "MODEL_RESPONSE_MUST_NOT_BE_LOGGED" not in caplog.text
+    assert CURRENT_RETRY.get() is None
+
+
+def test_compiler_diagnostic_filters_untrusted_codes_and_handles_wrapped_errors():
+    from backend.server.diagnostics import diagnose_exception
+
+    error = SpecCompilationError(["PRIVATE_RESPONSE"], check="PRIVATE_CHECK")
+    assert error.failed_checks == ["spec_response"]
+    error.failed_checks = ["spec_blocks", "PRIVATE_CHECK", "spec_blocks"]
+    wrapper = RuntimeError("PRIVATE_WRAPPER")
+    wrapper.__cause__ = error
+    diagnostic = diagnose_exception(wrapper)
+    assert diagnostic["failed_checks"] == ["spec_blocks"]
+    assert diagnostic["error_code"] == "SPEC_COMPILATION_INVALID"
+    assert "PRIVATE" not in str(diagnostic)
+
+
+def test_quote_anchor_failure_has_specific_check():
+    from backend.services.spec_compiler import _anchor_links
+    from backend.server.diagnostics import diagnose_exception
+
+    with pytest.raises(SpecCompilationError) as raised:
+        _anchor_links([{"section": "architecture", "quote": "Missing quote"}],
+                      {"architecture": "Actual content"}, "assembled")
+    assert diagnose_exception(raised.value)["failed_checks"] == ["quote_anchor"]
+    assert raised.value.validation_phase == "assembled"
+
+
+@pytest.mark.parametrize(("name", "check"), [
+    ("validate_links", "spec_links"), ("validate_decisions", "decision_trace"),
+])
+def test_trace_failure_preserves_check_without_logging_details(name, check):
+    from backend.services.spec_compiler import _validate_trace
+    from backend.server.diagnostics import diagnose_exception
+
+    def invalid():
+        raise ValueError("PRIVATE_TRACE")
+
+    invalid.__name__ = name
+    with pytest.raises(SpecCompilationError) as raised:
+        _validate_trace(invalid)
+    diagnostic = diagnose_exception(raised.value)
+    assert diagnostic["failed_checks"] == [check]
+    assert "PRIVATE_TRACE" not in str(diagnostic)

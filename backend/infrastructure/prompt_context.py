@@ -195,7 +195,7 @@ class PromptContext:
                 error.category, error.validation_details = "source_reference", details
                 raise error
             if self.stage == "spec_compile":
-                raise SpecCompilationError(details)
+                raise SpecCompilationError(details, check="source_reference")
             raise ReviewValidationError(details, stage=self.stage, check="source_reference")
 
         def walk(value, key="", workflow=False, evidence=False, decision=False):

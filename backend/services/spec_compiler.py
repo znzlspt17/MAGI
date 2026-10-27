@@ -98,6 +98,7 @@ class SpecCompiler:
                 writer.write_json("analysis/spec_compile_validation.json", {
                     "stage": "spec_compile", "attempt": (context or {"attempt": attempt})["attempt"] + 1,
                     "validation_details": exc.validation_details,
+                    "failed_checks": getattr(exc, "failed_checks", []),
                     "phase": getattr(exc, "validation_phase", "trace"),
                     "location": getattr(exc, "validation_location", None),
                 }, overwrite=True)
@@ -158,24 +159,24 @@ class SpecCompiler:
             decisions = runtime.bind_decisions(decisions, previous_trace.get("decisions", []))
         links = [item.model_dump() for item in raw_output.spec_links]
         if runtime is not None and not links:
-            raise SpecCompilationError(["spec_links: include implementation links covering all mandatory requirement IDs."])
+            raise SpecCompilationError(["spec_links: include implementation links covering all mandatory requirement IDs."], check="spec_links")
         if runtime is not None and not {item.id for item in sheet.mandatory_requirements} <= {
             req for link in links for req in link["requirement_ids"]
         }:
-            raise SpecCompilationError(["spec_links.requirement_ids: cover every mandatory requirement ID in the supplied lock sheet."])
+            raise SpecCompilationError(["spec_links.requirement_ids: cover every mandatory requirement ID in the supplied lock sheet."], check="spec_links")
         retrieved = runtime.reusable_ids() if runtime else []
         _validate_trace(validate_decisions, decisions, sheet.to_dict(), retrieved, revision_feedback, user_request,
                            runtime.confirmed_sources({"user_request": user_request, "revision_feedback": revision_feedback}) if runtime else None,
                            previous_trace.get("decisions", []), writer.state.get("reused_decisions", []))
         if {item["id"] for item in decisions} & {item["id"] for item in sheet.decisions}:
-            raise SpecCompilationError(["decisions: reference existing lock decision IDs in spec_links without redeclaring them."])
+            raise SpecCompilationError(["decisions: reference existing lock decision IDs in spec_links without redeclaring them."], check="decision_trace")
         links = _anchor_links(links, raw_output.model_dump(), "response")
         _validate_trace(validate_links, links, sheet.decisions + decisions, sheet.to_dict(), raw_output.model_dump())
         from backend.services.workflow_constraints import validate_product_boundary
         try:
             validate_product_boundary(sheet, [raw_output.markdown(), json.dumps(decisions, ensure_ascii=False)])
         except ValueError:
-            raise SpecCompilationError(["Product specification and decision traces must exclude workflow instructions and WF-* references."]) from None
+            raise SpecCompilationError(["Product specification and decision traces must exclude workflow instructions and WF-* references."], check="product_boundary") from None
         candidate = raw_output.markdown()
         if self.has_required_headings(candidate):
             assembled = _assemble_locked_sections(candidate, sheet)
@@ -191,7 +192,7 @@ class SpecCompiler:
                 writer.write_json(BLOCKS, {"source_hash": digest(normalize(assembled)),
                     "blocks": draft_blocks}, overwrite=True)
                 return assembled
-        raise SpecCompilationError(["Return all required English section bodies in the supplied schema."])
+        raise SpecCompilationError(["Return all required English section bodies in the supplied schema."], check="spec_structure")
 
     # ── prompt ───────────────────────────────────────────────────────────────
 
@@ -369,7 +370,7 @@ def _validate_trace(validator, *args):
     except ValueError as exc:
         raise SpecCompilationError(getattr(exc, "validation_details", [
             "decisions: use valid unique IDs, known requirement/source references, and verified user provenance."
-        ])) from None
+        ]), check="spec_links" if validator.__name__ == "validate_links" else "decision_trace") from None
 
 
 def _anchor_links(links, sections, phase):
@@ -393,7 +394,7 @@ def _anchor_links(links, sections, phase):
                 f"spec_links[{index}].quote: {phase} validation failed; copy a short exact contiguous quote "
                 "from the named section, without paraphrasing, added Markdown, or omitted text. "
                 "For sections replaced by locked content, link to an implementation section instead."
-            ])
+            ], check="quote_anchor")
             error.validation_phase = phase
             error.validation_location = {"index": index, "field": "quote",
                 "section": link["section"] if link["section"] in SpecResponse.model_fields else "unknown",

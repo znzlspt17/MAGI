@@ -102,9 +102,9 @@ def diagnose_exception(exc: BaseException) -> dict[str, Any]:
         "error_code": normalization["code"] if normalization is not None else None,
         "error_stage": normalization["stage"] if normalization is not None else None,
         "failed_checks": next((
-            sorted(set(check for check in item.failed_checks if isinstance(check, str) and check in ReviewValidationError.checks))
-            if isinstance(item, ReviewValidationError) else item.failed_checks
-            for item in chain if isinstance(item, (TranslationValidationError, ReviewValidationError))
+            sorted(set(check for check in item.failed_checks if isinstance(check, str) and check in item.checks))
+            if isinstance(item, (ReviewValidationError, SpecCompilationError)) else item.failed_checks
+            for item in chain if isinstance(item, (TranslationValidationError, ReviewValidationError, SpecCompilationError))
         ), []),
         "exception_type": type(exc).__name__,
         "cause_types": [type(item).__name__ for item in chain[1:]],

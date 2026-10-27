@@ -10,7 +10,7 @@ CHECKS = {"acceptance_criteria", "test_plan", "manual_verification_checklist"}
 
 def prepare_plan(draft, sheet):
     def fail(message):
-        raise SpecCompilationError(["implementation_order: " + message])
+        raise SpecCompilationError(["implementation_order: " + message], check="implementation_plan")
 
     groups = {item.id: group for group in ("mandatory_requirements", "recommended_requirements", "optional_requirements", "constraints") for item in getattr(sheet, group)}
     sources = {b.item_id: {"section": name, **b.model_dump()} for name in type(draft).model_fields

@@ -50,10 +50,14 @@ class SpecCompilationError(Error):
 
     code = "SPEC_COMPILATION_INVALID"
     stage = "spec_compile"
+    checks = frozenset({"spec_response", "implementation_plan", "spec_blocks", "spec_links",
+                        "decision_trace", "source_reference", "product_boundary", "spec_structure",
+                        "quote_anchor"})
 
-    def __init__(self, details):
+    def __init__(self, details, *, check="spec_response"):
         super().__init__("Compiler response trace could not be validated.")
         self.validation_details = details
+        self.failed_checks = [check if isinstance(check, str) and check in self.checks else "spec_response"]
 
 
 TRANSLATION_RULES = {
