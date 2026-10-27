@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import JobValidation from "./JobValidation";
 import { CopyIcon, WarningCircleIcon, CaretDownIcon, ClockIcon } from "@phosphor-icons/react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./components/ui/collapsible";
 import { Button } from "./components/ui/button";
@@ -62,6 +63,7 @@ export default function JobDetailSheet({ id, job, fallback, loading, error, tab,
               <TabsTrigger value="summary">요약</TabsTrigger><TabsTrigger value="final">최종 명세</TabsTrigger>
               <TabsTrigger value="candidate">초안</TabsTrigger><TabsTrigger value="critical">보완 보고서</TabsTrigger>
               <TabsTrigger value="history">처리 이력</TabsTrigger>
+              <TabsTrigger value="diagnostics">진단</TabsTrigger>
             </TabsList>
             <TabsContent value="summary">
               <dl className="jobs-detail-meta">
@@ -79,6 +81,7 @@ export default function JobDetailSheet({ id, job, fallback, loading, error, tab,
             <TabsContent value="history">
               <JobHistory events={job.session_events} open={history.jobId === id ? history.open : {}} setOpen={(key, open) => setHistory(previous => ({ jobId: id, open: { ...(previous.jobId === id ? previous.open : {}), [key]: open } }))} />
             </TabsContent>
+            <TabsContent value="diagnostics"><JobValidation key={id} jobId={id} /></TabsContent>
           </Tabs>}
       </div>
     </SheetContent>

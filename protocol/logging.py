@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import UTC, datetime
+from datetime import datetime, timedelta, timezone
 import logging
 import re
 import sys
@@ -13,11 +13,13 @@ import orjson
 import structlog
 
 TRACE_ID = ContextVar("log_trace_id", default=None)
+KST = timezone(timedelta(hours=9), "KST")
 _SERVICE = "backend"
 _GENERATION = 0
 _FIELDS = {"trace_id", "request_id", "job_id", "execution_id", "stage", "duration_ms",
            "error_code", "error_stage", "exception_type", "frames", "failed_checks",
-           "attempt", "max_attempts", "method", "status", "logger_name"}
+           "attempt", "max_attempts", "method", "status", "logger_name",
+           "validation_reason", "validation_section", "validation_index"}
 _SENSITIVE = re.compile(
     r"(?i)(authorization|cookie|set-cookie)\s*[:=]\s*[^\r\n]+|"
     r"\b(?:sk-[a-zA-Z0-9_-]{8,})\b|"
@@ -74,7 +76,7 @@ def _render(_, method, event):
         item = exc if isinstance(exc, BaseException) else sys.exc_info()[1]
         result["exception_type"] = type(item).__name__ if item else "Exception"
     result = {key: _safe(value) for key, value in result.items()}
-    result.update(timestamp=datetime.now(UTC).isoformat(), service=_SERVICE,
+    result.update(timestamp=datetime.now(KST).isoformat(), service=_SERVICE,
                   level="warning" if method == "warn" else method,
                   event=message.split(" ", 1)[0] or "log", message=message)
     return result

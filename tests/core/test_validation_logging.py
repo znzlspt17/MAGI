@@ -96,6 +96,26 @@ def test_compiler_diagnostic_filters_untrusted_codes_and_handles_wrapped_errors(
     assert "PRIVATE" not in str(diagnostic)
 
 
+def test_block_diagnostic_only_logs_allowlisted_reason_section_and_numeric_index(json_log):
+    from backend.server.diagnostics import diagnose_exception
+    error = SpecCompilationError(["PRIVATE_RESPONSE"], check="spec_blocks", block_reason="PRIVATE_REASON", section="PRIVATE_SECTION", index="PRIVATE_INDEX")
+    error.block_reason = "PRIVATE_REASON"
+    error.block_reasons = {"PRIVATE_REASON"}
+    diagnostic = diagnose_exception(error)
+    assert diagnostic["validation_reason"] is None
+    assert diagnostic["validation_section"] is None
+    assert diagnostic["validation_index"] is None
+    assert "PRIVATE" not in str(diagnostic)
+    error = SpecCompilationError(["PRIVATE_RESPONSE"], check="spec_blocks", block_reason="unknown_requirement", section="architecture", index=2)
+    def fail(state):
+        raise error
+    with pytest.raises(SpecCompilationError):
+        _stage("spec_compile", fail, None)({})
+    rows = [json.loads(line) for line in json_log.getvalue().splitlines()]
+    assert all(row["validation_reason"] == "unknown_requirement" and row["validation_section"] == "architecture" and row["validation_index"] == 2 for row in rows)
+    assert "PRIVATE_RESPONSE" not in json_log.getvalue()
+
+
 def test_quote_anchor_failure_has_specific_check():
     from backend.services.spec_compiler import _anchor_links
     from backend.server.diagnostics import diagnose_exception

@@ -44,6 +44,9 @@ def _stage(name: str, node, callback):
                         max_attempts=MAX_RETRIES + 1, error_code=diagnostic["error_code"],
                         error_stage=diagnostic["error_stage"], failed_checks=diagnostic["failed_checks"],
                         exception_type=type(exc).__name__,
+                        validation_reason=diagnostic["validation_reason"],
+                        validation_section=diagnostic["validation_section"],
+                        validation_index=diagnostic["validation_index"],
                     )
                 if not retryable or attempt == MAX_RETRIES:
                     _progress(

@@ -110,7 +110,25 @@ def diagnose_exception(exc: BaseException) -> dict[str, Any]:
         "cause_types": [type(item).__name__ for item in chain[1:]],
         "http_status": _http_status(chain),
         "frames": _traceback_frames(exc),
+        **_block_diagnostic(chain),
     }
+
+
+def _block_diagnostic(chain):
+    """원문·블록 ID 대신 서버가 정한 실패 사유와 섹션·숫자 위치만 공개한다."""
+    from backend.models import SpecResponse
+    for item in chain:
+        if not isinstance(item, SpecCompilationError) or item.failed_checks != ["spec_blocks"]:
+            continue
+        reason = getattr(item, "block_reason", None)
+        section = getattr(item, "block_section", None)
+        index = getattr(item, "block_index", None)
+        return {
+            "validation_reason": reason if isinstance(reason, str) and reason in SpecCompilationError.block_reasons else None,
+            "validation_section": section if isinstance(section, str) and section in SpecResponse.model_fields and section not in {"decisions", "spec_links"} else None,
+            "validation_index": index if type(index) is int and 0 <= index <= 100000 else None,
+        }
+    return {"validation_reason": None, "validation_section": None, "validation_index": None}
 
 
 def _normalization_error(chain: list[BaseException]) -> dict[str, str] | None:

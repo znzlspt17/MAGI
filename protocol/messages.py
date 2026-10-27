@@ -56,6 +56,7 @@ RPC_METHODS = {
     "admin.user": None,
     "admin.stop": None,
     "admin.job": None,
+    "admin.job.validation": None,
     "admin.settle": None,
     "admin.settings": None,
 }

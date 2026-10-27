@@ -226,6 +226,12 @@ def install(app, client):
                 except (ValueError,TypeError): abort(400)
         return relay('admin.usage.rows',params)
 
+    @app.get('/api/admin/job/validation')
+    def admin_job_validation():
+        if any(len(request.args.getlist(key)) != 1 for key in request.args):
+            abort(400)
+        return relay('admin.job.validation', dict(request.args))
+
     @app.route('/api/admin/cleanup/<action>',methods=['GET','POST'])
     def admin_cleanup(action):
         if action not in ({'catalog'} if request.method=='GET' else {'preview','execute'}):

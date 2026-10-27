@@ -774,7 +774,9 @@ class ImplementationTask(SpecBlock):
 # 저장·조회 형식인 SpecResponse는 유지하고 제공자 출력만 블록 구조로 분리한다.
 SpecDraftResponse = create_model("SpecDraftResponse", __base__=ResponseModel,
     decisions=(list[DecisionTrace], Field(default_factory=list)),
-    **{name: (list[ImplementationTask] if name == "implementation_order" else list[SpecBlock], Field(description="Ordered substantive English content blocks for this section. Include at least one block."))
+    **{name: (list[ImplementationTask] if name == "implementation_order" else list[SpecBlock], Field(description=(
+        "Application-owned section assembled from locked product non_scope. Return an empty array; do not generate content or references."
+        if name == "out_of_scope" else "Ordered substantive English content blocks for this section. Include at least one block.")))
        for name in SpecResponse.model_fields if name not in {"decisions", "spec_links"}})
 
 
@@ -792,27 +794,35 @@ def assemble_spec_draft(draft, sheet, task_plan=None):
     for name in SpecResponse.model_fields:
         if name in {"decisions", "spec_links"}:
             continue
-        blocks = getattr(draft, name)
-        if name == "implementation_order":
-            blocks = [SpecBlock(item_id=t["item_id"], text=t["rendered"], requirement_ids=t["requirement_ids"], decision_ids=t["decision_ids"]) for t in task_plan["tasks"]]
-        if not blocks:
-            raise SpecCompilationError([f"{name}: include at least one substantive content block."], check="spec_blocks")
-        for index, block in enumerate(blocks):
-            if not block.item_id.strip() or block.item_id in identities or block.item_id.startswith("LOCKED-"):
-                raise SpecCompilationError([f"{name}[{index}].item_id: use a unique nonempty stable ID without the LOCKED- prefix."], check="spec_blocks")
-            identities.add(block.item_id)
-            if not block.text.strip():
-                raise SpecCompilationError([f"{name}[{index}].text: include substantive English content."], check="spec_blocks")
-            if not set(block.requirement_ids) <= known_requirements or not set(block.decision_ids) <= known_decisions:
-                raise SpecCompilationError([f"{name}[{index}]: use only supplied requirement IDs and known decision IDs."], check="spec_blocks")
-            if any(line.strip() in headings for line in _mask_fenced_code(block.text).splitlines()):
-                raise SpecCompilationError([f"{name}[{index}].text: omit fixed section headings and Locked Constraints headings; the application renders them."], check="spec_blocks")
         if name == "out_of_scope":
-            # 확정 비범위의 본문과 연결은 모델 초안 대신 앱이 같은 자료에서 생성한다.
+            # 앱이 교체하는 모델 블록은 ID·내용 검증이나 구현 근거에 사용하지 않는다.
             sections[name] = "\n".join(f"- [{item.id}] {item.text}" for item in sheet.non_scope) or "No explicit product exclusions were supplied."
             links.extend(SpecLink(item_id="LOCKED-" + item.id, section=name, quote=item.text,
                                   requirement_ids=[item.id], decision_ids=[]) for item in sheet.non_scope)
             continue
+        blocks = getattr(draft, name)
+        if name == "implementation_order":
+            blocks = [SpecBlock(item_id=t["item_id"], text=t["rendered"], requirement_ids=t["requirement_ids"], decision_ids=t["decision_ids"]) for t in task_plan["tasks"]]
+        if not blocks:
+            raise SpecCompilationError([f"{name}: include at least one substantive content block."], check="spec_blocks",
+                                       block_reason="empty_section", section=name)
+        for index, block in enumerate(blocks):
+            if not block.item_id.strip() or block.item_id in identities or block.item_id.startswith("LOCKED-"):
+                raise SpecCompilationError([f"{name}[{index}].item_id: use a unique nonempty stable ID without the LOCKED- prefix."], check="spec_blocks",
+                                           block_reason="invalid_item_id", section=name, index=index)
+            identities.add(block.item_id)
+            if not block.text.strip():
+                raise SpecCompilationError([f"{name}[{index}].text: include substantive English content."], check="spec_blocks",
+                                           block_reason="empty_text", section=name, index=index)
+            if not set(block.requirement_ids) <= known_requirements:
+                raise SpecCompilationError([f"{name}[{index}].requirement_ids: use only supplied requirement IDs."], check="spec_blocks",
+                                           block_reason="unknown_requirement", section=name, index=index)
+            if not set(block.decision_ids) <= known_decisions:
+                raise SpecCompilationError([f"{name}[{index}].decision_ids: use only known decision IDs."], check="spec_blocks",
+                                           block_reason="unknown_decision", section=name, index=index)
+            if any(line.strip() in headings for line in _mask_fenced_code(block.text).splitlines()):
+                raise SpecCompilationError([f"{name}[{index}].text: omit fixed section headings and Locked Constraints headings; the application renders them."], check="spec_blocks",
+                                           block_reason="fixed_heading", section=name, index=index)
         sections[name] = "\n\n".join(block.text.rstrip() for block in blocks)
         links.extend(SpecLink(item_id=block.item_id, section=name, quote=block.text.rstrip(),
                               requirement_ids=block.requirement_ids, decision_ids=block.decision_ids)

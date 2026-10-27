@@ -10,3 +10,10 @@ def test_admin_logs_browser():
     app.view_functions["admin_page"] = lambda **_: render_frontend()
     with gateway_server(app) as url:
         assert "pagination passed" in run_browser("admin_logs_ui.mjs", url)
+
+
+def test_admin_job_validation_browser():
+    app = create_app({"PUBLIC_MODE": False, "TESTING": True})
+    app.view_functions["admin_page"] = lambda **_: render_frontend()
+    with gateway_server(app) as url:
+        assert "log filters passed" in run_browser("job_validation_ui.mjs", url)

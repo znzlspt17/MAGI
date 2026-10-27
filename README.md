@@ -113,7 +113,6 @@ prepare("./models/bge-m3")
 
 - [사용자 가이드](docs/USER_GUIDE.ko.md): 질문·수정·승인, 실행 이력, 번역, 검색·그래프
 - [공개 서비스 운영](docs/PUBLIC_SERVICE.ko.md): 환경 변수, 로그인·DB·배포, 관리자와 데이터 관리
-- [통합 로그](docs/LOGGING.ko.md): 관리자 로그 검색, 7일 보관, 별도 로그 Stack 설정
 
 ## 개발 검증
 

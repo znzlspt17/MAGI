@@ -10,7 +10,7 @@ import socket
 import time
 from urllib.parse import urlencode, urlsplit
 
-from protocol.logging import redact
+from protocol.logging import KST, redact
 
 SERVICES = {"backend", "gateway", "caddy", "postgresql"}
 LEVELS = {"debug", "info", "warning", "error", "critical", "unknown"}
@@ -159,9 +159,22 @@ class LogStore:
                 "retention_days": 7, "collector_seen": bool(heartbeat.strip())}
 
 
+def _kst_timestamp(value):
+    """저장소의 나노초 소수부를 보존하면서 KST ISO 시각으로 변환한다."""
+    value = str(value)[:64]
+    match = re.search(r"(\.\d+)?(?:Z|[+-]\d{2}:\d{2})$", value)
+    if not match:
+        return ""
+    try:
+        date = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(KST)
+    except ValueError:
+        return ""
+    return date.strftime("%Y-%m-%dT%H:%M:%S") + (match.group(1) or "") + "+09:00"
+
+
 def normalize(row):
-    fields = ("trace_id", "request_id", "job_id", "execution_id", "stage", "duration_ms", "error_code", "error_stage", "exception_type", "frames", "failed_checks", "attempt", "max_attempts", "method", "status", "container_name")
-    return {"timestamp": str(row.get("_time", ""))[:64],
+    fields = ("trace_id", "request_id", "job_id", "execution_id", "stage", "duration_ms", "error_code", "error_stage", "exception_type", "frames", "failed_checks", "attempt", "max_attempts", "method", "status", "container_name", "validation_reason", "validation_section", "validation_index")
+    return {"timestamp": _kst_timestamp(row.get("_time", "")),
             "service": row.get("service") if row.get("service") in SERVICES else "unknown",
             "level": row.get("level") if row.get("level") in LEVELS else "unknown",
             "message": redact(str(row.get("_msg", ""))),

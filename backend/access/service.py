@@ -389,6 +389,9 @@ class PublicService:
                 ACTOR.reset(token)
 
     def admin(self, actor, method, params):
+        if method == 'admin.job.validation':
+            from backend.access.validation import validation_page
+            return validation_page(self, actor, params)
         if method == 'admin.stop':
             with self.manager.lock, self.store.transaction() as c:
                 self.access.stop(c,actor['id'],params.get('id'),params.get('execution_id'),admin=True)

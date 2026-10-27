@@ -1,4 +1,32 @@
 tests:
+  - name: safe block validation location survives normalization
+    inputs:
+      - insert_at: normalized
+        type: log
+        log_fields:
+          message: '{"message":"stage_validation_failed","validation_reason":"unknown_requirement","validation_section":"architecture","validation_index":2}'
+          container_name: backend-test
+          label:
+            dev.magi.service: backend
+    outputs:
+      - extract_from: normalized
+        conditions:
+          - type: vrl
+            source: '.validation_reason == "unknown_requirement" && .validation_section == "architecture" && .validation_index == 2'
+  - name: diagnostic error_code is preserved while OAuth code is masked
+    inputs:
+      - insert_at: normalized
+        type: log
+        log_fields:
+          message: 'job failed error_code=SPEC_COMPILATION_INVALID error_stage=spec_compile code=fake-oauth-value'
+          container_name: backend-test
+          label:
+            dev.magi.service: backend
+    outputs:
+      - extract_from: normalized
+        conditions:
+          - type: vrl
+            source: 'contains(string!(.message), "error_code=SPEC_COMPILATION_INVALID") && contains(string!(.message), "error_stage=spec_compile") && !contains(string!(.message), "fake-oauth-value")'
   - name: normalize application JSON and discard extra fields
     inputs:
       - insert_at: normalized

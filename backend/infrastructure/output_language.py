@@ -84,7 +84,7 @@ def language_issues(value):
                 field(f"{name}[{index}]", text, language)
     elif isinstance(value, SpecDraftResponse):
         for name in type(value).model_fields:
-            if name != "decisions":
+            if name not in {"decisions", "out_of_scope"}:
                 for index, block in enumerate(getattr(value, name)):
                     field(f"{name}[{index}].text", block.text, "en")
                     if name == "implementation_order":

@@ -1,0 +1,12 @@
+.job-validation { min-width: 0; }
+.job-validation-heading, .job-validation-records header, .job-validation-actions { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; justify-content: space-between; }
+.job-validation-heading h3 { margin: 0; }
+.job-validation-records { list-style: none; padding: 0; margin: 1rem 0; display: grid; gap: 1rem; }
+.job-validation-records li { border: 1px solid var(--line); border-radius: .65rem; padding: 1rem; min-width: 0; }
+.job-validation-records time { color: var(--muted); font-size: .8rem; }
+.job-validation-records dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.job-validation-records dl > div { min-width: 0; overflow-wrap: anywhere; }
+.job-validation-records dt { color: var(--muted); font-size: .8rem; }
+.job-validation-records dd { margin: .25rem 0 0; font-size: .85rem; }
+.job-validation-actions { justify-content: flex-start; font-size: .85rem; }
+@media (max-width: 600px) { .job-validation-records dl { grid-template-columns: minmax(0, 1fr); } .job-validation-heading { align-items: flex-start; } }

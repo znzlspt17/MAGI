@@ -206,13 +206,12 @@ class JobManager:
                 diagnose_exception(exc),
             )
             LOGGER.error(
-                "job failed id=%s action=%s exception_type=%s error_code=%s error_stage=%s failed_checks=%s",
-                ident,
-                action,
-                type(exc).__name__,
-                diagnostic["error_code"],
-                diagnostic["error_stage"],
-                diagnostic["failed_checks"],
+                "job_failed action=%s", action, job_id=ident,
+                exception_type=type(exc).__name__, error_code=diagnostic["error_code"],
+                error_stage=diagnostic["error_stage"], failed_checks=diagnostic["failed_checks"],
+                validation_reason=diagnostic["validation_reason"],
+                validation_section=diagnostic["validation_section"],
+                validation_index=diagnostic["validation_index"],
             )
         with self.lock:
             job.update(status=status, message=message, updated_at=_utc_now())

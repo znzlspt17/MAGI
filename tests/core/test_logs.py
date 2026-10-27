@@ -14,7 +14,7 @@ import pytest
 from flask import Flask
 from werkzeug.datastructures import MultiDict
 
-from gateway.logs import LogError, LogStore, filters
+from gateway.logs import LogError, LogStore, filters, normalize
 from protocol.logging import TRACE_ID, configure_logging, get_logger, log_context
 from protocol.messages import parse_request
 
@@ -138,3 +138,26 @@ def test_trace_protocol_is_optional_and_bounded():
     assert parse_request(json.dumps({**request, "trace_id": "a" * 24}))["trace_id"] == "a" * 24
     for value in (None, {}, "private", "a" * 65):
         assert parse_request(json.dumps({**request, "trace_id": value})) is None
+
+
+def test_log_times_are_kst_with_nanosecond_precision_preserved():
+    item = normalize({"_time": "2026-10-27T08:23:58.775163462Z"})
+    assert item["timestamp"] == "2026-10-27T17:23:58.775163462+09:00"
+    assert normalize({"_time": "2026-10-27T17:23:58.775163462+09:00"})["timestamp"] == item["timestamp"]
+    assert normalize({"_time": "2026-10-27T23:30:00Z"})["timestamp"] == "2026-10-28T08:30:00+09:00"
+    output = io.StringIO()
+    configure_logging("backend", stream=output)
+    try:
+        get_logger(__name__).info("kst_test", error_code="SPEC_COMPILATION_INVALID")
+        row = json.loads(output.getvalue())
+        assert row["timestamp"].endswith("+09:00")
+        assert row["error_code"] == "SPEC_COMPILATION_INVALID"
+    finally:
+        configure_logging("backend")
+
+
+def test_admin_logs_preserve_safe_block_validation_fields():
+    item = normalize({"_time": "2026-10-27T08:23:58Z", "validation_reason": "unknown_requirement",
+                      "validation_section": "architecture", "validation_index": 2, "validation_details": "PRIVATE_RESPONSE"})
+    assert item["fields"] == {"validation_reason": "unknown_requirement", "validation_section": "architecture", "validation_index": "2"}
+    assert "PRIVATE_RESPONSE" not in str(item)

@@ -7,9 +7,21 @@ type Result = { items: Row[]; start: string; end: string; next_offset: number | 
 type Status = { state: string; retention_days: number; collector_seen: boolean; free_bytes: number | null; warnings: string[] };
 const services = ["backend", "gateway", "caddy", "postgresql"];
 const levels = ["debug", "info", "warning", "error", "critical", "unknown"];
+const formatKst = (value: string) => `${new Date(value).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} KST`;
+
+function initialFilters() {
+  const supplied = new URLSearchParams(window.location.search), result = new URLSearchParams();
+  for (const key of ["service", "level", "q", "trace_id", "job_id", "execution_id"]) {
+    if (supplied.get(key)) result.set(key, supplied.get(key)!);
+  }
+  const period = supplied.get("period");
+  if (period && ["15", "60", "1440", "10080"].includes(period)) result.set("period", period);
+  return result.toString();
+}
 
 export default function AdminLogs() {
-  const [query, setQuery] = useState(""), [tick, setTick] = useState(0);
+  const [query, setQuery] = useState(initialFilters), [tick, setTick] = useState(0);
+  const applied = new URLSearchParams(query);
   const [result, setResult] = useState<Result | null>(null), [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState(""), [statusError, setStatusError] = useState("");
   const [busy, setBusy] = useState(false), [automatic, setAutomatic] = useState(true), [notice, setNotice] = useState("");
@@ -77,26 +89,26 @@ export default function AdminLogs() {
       {status?.free_bytes != null && <span>디스크 여유 {(status.free_bytes / 1024 ** 3).toFixed(1)} GiB</span>}
       {statusError && <p>{statusError}</p>}{status?.warnings.map(w => <p key={w}>{w}</p>)}
     </div>
-    <form className="logs-filters" onSubmit={e => {
+    <form key={query} className="logs-filters" onSubmit={e => {
       e.preventDefault(); const data = new FormData(e.currentTarget); const params = new URLSearchParams();
       const minutes = Number(data.get("period") || 15);
       params.set("period", String(minutes));
       for (const key of ["service", "level", "q", "trace_id", "job_id", "execution_id"]) { const value = String(data.get(key) || "").trim(); if (value) params.set(key, value); }
       setQuery(params.toString()); setTick(v => v + 1); setNotice("");
     }}>
-      <label>서비스<select name="service"><option value="">전체 서비스</option>{services.map(v => <option key={v}>{v}</option>)}</select></label>
-      <label>레벨<select name="level"><option value="">전체 레벨</option>{levels.map(v => <option key={v}>{v}</option>)}</select></label>
-      <label>기간<select name="period" defaultValue="15">{[[15, "최근 15분"], [60, "최근 1시간"], [1440, "최근 24시간"], [10080, "최근 7일"]].map(([v, label]) => <option key={v} value={v}>{label}</option>)}</select></label>
-      <label className="logs-search">메시지 검색<input name="q" maxLength={256} placeholder="메시지에 포함된 문자열" /></label>
-      {[['trace_id', '추적 ID'], ['job_id', '작업 ID'], ['execution_id', '실행 ID']].map(([key, label]) => <label key={key}>{label}<input name={key} maxLength={64} /></label>)}
+      <label>서비스<select name="service" defaultValue={applied.get("service") || ""}><option value="">전체 서비스</option>{services.map(v => <option key={v}>{v}</option>)}</select></label>
+      <label>레벨<select name="level" defaultValue={applied.get("level") || ""}><option value="">전체 레벨</option>{levels.map(v => <option key={v}>{v}</option>)}</select></label>
+      <label>기간<select name="period" defaultValue={applied.get("period") || "15"}>{[[15, "최근 15분"], [60, "최근 1시간"], [1440, "최근 24시간"], [10080, "최근 7일"]].map(([v, label]) => <option key={v} value={v}>{label}</option>)}</select></label>
+      <label className="logs-search">메시지 검색<input name="q" defaultValue={applied.get("q") || ""} maxLength={256} placeholder="메시지에 포함된 문자열" /></label>
+      {[['trace_id', '추적 ID'], ['job_id', '작업 ID'], ['execution_id', '실행 ID']].map(([key, label]) => <label key={key}>{label}<input name={key} defaultValue={applied.get(key) || ""} maxLength={64} /></label>)}
       <button type="submit">검색</button>
     </form>
     <p role="alert">{error}</p><p role="status">{notice}</p>
-    <div className="logs-summary" aria-live="polite"><span>{result ? `${result.items.length}건 · 기준 ${new Date(result.end).toLocaleString("ko-KR")}` : busy ? "로그를 불러오는 중…" : "조회 결과 없음"}</span><span>{automatic ? "자동 갱신 중" : "갱신 일시정지"}</span></div>
+    <div className="logs-summary" aria-live="polite"><span>{result ? `${result.items.length}건 · 기준 ${formatKst(result.end)}` : busy ? "로그를 불러오는 중…" : "조회 결과 없음"}</span><span>{automatic ? "자동 갱신 중" : "갱신 일시정지"}</span></div>
     <div className="logs-list" aria-busy={busy} onWheel={() => setAutomatic(false)} onTouchMove={() => setAutomatic(false)}>
       {result?.items.length === 0 && <p className="logs-empty">조건에 맞는 로그가 없습니다.</p>}
       {result?.items.map((row, index) => <details className={`logs-row logs-${row.level}`} key={`${row.timestamp}:${index}`} onToggle={e => { if (e.currentTarget.open) setAutomatic(false); }}>
-        <summary><time dateTime={row.timestamp}>{new Date(row.timestamp).toLocaleString("ko-KR")}</time><span className="logs-service">{row.service}</span><span className="logs-level">{row.level}</span><span className="logs-message">{row.message}</span></summary>
+        <summary><time dateTime={row.timestamp}>{formatKst(row.timestamp)}</time><span className="logs-service">{row.service}</span><span className="logs-level">{row.level}</span><span className="logs-message">{row.message}</span></summary>
         <div className="logs-detail"><pre>{JSON.stringify(row, null, 2)}</pre><button type="button" onClick={() => { void navigator.clipboard.writeText(JSON.stringify(row, null, 2)).then(() => setNotice("로그를 복사했습니다."), () => setNotice("로그를 복사하지 못했습니다.")); }}>로그 복사</button></div>
       </details>)}
     </div>

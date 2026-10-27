@@ -95,12 +95,20 @@ class SpecCompiler:
                     revision_history=revision_history, writer=writer)
             except (SpecCompilationError, OutputLanguageError) as exc:
                 error = exc
+                from structlog.contextvars import get_contextvars
+                from backend.server.diagnostics import diagnose_exception
+                execution_id = get_contextvars().get("execution_id")
+                diagnostic = diagnose_exception(exc)
                 writer.write_json("analysis/spec_compile_validation.json", {
                     "stage": "spec_compile", "attempt": (context or {"attempt": attempt})["attempt"] + 1,
                     "validation_details": exc.validation_details,
                     "failed_checks": getattr(exc, "failed_checks", []),
                     "phase": getattr(exc, "validation_phase", "trace"),
                     "location": getattr(exc, "validation_location", None),
+                    "execution_id": execution_id if isinstance(execution_id, str) and re.fullmatch(r"[0-9a-f]{32}", execution_id) else None,
+                    "validation_reason": diagnostic["validation_reason"],
+                    "validation_section": diagnostic["validation_section"],
+                    "validation_index": diagnostic["validation_index"],
                 }, overwrite=True)
                 if attempt + 1 == limit:
                     raise
@@ -148,7 +156,11 @@ class SpecCompiler:
         from backend.services.implementation_plan import prepare_plan
         task_plan = prepare_plan(raw_output, sheet)
         draft_blocks = [{"section": name, **block.model_dump()} for name in type(raw_output).model_fields
-                        if name != "decisions" for block in getattr(raw_output, name)]
+                        if name not in {"decisions", "out_of_scope"} for block in getattr(raw_output, name)]
+        # 변경 검토에도 모델의 폐기된 비범위 본문 대신 실제 조립한 잠금 본문을 저장한다.
+        draft_blocks.extend({"section": "out_of_scope", "item_id": "LOCKED-" + item.id,
+            "text": f"- [{item.id}] {item.text}", "requirement_ids": [item.id], "decision_ids": []}
+            for item in sheet.non_scope)
         draft_blocks = [b for b in draft_blocks if b["section"] != "implementation_order"] + [
             {"section": "implementation_order", **t, "text": t["rendered"]} for t in task_plan["tasks"]]
         raw_output = assemble_spec_draft(raw_output, sheet, task_plan)
