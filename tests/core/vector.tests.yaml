@@ -1,0 +1,78 @@
+tests:
+  - name: normalize application JSON and discard extra fields
+    inputs:
+      - insert_at: normalized
+        type: log
+        log_fields:
+          message: '{"level":"info","message":"hello","trace_id":"abc","password":"fake-private"}'
+          timestamp: '2026-10-27T00:00:00Z'
+          container_name: backend-test
+          label:
+            dev.magi.service: backend
+    outputs:
+      - extract_from: normalized
+        conditions:
+          - type: vrl
+            source: '.service == "backend" && .level == "info" && .message == "hello" && .trace_id == "abc" && !exists(.password) && !exists(.label)'
+  - name: unknown stderr stays unknown and credentials are masked
+    inputs:
+      - insert_at: normalized
+        type: log
+        log_fields:
+          message: 'password=fake-private'
+          stream: stderr
+          container_name: caddy-test
+          label:
+            dev.magi.service: caddy
+    outputs:
+      - extract_from: normalized
+        conditions:
+          - type: vrl
+            source: '.level == "unknown" && !contains(string!(.message), "fake-private")'
+  - name: discard postgres statement and continuation
+    inputs:
+      - insert_at: normalized
+        type: log
+        log_fields:
+          container_name: '${MAGI_POSTGRES_CONTAINER}'
+          message: '2026-10-27 [1] STATEMENT: select private_input'
+      - insert_at: normalized
+        type: log
+        log_fields:
+          container_name: '${MAGI_POSTGRES_CONTAINER}'
+          message: '    select private_input'
+    no_outputs_from: [normalized]
+  - name: exclude unrelated and prefix-matched database containers
+    inputs:
+      - insert_at: selected
+        type: log
+        log_fields:
+          container_name: '${MAGI_POSTGRES_CONTAINER}-unrelated'
+          message: 'unrelated'
+    no_outputs_from: [selected]
+  - name: postgres error values never enter buffer
+    inputs:
+      - insert_at: normalized
+        type: log
+        log_fields:
+          container_name: '${MAGI_POSTGRES_CONTAINER}'
+          message: 'ERROR: invalid syntax for type integer: "private-literal"'
+    outputs:
+      - extract_from: normalized
+        conditions:
+          - type: vrl
+            source: '.message == "postgresql_event" && .level == "error"'
+  - name: quoted or spaced password in message is masked
+    inputs:
+      - insert_at: normalized
+        type: log
+        log_fields:
+          message: '{"level":"info","message":"password = fake-private"}'
+          container_name: backend-test
+          label:
+            dev.magi.service: backend
+    outputs:
+      - extract_from: normalized
+        conditions:
+          - type: vrl
+            source: '!contains(string!(.message), "fake-private")'

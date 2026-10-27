@@ -14,9 +14,12 @@ from werkzeug.exceptions import HTTPException
 
 from gateway.client import Client, ClientError
 from protocol.diagnostics import traceback_frames
+from protocol.logging import get_logger
 
 
 def create_app(config: dict | None = None) -> Flask:
+    from protocol.logging import configure_logging
+    configure_logging("gateway")
     from protocol.deployment import validate_container
     validate_container('gateway')
     frontend = files("frontend")
@@ -35,6 +38,7 @@ def create_app(config: dict | None = None) -> Flask:
         PUBLIC_ORIGIN=os.environ.get('PUBLIC_ORIGIN',''),
         LOCAL_LOGIN=os.environ.get('LOCAL_LOGIN','0')=='1',
         PROXY_HOPS=int(os.environ.get('PROXY_HOPS','0')),
+        LOG_STORE_URL=os.environ.get('LOG_STORE_URL',''),
     )
     if config:
         app.config.update(config)
@@ -68,7 +72,7 @@ def create_app(config: dict | None = None) -> Flask:
 
     @app.errorhandler(Exception)
     def unexpected_error(error):
-        app.logger.error(
+        get_logger(__name__).error(
             "unexpected request failure request_id=%s method=%s route=%s exception_type=%s frames=%s",
             getattr(g, 'request_id', ''), request.method,
             request.url_rule.rule if request.url_rule else 'unmatched',

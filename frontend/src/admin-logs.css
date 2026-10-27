@@ -1,0 +1,25 @@
+.admin-logs { min-width: 0; }
+.logs-heading, .logs-controls, .logs-summary, .logs-status { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; justify-content: space-between; }
+.logs-heading h2 { margin: 0; }
+.logs-heading p, .logs-footnote { color: var(--muted); font-size: .85rem; }
+.admin-logs .logs-controls label { display: inline-flex; flex-direction: row; align-items: center; gap: .4rem; white-space: nowrap; }
+.admin-logs .logs-controls input[type="checkbox"] { width: 1rem; height: 1rem; min-height: 0; margin: 0; flex: 0 0 auto; }
+.logs-status { justify-content: flex-start; border: 1px solid var(--line); border-radius: .6rem; padding: .75rem; margin: 1rem 0; font-size: .85rem; }
+.logs-status p { flex-basis: 100%; margin: 0; }
+.logs-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; align-items: end; }
+.logs-filters label { display: flex; flex-direction: column; gap: .3rem; font-size: .85rem; min-width: 0; }
+.logs-filters input, .logs-filters select { width: 100%; min-width: 0; }
+.logs-summary { margin: 1rem 0 .5rem; font-size: .8rem; color: var(--muted); }
+.logs-list { border: 1px solid var(--line); border-radius: .6rem; overflow: hidden; }
+.logs-empty { padding: 1rem; }
+.logs-row + .logs-row { border-top: 1px solid var(--line); }
+.logs-row summary { display: grid; grid-template-columns: 10rem 6rem 5rem minmax(0, 1fr); gap: .65rem; padding: .7rem; cursor: pointer; font-size: .8rem; }
+.logs-row summary:focus-visible { outline: 2px solid currentColor; outline-offset: -3px; }
+.logs-row time { color: var(--muted); }
+.logs-message { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-family: monospace; }
+.logs-service, .logs-level { font-weight: 600; }
+.logs-error .logs-level, .logs-critical .logs-level { color: var(--danger, #b42318); }
+.logs-detail { padding: 0 .75rem .75rem; }
+.logs-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; font-size: .8rem; }
+@media (max-width: 800px) { .logs-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } .logs-row summary { grid-template-columns: minmax(0, 1fr) auto auto; } .logs-message { grid-column: 1 / -1; } }
+@media (max-width: 420px) { .logs-filters { grid-template-columns: minmax(0, 1fr); } .logs-controls { width: 100%; } }

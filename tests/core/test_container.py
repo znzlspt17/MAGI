@@ -8,7 +8,7 @@ from protocol import container
 
 
 @pytest.mark.parametrize("exit_code", [0, 1])
-def test_service_exit_waits_without_retry(monkeypatch, caplog, exit_code):
+def test_service_exit_waits_without_retry(monkeypatch, capsys, exit_code):
     calls = []
     handlers = {}
 
@@ -40,7 +40,7 @@ def test_service_exit_waits_without_retry(monkeypatch, caplog, exit_code):
     monkeypatch.setattr(Child, "poll", lambda self: exit_code, raising=False)
     container.main()
     assert calls == [["python", "-m", "backend.server"], "idle"]
-    assert "exit_code=" + str(exit_code) in caplog.text
+    assert "exit_code=" + str(exit_code) in capsys.readouterr().err
 
 
 def test_stop_forwards_signal_and_exits_without_idle(monkeypatch):

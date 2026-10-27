@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import logging
+from protocol.logging import get_logger
 import re
 from typing import Any
 from uuid import uuid4
@@ -89,7 +89,7 @@ class RequirementLockBuilder:
                     raise _normalization_error("trace", [str(exc)]) from None
                 return sheet
             except RequirementNormalizationError as exc:
-                logging.getLogger("backend.server").warning(
+                get_logger("backend.server").warning(
                     "requirement lock validation failed category=%s missing_count=%s attempt=%s",
                     exc.category, len(exc.validation_details), attempt + 1,
                 )

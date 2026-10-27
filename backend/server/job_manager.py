@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import copy
-import logging
+from protocol.logging import get_logger
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -16,7 +16,7 @@ from backend.server.cleanup import Cleanup, CleanupConflict, synchronized, track
 from backend.server.diagnostics import diagnose_exception, safe_user_error
 from backend.server.execution_history import ExecutionHistory
 
-LOGGER = logging.getLogger("backend.server")
+LOGGER = get_logger("backend.server")
 _ID = re.compile(r"[0-9a-f]{32}\Z")
 _ACTIVE = {"queued", "running"}
 
@@ -175,6 +175,11 @@ class JobManager:
 
     @tracked
     def _run(self, ident, action, payload, *, meter=None):
+        from protocol.logging import log_context
+        with log_context(job_id=ident, execution_id=self.jobs[ident].get("execution_id")):
+            return self._run_logged(ident, action, payload, meter=meter)
+
+    def _run_logged(self, ident, action, payload, *, meter=None):
         with self.lock:
             job = self._get_locked(ident)
             job.update(status="running", updated_at=_utc_now())

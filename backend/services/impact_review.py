@@ -1,7 +1,7 @@
 """명시적으로 요청한 변경 가정의 추가 영향을 한 번만 분석한다."""
 
 import json
-import logging
+from protocol.logging import get_logger
 import re
 from typing import Annotated
 
@@ -24,7 +24,7 @@ existing 근거가 있으면 제공된 sources의 node_id와 정확한 인용만
 명세에 없는 신규 주제는 evidence를 비워 두고 조건을 설명한다. 관계·요구사항·명세를 변경하지 않는다.
 최대 12개 항목을 반환한다. 내부 사고 과정 대신 검토 이유와 확인 질문을 제시한다.
 """
-LOGGER = logging.getLogger(__name__)
+LOGGER = get_logger(__name__)
 
 
 class ImpactEvidence(BaseModel):

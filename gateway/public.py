@@ -39,6 +39,10 @@ def install(app, client):
     @app.before_request
     def boundary():
         g.request_id=secrets.token_hex(12)
+        g.log_started=time.monotonic()
+        from protocol.logging import log_context
+        g.log_context = log_context(trace_id=g.request_id)
+        g.log_context.__enter__()
         if not public:
             if request.path.startswith(('/api/admin/','/api/cleanup/')):
                 abort(403)
@@ -80,8 +84,19 @@ def install(app, client):
                 if not secrets.compare_digest(request.headers.get('X-CSRF-Token',''),g.actor['csrf']):
                     abort(403)
 
+    @app.teardown_request
+    def clear_log_context(_error):
+        context = g.pop("log_context", None)
+        if context is not None:
+            context.__exit__(None, None, None)
+
     @app.after_request
     def response_headers(response):
+        from protocol.logging import get_logger
+        if not request.path.startswith(('/static/', '/health')):
+            get_logger(__name__).info("http_completed", request_id=getattr(g, 'request_id', ''),
+                                      method=request.method, status=response.status_code,
+                                      duration_ms=round((time.monotonic()-getattr(g, 'log_started', time.monotonic()))*1000, 2))
         response.headers['X-Request-ID']=getattr(g,'request_id','')
         response.headers['X-Content-Type-Options']='nosniff'
         response.headers['X-Frame-Options']='DENY'
@@ -141,7 +156,7 @@ def install(app, client):
     @app.get('/admin')
     @app.get('/admin/<section>')
     def admin_page(section='overview'):
-        if section not in {'overview','users','data','knowledge','costs'}:
+        if section not in {'overview','users','data','knowledge','costs','logs'}:
             abort(404)
         if not public:
             abort(404)
@@ -174,6 +189,20 @@ def install(app, client):
         response=app.make_response(relay('auth.logout'))
         if response.status_code==200:
             response.delete_cookie(cookie,secure=secure,httponly=True,samesite='Lax',path='/')
+        return response
+
+    @app.get('/api/admin/logs')
+    @app.get('/api/admin/logs/status')
+    def admin_logs():
+        from gateway.logs import LogStore, LogError
+        store = LogStore(app.config['LOG_STORE_URL'])
+        try:
+            data = store.status() if request.path.endswith('/status') else store.search(request.args)
+            response = jsonify(data)
+        except LogError as exc:
+            response = jsonify(error=str(exc), code=exc.code, request_id=g.request_id)
+            response.status_code = exc.status
+        response.headers['Cache-Control'] = 'no-store'
         return response
 
     @app.route('/api/admin/<action>',methods=['GET','POST'])

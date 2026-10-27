@@ -69,8 +69,8 @@ class AgentWorkflow:
                 from backend.infrastructure.output_language import OutputLanguageError
                 category = "validation" if isinstance(exc, (RequirementNormalizationError, ReviewValidationError, SpecCompilationError, OutputLanguageError)) else "not_called" if not attempt["call_count"] else "call_uncertain"
                 self.journal.progress(ident, attempt["call_count"], category=category)
-                import logging
-                logging.getLogger("backend.server").warning(
+                from protocol.logging import get_logger
+                get_logger("backend.server").warning(
                     "workflow task failed stage=%s category=%s provider_entered=%s call_count=%s",
                     name, category, bool(attempt["call_count"]), attempt["call_count"],
                 )

@@ -11,6 +11,8 @@ description = "MAGI generates reviewed AI-agent-ready implementation specificati
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "structlog>=26.1,<27",
+  "orjson>=3.11,<4",
   "pydantic>=2.0,<3",
   "langgraph==1.2.16",
   "websockets>=15,<17",
@@ -50,4 +52,5 @@ testpaths = ["tests/core"]
 pythonpath = [".", "tests/core"]
 
 [dependency-groups]
-gateway = ["Flask>=3.1.0", "Flask-Sock>=0.7.0", "websockets>=15,<17", "gunicorn>=23,<24; sys_platform != 'win32'"]
+logging = ["structlog>=26.1,<27", "orjson>=3.11,<4"]
+gateway = [{include-group = "logging"}, "Flask>=3.1.0", "Flask-Sock>=0.7.0", "websockets>=15,<17", "gunicorn>=23,<24; sys_platform != 'win32'"]

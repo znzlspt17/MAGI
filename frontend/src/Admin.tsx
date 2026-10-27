@@ -4,6 +4,7 @@ import { api, post } from "./api";
 import { useAuth } from "./Auth";
 import Knowledge from "./Knowledge";
 const UsageDashboard = lazy(() => import("./UsageDashboard"));
+const AdminLogs = lazy(() => import("./AdminLogs"));
 const JobData = lazy(() => import("./JobData"));
 import "./admin-knowledge.css";
 const views = [
@@ -12,6 +13,7 @@ const views = [
   ["data", "작업·데이터"],
   ["knowledge", "지식 그래프"],
   ["costs", "비용·관측 기준"],
+  ["logs", "로그"],
 ];
 export default function Admin() {
   const auth = useAuth(),
@@ -157,6 +159,7 @@ export default function Admin() {
               refresh={() => setVersion((v) => v + 1)} />
           </Suspense>
         )}
+        {view === "logs" && <Suspense fallback={<p role="status">로그 화면을 불러오는 중…</p>}><AdminLogs /></Suspense>}
         {view === "knowledge" && <Knowledge admin />}
       </fieldset>
     </div>

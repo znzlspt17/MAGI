@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import logging
+from protocol.logging import get_logger
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -153,7 +153,7 @@ class WorkflowTasks:
         try:
             review_candidate(self, state, spec)
         except Exception as exc:
-            logging.getLogger(__name__).warning(
+            get_logger(__name__).warning(
                 "change review unavailable exception_type=%s", type(exc).__name__
             )
             try:
@@ -170,7 +170,7 @@ class WorkflowTasks:
                     },
                 )
             except Exception:
-                logging.getLogger(__name__).warning(
+                get_logger(__name__).warning(
                     "change review failure could not be saved"
                 )
         return {

@@ -3,13 +3,13 @@
 from dataclasses import dataclass
 from hashlib import sha256
 from importlib.resources import files
-import logging
+from protocol.logging import get_logger
 import re
 
 from backend.knowledge.config import KnowledgeError
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 ACCOUNT_TABLES = (
     "users", "sessions", "login_states", "execution_leases", "daily_usage",
     "cost_calls", "admissions", "admin_audit", "service_settings", "request_windows",

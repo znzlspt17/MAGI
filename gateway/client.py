@@ -36,6 +36,9 @@ class Client:
         request_id = uuid4().hex
         request = {"request_id": request_id, "method": method, "params": params or {}}
         request.update(self.context)
+        from protocol.logging import TRACE_ID
+        if TRACE_ID.get():
+            request["trace_id"] = TRACE_ID.get()
         try:
             with connect(self.url, additional_headers=self._headers(), open_timeout=3, close_timeout=2, max_size=4 * 1024 * 1024) as socket:
                 socket.send(json.dumps(request, ensure_ascii=False))
@@ -74,6 +77,9 @@ class Client:
         request_id = uuid4().hex
         request = {"request_id": request_id, "method": "subscribe", "params": {}}
         request.update(self.context)
+        from protocol.logging import TRACE_ID
+        if TRACE_ID.get():
+            request["trace_id"] = TRACE_ID.get()
         try:
             with connect(self.url, additional_headers=self._headers(), open_timeout=3, close_timeout=2, max_size=MAX_MESSAGE_BYTES) as socket:
                 socket.send(json.dumps(request, ensure_ascii=False))

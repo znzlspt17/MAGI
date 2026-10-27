@@ -3,14 +3,14 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-import logging
+from protocol.logging import get_logger
 import threading
 
 from backend.access.context import ACTOR
 from backend.server.execution_history import ExecutionHistory
 
 
-LOGGER = logging.getLogger('backend.server')
+LOGGER = get_logger('backend.server')
 
 
 @dataclass(frozen=True)

@@ -96,3 +96,6 @@ desktop.ini
 # 로컬 전용 검증·배포 문서
 /docs/BGE_M3_VALIDATION.md
 /docs/RASPBERRY_PI.ko.md
+
+UI_UX_AUDIT.ko.md
+LOGGING.ko.md

@@ -1,6 +1,8 @@
 """반복 보정 실패의 검증 코드를 원문 없이 기록하는지 확인한다."""
 
-import logging
+import json
+import io
+from protocol.logging import configure_logging
 
 import pytest
 
@@ -9,7 +11,16 @@ from backend.infrastructure.stage_retry import CURRENT_RETRY
 from backend.pipeline.builder import _stage
 
 
-def test_review_retries_log_each_check_without_response_text(caplog):
+@pytest.fixture
+def json_log():
+    stream = io.StringIO()
+    configure_logging("backend", stream=stream)
+    yield stream
+    import sys
+    configure_logging("backend")
+
+
+def test_review_retries_log_each_check_without_response_text(json_log):
     checks = ["source_reference", "resolution_basis", "decision_key", "question_form"]
     attempts = []
 
@@ -21,37 +32,35 @@ def test_review_retries_log_each_check_without_response_text(caplog):
             stage="review_resolution", check=checks[attempt],
         )
 
-    with caplog.at_level(logging.WARNING, logger="backend.server"):
-        with pytest.raises(ReviewValidationError):
-            _stage("review_resolution", fail, None)({})
+    with pytest.raises(ReviewValidationError):
+        _stage("review_resolution", fail, None)({})
 
     assert attempts == [0, 1, 2, 3]
-    messages = [record.getMessage() for record in caplog.records]
+    messages = [json.loads(line) for line in json_log.getvalue().splitlines()]
     assert len(messages) == 4
     for number, (message, check) in enumerate(zip(messages, checks), 1):
-        assert f"attempt={number} max_attempts=4" in message
-        assert f"failed_checks=['{check}']" in message
-        assert "error_stage=review_resolution" in message
-    assert "MODEL_RESPONSE_MUST_NOT_BE_LOGGED" not in caplog.text
+        assert message["attempt"] == number and message["max_attempts"] == 4
+        assert message["failed_checks"] == [check]
+        assert message["error_stage"] == "review_resolution"
+    assert "MODEL_RESPONSE_MUST_NOT_BE_LOGGED" not in json_log.getvalue()
     assert CURRENT_RETRY.get() is None
 
 
-def test_review_log_filters_untrusted_check_codes(caplog):
+def test_review_log_filters_untrusted_check_codes(json_log):
     error = ReviewValidationError(stage="review_resolution")
     error.failed_checks = ["resolution_basis", "UNTRUSTED_RESPONSE_TEXT"]
 
     def fail(state):
         raise error
 
-    with caplog.at_level(logging.WARNING, logger="backend.server"):
-        with pytest.raises(ReviewValidationError):
-            _stage("review_resolution", fail, None)({})
+    with pytest.raises(ReviewValidationError):
+        _stage("review_resolution", fail, None)({})
 
-    assert "resolution_basis" in caplog.text
-    assert "UNTRUSTED_RESPONSE_TEXT" not in caplog.text
+    assert "resolution_basis" in json_log.getvalue()
+    assert "UNTRUSTED_RESPONSE_TEXT" not in json_log.getvalue()
 
 
-def test_compiler_retries_log_each_check_without_response_text(caplog):
+def test_compiler_retries_log_each_check_without_response_text(json_log):
     checks = ["source_reference", "implementation_plan", "spec_blocks", "quote_anchor"]
 
     def fail(state):
@@ -60,17 +69,16 @@ def test_compiler_retries_log_each_check_without_response_text(caplog):
             check=checks[CURRENT_RETRY.get()["attempt"]],
         )
 
-    with caplog.at_level(logging.WARNING, logger="backend.server"):
-        with pytest.raises(SpecCompilationError):
-            _stage("spec_compile", fail, None)({})
+    with pytest.raises(SpecCompilationError):
+        _stage("spec_compile", fail, None)({})
 
-    messages = [record.getMessage() for record in caplog.records]
+    messages = [json.loads(line) for line in json_log.getvalue().splitlines()]
     assert len(messages) == 4
     for message, check in zip(messages, checks):
-        assert f"failed_checks=['{check}']" in message
-        assert "error_code=SPEC_COMPILATION_INVALID" in message
-        assert "error_stage=spec_compile" in message
-    assert "MODEL_RESPONSE_MUST_NOT_BE_LOGGED" not in caplog.text
+        assert message["failed_checks"] == [check]
+        assert message["error_code"] == "SPEC_COMPILATION_INVALID"
+        assert message["error_stage"] == "spec_compile"
+    assert "MODEL_RESPONSE_MUST_NOT_BE_LOGGED" not in json_log.getvalue()
     assert CURRENT_RETRY.get() is None
 
 

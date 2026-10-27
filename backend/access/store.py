@@ -2,7 +2,7 @@
 
 import hashlib
 import hmac
-import logging
+from protocol.logging import get_logger
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -13,7 +13,7 @@ from backend.access.context import AccessError
 from backend.access.limits import LIMIT_MODE
 
 
-LOGGER = logging.getLogger('backend.server')
+LOGGER = get_logger('backend.server')
 
 
 def digest(value):

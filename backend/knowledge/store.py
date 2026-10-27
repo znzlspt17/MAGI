@@ -2,7 +2,7 @@
 
 from contextlib import contextmanager, nullcontext
 import json
-import logging
+from protocol.logging import get_logger
 import re
 import threading
 from uuid import uuid4
@@ -12,7 +12,7 @@ from backend.knowledge.projection import digest, project
 
 
 SEARCH_KINDS = ("decision", "requirement", "spec")
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 WRITE_LOCK = 72410636
 
 

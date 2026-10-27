@@ -23,4 +23,4 @@ http://127.0.0.1:5173 에서 실제 경로를 연다. HMR은 꺼져 있으므로
 
 작업 ID는 `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`이며, `/jobs/<ID>` 및 `/admin/data?job_id=<ID>`로 직접 진입한다. 가짜 응답의 변경 요청도 로컬 응답만 반환한다. ZIP 다운로드 전송 자체와 실제 서비스 상태는 이 환경에서 검증하지 않는다.
 
-스크린샷·화면 폭별 측정 결과는 저장소 루트의 `.cache/ui-audit/`에 저장했다. 점검 결과는 `docs/UI_UX_AUDIT.ko.md`를 참고한다.
+스크린샷·화면 폭별 측정 결과는 저장소 루트의 `.cache/ui-audit/`에 저장했다.

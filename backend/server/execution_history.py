@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import copy
-import logging
+from protocol.logging import get_logger
 from datetime import UTC, datetime
 from uuid import uuid4
 
 from backend.infrastructure.usage import provider_usage_summary
 
 
-LOGGER = logging.getLogger("backend.server")
+LOGGER = get_logger("backend.server")
 _MAX_SUMMARY = 600
 _STAGES = {
     "generate",

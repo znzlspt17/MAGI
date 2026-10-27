@@ -1,0 +1,99 @@
+data_dir: /var/lib/vector
+
+sources:
+  apps:
+    type: docker_logs
+    include_labels: ["dev.magi.logs=true"]
+  postgres:
+    type: docker_logs
+    include_containers: ["${MAGI_POSTGRES_CONTAINER}"]
+  heartbeat:
+    type: demo_logs
+    format: json
+    interval: 30
+    lines: ['{"message":"collector heartbeat"}']
+
+transforms:
+  selected:
+    type: filter
+    inputs: [apps, postgres]
+    condition: >-
+      (.label."dev.magi.logs" == "true" && includes(["backend", "gateway", "caddy"], .label."dev.magi.service")) ||
+      .container_name == "${MAGI_POSTGRES_CONTAINER}"
+  normalized:
+    type: remap
+    inputs: [selected]
+    drop_on_error: true
+    drop_on_abort: true
+    source: |
+      service = string(.label."dev.magi.service") ?? "postgresql"
+      if .container_name == "${MAGI_POSTGRES_CONTAINER}" { service = "postgresql" }
+      message = string(.message) ?? ""
+      parsed = parse_json(message) ?? {}
+      level = downcase(string(parsed.level) ?? "unknown")
+      if level == "warn" { level = "warning" }
+      if level == "fatal" || level == "panic" { level = "critical" }
+      if service == "postgresql" {
+        # SQL 부속 행과 들여쓰기 연속 행은 영속 버퍼에 넣지 않는다.
+        if match(message, r'(?i)\b(STATEMENT|DETAIL|CONTEXT|QUERY|HINT):') || match(message, r'^\s') { abort }
+        severity = parse_regex(message, r'\b(?P<level>DEBUG|INFO|NOTICE|LOG|WARNING|ERROR|FATAL|PANIC):') ?? {}
+        level = downcase(string(severity.level) ?? "unknown")
+        if level == "log" || level == "notice" { level = "info" }
+        if level == "fatal" || level == "panic" { level = "critical" }
+        # PostgreSQL 오류 본문에는 SQL 리터럴이 포함될 수 있어 정해진 이벤트만 남긴다.
+        if contains(message, "database system is ready to accept connections") {
+          message = "database_ready"
+        } else if contains(message, "checkpoint") {
+          message = "database_checkpoint"
+        } else if contains(message, "shutting down") || contains(message, "shut down") {
+          message = "database_shutdown"
+        } else {
+          message = "postgresql_event"
+        }
+        parsed = {}
+      }
+      if !includes(["debug", "info", "warning", "error", "critical"], level) { level = "unknown" }
+      # 컨테이너 환경·라벨 전체와 임의 JSON 필드는 전송하지 않는다.
+      clean = {
+        "timestamp": .timestamp,
+        "service": service,
+        "container_name": .container_name,
+        "container_id": .container_id,
+        "level": level,
+        "event": string(parsed.event) ?? "container_log",
+        "message": string(parsed.message) ?? string(parsed.msg) ?? message
+      }
+      clean.message = replace(clean.message, r'(?i)"?(password|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|internal[_-]?key|subject[_-]?pepper|code|state)"?\s*[:=]\s*"?[^\s,;&"]+', "[REDACTED]")
+      for_each(["trace_id", "request_id", "job_id", "execution_id", "stage", "duration_ms", "error_code", "error_stage", "exception_type", "frames", "failed_checks", "attempt", "max_attempts", "method", "status"]) -> |_index, key| {
+        value = get(parsed, [key]) ?? null
+        if value != null { clean = set!(clean, [key], value) }
+      }
+      # 메시지와 진단 필드 전체를 마스킹한 뒤 버퍼에 저장한다.
+      encoded = encode_json(clean)
+      encoded = replace(encoded, r'(?i)(sk-[a-zA-Z0-9_-]{8,})', "[REDACTED]")
+      encoded = replace(encoded, r'(?i)(password|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|internal[_-]?key|subject[_-]?pepper|code|state)[=:][^\s,;&"\\]+', "[REDACTED]")
+      encoded = replace(encoded, r'(?i)(authorization|cookie|set-cookie)[=:][^"\\]+', "[REDACTED]")
+      encoded = replace(encoded, r'(?i)(postgres(?:ql)?|https?)://[^\s/@:"]+:[^\s/@"]+@[^\s"]+', "[REDACTED]")
+      . = parse_json!(encoded)
+  collector:
+    type: remap
+    inputs: [heartbeat]
+    source: |
+      . = {"timestamp": now(), "service": "collector", "level": "info", "message": "collector heartbeat"}
+
+sinks:
+  storage:
+    type: http
+    inputs: [normalized, collector]
+    uri: http://victorialogs:9428/insert/jsonline?_stream_fields=service,container_name&_msg_field=message&_time_field=timestamp
+    compression: gzip
+    encoding:
+      codec: json
+    framing:
+      method: newline_delimited
+    healthcheck:
+      enabled: false
+    buffer:
+      type: disk
+      max_size: 536870912
+      when_full: block

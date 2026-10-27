@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-import logging
+from protocol.logging import get_logger
 import os
 import hmac
 import signal
@@ -27,24 +27,13 @@ from protocol.messages import (
 )
 
 
-LOGGER = logging.getLogger("backend.server")
+LOGGER = get_logger("backend.server")
 _ADDRESS = "ws://127.0.0.1:8765"
 
 
 def configure_logging() -> None:
-    """서버 로그만 표준 오류 출력에 남긴다.
-
-    전역 로거 또는 SDK·HTTP 라이브러리의 로그 수준은 변경하지 않는다.
-    """
-    if not any(getattr(handler, "_server", False) for handler in LOGGER.handlers):
-        handler = logging.StreamHandler()
-        handler._server = True  # type: ignore[attr-defined]
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
-        )
-        LOGGER.addHandler(handler)
-    LOGGER.setLevel(logging.INFO)
-    LOGGER.propagate = False
+    from protocol.logging import configure_logging as configure
+    configure("backend")
 
 
 class Server:
@@ -184,6 +173,17 @@ class Server:
                 return
 
     def _dispatch(self, request: dict) -> str:
+        from protocol.logging import log_context
+        from time import monotonic
+        with log_context(trace_id=request.get("trace_id"), request_id=request["request_id"]):
+            started = monotonic()
+            try:
+                return self._dispatch_logged(request)
+            finally:
+                LOGGER.info("rpc_completed", method=request["method"],
+                            duration_ms=round((monotonic() - started) * 1000, 2))
+
+    def _dispatch_logged(self, request: dict) -> str:
         if request["method"] == "health.check":
             # 내부 키를 검사한 loopback 소켓에서만 DB 준비 상태를 확인한다.
             if (
@@ -420,19 +420,10 @@ def _log_exception(
     event: str, exc: BaseException, *, method: str | None = None
 ) -> None:
     diagnostic = diagnose_exception(exc)
-    method_part = f" method={method}" if method is not None else ""
     LOGGER.error(
-        "%s%s reason=%s error_code=%s error_stage=%s failed_checks=%s exception_type=%s cause_types=%s http_status=%s frames=%s",
-        event,
-        method_part,
-        diagnostic["reason"],
-        diagnostic["error_code"],
-        diagnostic["error_stage"],
-        diagnostic["failed_checks"],
-        diagnostic["exception_type"],
-        diagnostic["cause_types"],
-        diagnostic["http_status"],
-        diagnostic["frames"],
+        event, method=method, error_code=diagnostic["error_code"],
+        error_stage=diagnostic["error_stage"], failed_checks=diagnostic["failed_checks"],
+        exception_type=diagnostic["exception_type"], frames=diagnostic["frames"],
     )
 
 

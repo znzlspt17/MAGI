@@ -3,7 +3,7 @@
 from collections import Counter
 from hashlib import sha256
 import re
-import logging
+from protocol.logging import get_logger
 from itertools import zip_longest
 
 from backend.errors import Error, ArtifactError, TranslationValidationError, TRANSLATION_RULES
@@ -176,7 +176,7 @@ def korean_translation(source: str, *, writer, provider, model: str) -> dict:
                                            "number_mismatches": number_mismatches})
             validation["status"] = "failed"
             writer.write_json("validation.json", validation, overwrite=True)
-            logging.getLogger("backend.server").warning(
+            get_logger("backend.server").warning(
                 "translation validation failed stage=spec_translation attempt=%s source_hash=%s failed_checks=%s number_mismatches=%s",
                 attempt + 1, key, error.failed_checks, number_mismatches)
             if attempt == MAX_RETRIES:

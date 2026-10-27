@@ -70,15 +70,16 @@ def test_missing_app_table_rolls_back_before_checkpoint_setup(store, migration_f
 
 
 @pytest.mark.parametrize("already_installed", [False, True])
-def test_failure_rolls_back_all_pending_sql_and_history(empty_store, migration_files, caplog, already_installed):
+def test_failure_rolls_back_all_pending_sql_and_history(empty_store, migration_files, capsys, already_installed):
     if already_installed:
         prepare(empty_store)
     (migration_files / "003.sql").write_text("CREATE TABLE public.should_rollback(id integer); SELECT 'fake-sensitive-fixture'::integer;", encoding="utf-8")
     with pytest.raises(setup.MigrationError, match="003.sql") as caught:
         prepare(empty_store)
     assert "fake-sensitive-fixture" not in str(caught.value)
-    assert "fake-sensitive-fixture" not in caplog.text
-    assert "migration=003.sql" in caplog.text
+    output = capsys.readouterr()
+    assert "fake-sensitive-fixture" not in output.err + output.out
+    assert "migration=003.sql" in output.err + output.out
     with empty_store.transaction(mode="read") as conn:
         for table in ("public.should_rollback",):
             assert conn.execute("SELECT to_regclass(%s) AS name", (table,)).fetchone()["name"] is None

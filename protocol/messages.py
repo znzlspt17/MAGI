@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from decimal import Decimal
 
 
@@ -79,6 +80,10 @@ def parse_request(raw: object) -> dict | None:
     if not isinstance(params, dict):
         return None
     result = {"request_id": request_id, "method": method, "params": params}
+    if "trace_id" in data:
+        if not isinstance(data["trace_id"], str) or not re.fullmatch(r"[a-f0-9]{24,64}", data["trace_id"]):
+            return None
+        result["trace_id"] = data["trace_id"]
     for key in ("session", "csrf", "idempotency_key"):
         if key in data:
             if not isinstance(data[key], str) or len(data[key]) > 512:

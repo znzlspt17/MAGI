@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import logging
+from protocol.logging import get_logger
 from contextvars import ContextVar
 import re
 from datetime import datetime, timezone
@@ -22,7 +22,7 @@ from backend.infrastructure.prompt_context import prepare_context
 from backend.errors import RequirementNormalizationError, ReviewValidationError, SpecCompilationError
 
 
-LOGGER = logging.getLogger("backend.server")
+LOGGER = get_logger("backend.server")
 _CACHE_KEY_VERSION = "v3"
 WORKFLOW_MESSAGES = ContextVar("workflow_messages", default=None)
 
