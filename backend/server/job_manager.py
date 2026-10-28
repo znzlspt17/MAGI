@@ -212,6 +212,7 @@ class JobManager:
                 validation_reason=diagnostic["validation_reason"],
                 validation_section=diagnostic["validation_section"],
                 validation_index=diagnostic["validation_index"],
+                validation_field=diagnostic["validation_field"],
             )
         with self.lock:
             job.update(status=status, message=message, updated_at=_utc_now())
@@ -224,7 +225,8 @@ class JobManager:
         state = self.workspace.state(ident)
         if action == "approve" and status == "FINALIZED":
             history.capture(job["execution_id"], "approve", state=state)
-        history.terminal(job["execution_id"], status, message, result=state)
+        history.terminal(job["execution_id"], status, message,
+                         result={**state, **({"diagnostic": diagnostic} if diagnostic else {})})
         self._notify(job)
 
     def _engine_progress(self, ident, event, *, meter=None):

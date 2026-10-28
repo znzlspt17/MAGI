@@ -109,6 +109,7 @@ class SpecCompiler:
                     "validation_reason": diagnostic["validation_reason"],
                     "validation_section": diagnostic["validation_section"],
                     "validation_index": diagnostic["validation_index"],
+                    "validation_field": diagnostic["validation_field"],
                 }, overwrite=True)
                 if attempt + 1 == limit:
                     raise

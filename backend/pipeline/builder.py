@@ -47,15 +47,18 @@ def _stage(name: str, node, callback):
                         validation_reason=diagnostic["validation_reason"],
                         validation_section=diagnostic["validation_section"],
                         validation_index=diagnostic["validation_index"],
+                        validation_field=diagnostic["validation_field"],
                     )
                 if not retryable or attempt == MAX_RETRIES:
+                    from backend.server.diagnostics import diagnose_exception
                     _progress(
                         callback,
                         name,
                         "failed",
-                        {"research": exc.research_record}
-                        if name == "web_research" and hasattr(exc, "research_record")
-                        else None,
+                        {"diagnostic": diagnose_exception(exc), **(
+                            {"research": exc.research_record}
+                            if name == "web_research" and hasattr(exc, "research_record") else {}
+                        )},
                     )
                     raise
                 _progress(
@@ -86,23 +89,8 @@ def _progress(
         event["result"] = result
     if state in {"completed", "failed"} and isinstance(result, dict):
         # 실행 이력에는 상태 판단에 필요한 결과만 전달한다.
-        event["result"] = {
-            key: result[key]
-            for key in (
-                "research",
-                "status",
-                "blocking_questions",
-                "structured_issues",
-                "critic_pass_count",
-                "request_type",
-                "awaiting_input_reason",
-                "review_questions",
-                "question_forms",
-                "resolution_history",
-                "diagnosed_keys",
-            )
-            if key in result
-        }
+        from backend.server.execution_history import _safe_result
+        event["result"] = _safe_result(result)
         if stage == "await_user" and "blocking_questions" not in event["result"]:
             questions = (
                 workflow_state.get("blocking_questions", [])

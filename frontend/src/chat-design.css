@@ -110,6 +110,8 @@
 .execution-detail-trigger { display:flex;gap:8px;align-items:center;border:1px solid #ded5ea;border-radius:8px;padding:8px 12px;background:#fff;color:#5e477c;cursor:pointer; }
 .execution-step-list { display:grid;gap:8px;margin:12px 0; }
 .execution-step-list .button { white-space:normal;text-align:left;justify-content:flex-start;height:auto;overflow-wrap:anywhere; }
+.execution-step-list > div > .button { width:100%; }
+.execution-step-detail { padding:12px;border-inline-start:2px solid var(--border);margin:8px 0 16px;overflow-wrap:anywhere;min-width:0; }
 .execution-timeline,.research-result { overflow-wrap:anywhere;min-width:0; }
 
 /* 채팅 높이는 헤더를 제외한 남은 영역으로 결정한다. */

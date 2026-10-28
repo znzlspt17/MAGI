@@ -809,20 +809,22 @@ def assemble_spec_draft(draft, sheet, task_plan=None):
         for index, block in enumerate(blocks):
             if not block.item_id.strip() or block.item_id in identities or block.item_id.startswith("LOCKED-"):
                 raise SpecCompilationError([f"{name}[{index}].item_id: use a unique nonempty stable ID without the LOCKED- prefix."], check="spec_blocks",
-                                           block_reason="invalid_item_id", section=name, index=index)
+                                           block_reason=("empty_item_id" if not block.item_id.strip() else
+                                                         "duplicate_item_id" if block.item_id in identities else "reserved_item_id"),
+                                           section=name, index=index, field="item_id")
             identities.add(block.item_id)
             if not block.text.strip():
                 raise SpecCompilationError([f"{name}[{index}].text: include substantive English content."], check="spec_blocks",
-                                           block_reason="empty_text", section=name, index=index)
+                                           block_reason="empty_text", section=name, index=index, field="text")
             if not set(block.requirement_ids) <= known_requirements:
                 raise SpecCompilationError([f"{name}[{index}].requirement_ids: use only supplied requirement IDs."], check="spec_blocks",
-                                           block_reason="unknown_requirement", section=name, index=index)
+                                           block_reason="unknown_requirement", section=name, index=index, field="requirement_ids")
             if not set(block.decision_ids) <= known_decisions:
                 raise SpecCompilationError([f"{name}[{index}].decision_ids: use only known decision IDs."], check="spec_blocks",
-                                           block_reason="unknown_decision", section=name, index=index)
+                                           block_reason="unknown_decision", section=name, index=index, field="decision_ids")
             if any(line.strip() in headings for line in _mask_fenced_code(block.text).splitlines()):
                 raise SpecCompilationError([f"{name}[{index}].text: omit fixed section headings and Locked Constraints headings; the application renders them."], check="spec_blocks",
-                                           block_reason="fixed_heading", section=name, index=index)
+                                           block_reason="fixed_heading", section=name, index=index, field="text")
         sections[name] = "\n\n".join(block.text.rstrip() for block in blocks)
         links.extend(SpecLink(item_id=block.item_id, section=name, quote=block.text.rstrip(),
                               requirement_ids=block.requirement_ids, decision_ids=block.decision_ids)

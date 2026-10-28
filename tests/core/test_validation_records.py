@@ -73,7 +73,7 @@ def test_versions_are_isolated_paginated_and_execution_links_are_verified(store)
     legacy = {"stage": "spec_compile", "failed_checks": ["spec_blocks"], "attempt": 4,
               "validation_details": ["out_of_scope: include at least one substantive content block."]}
     docs.write_json(DOCUMENT, legacy)
-    new = {**legacy, "execution_id": EXECUTION, "validation_reason": "unknown_requirement", "validation_section": "architecture", "validation_index": 2, "validation_details": ["PRIVATE_RESPONSE"]}
+    new = {**legacy, "execution_id": EXECUTION, "validation_reason": "unknown_requirement", "validation_section": "architecture", "validation_index": 2, "validation_field": "requirement_ids", "validation_details": ["PRIVATE_RESPONSE"]}
     docs.write_json(DOCUMENT, new)
     docs.write_json(DOCUMENT, {**new, "execution_id": FOREIGN_EXECUTION})
     docs.write_text(DOCUMENT, "PRIVATE_INVALID_JSON")
@@ -87,6 +87,7 @@ def test_versions_are_isolated_paginated_and_execution_links_are_verified(store)
     second = validation_page(service(store), ADMIN, {"id": JOB, "limit": 2, "offset": 2})
     assert second["next_offset"] is None
     assert second["items"][0]["execution_id"] == EXECUTION and second["items"][0]["execution_link"] == "confirmed"
+    assert second["items"][0]["validation_field"] == "requirement_ids"
     assert second["items"][1]["execution_link"] == "unconfirmed"
     assert all(item["created_at"].endswith("+09:00") for item in second["items"])
     assert "PRIVATE" not in json.dumps(first) + json.dumps(second)
@@ -121,3 +122,13 @@ def test_gateway_authorization_and_rpc_registration(role, status):
         duplicate = app.test_client().get("/api/admin/job/validation?id=x&id=y", base_url="https://magi.test")
         assert duplicate.status_code == 400 and len(calls) == 1
     assert parse_request(json.dumps({"request_id": "test", "method": "admin.job.validation", "params": {"id": JOB}}))
+
+
+@pytest.mark.parametrize("field,expected", [("item_id", "item_id"), ("PRIVATE_FIELD", None), (["text"], None)])
+def test_new_field_is_allowlisted(field, expected):
+    record = safe_record(json.dumps({"stage": "spec_compile", "failed_checks": ["spec_blocks"],
+        "validation_reason": "duplicate_item_id", "validation_section": "background",
+        "validation_index": 0, "validation_field": field, "validation_details": ["PRIVATE_RESPONSE"]}))
+    assert record["state"] == "recognized"
+    assert record["validation_field"] == expected
+    assert "PRIVATE" not in json.dumps(record)

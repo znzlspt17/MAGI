@@ -123,12 +123,14 @@ def _block_diagnostic(chain):
         reason = getattr(item, "block_reason", None)
         section = getattr(item, "block_section", None)
         index = getattr(item, "block_index", None)
+        field = getattr(item, "block_field", None)
         return {
             "validation_reason": reason if isinstance(reason, str) and reason in SpecCompilationError.block_reasons else None,
             "validation_section": section if isinstance(section, str) and section in SpecResponse.model_fields and section not in {"decisions", "spec_links"} else None,
+            "validation_field": field if isinstance(field, str) and field in SpecCompilationError.block_fields else None,
             "validation_index": index if type(index) is int and 0 <= index <= 100000 else None,
         }
-    return {"validation_reason": None, "validation_section": None, "validation_index": None}
+    return {"validation_reason": None, "validation_section": None, "validation_index": None, "validation_field": None}
 
 
 def _normalization_error(chain: list[BaseException]) -> dict[str, str] | None:

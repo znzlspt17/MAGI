@@ -16,6 +16,7 @@ it("과거 기록의 안전한 사유·KST와 연결 미확인을 표시한다",
   render(<JobValidation jobId={id} />);
   await screen.findByText("섹션에 내용 블록이 없습니다");
   expect(screen.getByText("실행 연결 미확인")).toBeVisible();
+  expect(screen.queryByText("블록 위치")).toBeNull();
   expect(screen.getByText("비범위")).toBeVisible();
   expect(screen.getByText(/26\. 10\. 27\. 17:23 KST/)).toBeVisible();
   const link = screen.getByRole("link", { name: "관련 로그 보기" });
@@ -26,8 +27,10 @@ it("과거 기록의 안전한 사유·KST와 연결 미확인을 표시한다",
 });
 
 it("연결된 실행만 로그 필터에 넣고 페이지를 이동한다", async () => {
-  vi.mocked(api).mockResolvedValueOnce(page([{ ...record, execution_id: execution, execution_link: "confirmed", validation_index: 2 }], 20)).mockResolvedValueOnce({ ...page([]), offset: 20 });
+  vi.mocked(api).mockResolvedValueOnce(page([{ ...record, execution_id: execution, execution_link: "confirmed", validation_reason: "duplicate_item_id", validation_field: "item_id", validation_index: 2 }], 20)).mockResolvedValueOnce({ ...page([]), offset: 20 });
   render(<JobValidation jobId={id} />); await screen.findByText("3번째 블록");
+  expect(screen.getByText("블록 ID가 중복됐습니다")).toBeVisible();
+  expect(screen.getByText("블록 ID (item_id)")).toBeVisible();
   expect(screen.getByRole("link", { name: "관련 로그 보기" }).getAttribute("href")).toContain("execution_id=" + execution);
   fireEvent.click(screen.getByRole("button", { name: "다음 진단" }));
   await screen.findByText("저장된 명세 검증 기록이 없습니다.");
@@ -39,7 +42,7 @@ it("손상·해석 불가·빈 결과와 조회 오류를 구분하고 재조회
   render(<JobValidation jobId={id} />); await screen.findByRole("alert");
   expect(screen.queryByText("저장된 명세 검증 기록이 없습니다.")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "진단 다시 조회" }));
-  await screen.findByText("세부 사유 판별 불가");
+  await screen.findByText("상세 진단 없음");
   expect(screen.getByText("저장된 진단 형식을 해석할 수 없습니다. 원문은 표시하지 않습니다.")).toBeVisible();
 });
 
@@ -51,4 +54,16 @@ it("다른 작업으로 전환한 뒤 이전 작업의 늦은 응답을 버린�
   await screen.findByText("저장된 명세 검증 기록이 없습니다.");
   await act(async () => finish(page()));
   expect(screen.queryByText("섹션에 내용 블록이 없습니다")).toBeNull();
+});
+
+
+it.each([
+  ["empty_item_id", "블록 ID가 비어 있습니다"],
+  ["reserved_item_id", "예약된 LOCKED- 접두사를 사용했습니다"],
+  ["invalid_item_id", "블록 ID가 비어 있거나 중복·예약 ID입니다"],
+])("ID 사유 %s와 과거 기록 호환성을 표시한다", async (reason, label) => {
+  vi.mocked(api).mockResolvedValueOnce(page([{ ...record, validation_reason: reason, validation_index: 0 }]));
+  render(<JobValidation jobId={id} />);
+  await screen.findByText(label);
+  expect(screen.getByText("1번째 블록")).toBeVisible();
 });

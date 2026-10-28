@@ -173,7 +173,7 @@ def _kst_timestamp(value):
 
 
 def normalize(row):
-    fields = ("trace_id", "request_id", "job_id", "execution_id", "stage", "duration_ms", "error_code", "error_stage", "exception_type", "frames", "failed_checks", "attempt", "max_attempts", "method", "status", "container_name", "validation_reason", "validation_section", "validation_index")
+    fields = ("trace_id", "request_id", "job_id", "execution_id", "stage", "duration_ms", "error_code", "error_stage", "exception_type", "frames", "failed_checks", "attempt", "max_attempts", "method", "status", "container_name", "validation_reason", "validation_section", "validation_index", "validation_field")
     return {"timestamp": _kst_timestamp(row.get("_time", "")),
             "service": row.get("service") if row.get("service") in SERVICES else "unknown",
             "level": row.get("level") if row.get("level") in LEVELS else "unknown",

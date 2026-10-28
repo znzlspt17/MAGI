@@ -53,15 +53,18 @@ class SpecCompilationError(Error):
     checks = frozenset({"spec_response", "implementation_plan", "spec_blocks", "spec_links",
                         "decision_trace", "source_reference", "product_boundary", "spec_structure",
                         "quote_anchor"})
-    block_reasons = frozenset({"empty_section", "invalid_item_id", "empty_text",
+    block_reasons = frozenset({"empty_section", "invalid_item_id", "empty_item_id", "duplicate_item_id", "reserved_item_id", "empty_text",
                                "unknown_requirement", "unknown_decision", "fixed_heading"})
 
-    def __init__(self, details, *, check="spec_response", block_reason=None, section=None, index=None):
+    block_fields = frozenset({"item_id", "text", "requirement_ids", "decision_ids"})
+
+    def __init__(self, details, *, check="spec_response", block_reason=None, section=None, index=None, field=None):
         super().__init__("Compiler response trace could not be validated.")
         self.validation_details = details
         self.failed_checks = [check if isinstance(check, str) and check in self.checks else "spec_response"]
         self.block_reason = block_reason if isinstance(block_reason, str) and block_reason in self.block_reasons else None
         self.block_section, self.block_index = section, index
+        self.block_field = field if isinstance(field, str) and field in self.block_fields else None
 
 
 TRANSLATION_RULES = {

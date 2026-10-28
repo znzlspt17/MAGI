@@ -54,7 +54,7 @@ def safe_record(content):
     result = {"state": "unrecognized", "stage": "spec_compile", "error_code": None,
               "failed_checks": [], "attempt": None, "execution_id": None,
               "execution_link": "unconfirmed", "validation_reason": None,
-              "validation_section": None, "validation_index": None}
+              "validation_section": None, "validation_index": None, "validation_field": None}
     try:
         value = json.loads(content) if isinstance(content, str) and len(content) <= 65536 else None
     except (ValueError, RecursionError):
@@ -80,6 +80,9 @@ def safe_record(content):
         parsed = _legacy(value.get("validation_details")) if "spec_blocks" in result["failed_checks"] else None
     if parsed:
         result.update(state="recognized", validation_reason=parsed[0], validation_section=parsed[1], validation_index=parsed[2])
+    field = value.get("validation_field")
+    if parsed and isinstance(field, str) and field in SpecCompilationError.block_fields:
+        result["validation_field"] = field
     execution = value.get("execution_id")
     if isinstance(execution, str) and _ID.fullmatch(execution):
         result["execution_id"] = execution

@@ -308,7 +308,13 @@ class ExecutionHistory:
         root = self.documents
         if state.get("reused_decisions"):
             detail["reused_decisions"] = copy.deepcopy(state["reused_decisions"])
-        if stage == "await_user":
+        saved_plan = node.get("result", {}).get("plan")
+        if stage == "planner" and isinstance(saved_plan or state.get("plan"), dict):
+            # 공개 판단 결과만 보관하고 모델 메시지나 내부 실행 상태는 복사하지 않는다.
+            plan = saved_plan or state["plan"]
+            detail.setdefault("result", {})["plan"] = _safe_result({"plan": plan})["plan"]
+            node["summary"] = str(plan.get("reason") or "작업 계획을 저장했습니다.")[:_MAX_SUMMARY]
+        elif stage == "await_user":
             node["status"] = "waiting"
             node["summary"] = "사용자 답변을 기다리고 있습니다."
         elif stage == "spec_compile":
@@ -689,7 +695,22 @@ def _safe_result(value: dict) -> dict:
         "resolution_history",
         "diagnosed_keys",
     }
-    return {key: copy.deepcopy(value[key]) for key in allowed if key in value}
+    result = {key: copy.deepcopy(value[key]) for key in allowed if key in value}
+    if isinstance(value.get("plan"), dict):
+        result["plan"] = {key: copy.deepcopy(value["plan"][key]) for key in (
+            "goal", "tasks", "action", "target", "input_refs", "expected_result", "reason",
+            "affected_requirement_ids", "stop_reason",
+        ) if key in value["plan"]}
+        if isinstance(result["plan"].get("tasks"), list):
+            result["plan"]["tasks"] = [
+                {key: copy.deepcopy(task[key]) for key in ("id", "title", "status") if key in task}
+                for task in result["plan"]["tasks"] if isinstance(task, dict)
+            ]
+    if isinstance(value.get("diagnostic"), dict):
+        result["diagnostic"] = {key: copy.deepcopy(value["diagnostic"][key]) for key in (
+            "error_code", "error_stage", "failed_checks", "validation_reason", "validation_section", "validation_index", "validation_field",
+        ) if key in value["diagnostic"]}
+    return result
 
 
 def _user_action_result(action: str, value: object) -> dict:

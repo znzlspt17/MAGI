@@ -64,7 +64,7 @@ transforms:
         "message": string(parsed.message) ?? string(parsed.msg) ?? message
       }
       clean.message = replace(clean.message, r'(?i)"?\b(password|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|internal[_-]?key|subject[_-]?pepper|code|state)"?\s*[:=]\s*"?[^\s,;&"]+', "[REDACTED]")
-      for_each(["trace_id", "request_id", "job_id", "execution_id", "stage", "duration_ms", "error_code", "error_stage", "exception_type", "frames", "failed_checks", "attempt", "max_attempts", "method", "status", "validation_reason", "validation_section", "validation_index"]) -> |_index, key| {
+      for_each(["trace_id", "request_id", "job_id", "execution_id", "stage", "duration_ms", "error_code", "error_stage", "exception_type", "frames", "failed_checks", "attempt", "max_attempts", "method", "status", "validation_reason", "validation_section", "validation_index", "validation_field"]) -> |_index, key| {
         value = get(parsed, [key]) ?? null
         if value != null { clean = set!(clean, [key], value) }
       }

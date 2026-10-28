@@ -41,13 +41,14 @@ def test_discarded_out_of_scope_cannot_collide_with_generated_block_ids(draft, s
 
 
 @pytest.mark.parametrize("mutation,reason", [
-    ("empty", "empty_section"), ("duplicate", "invalid_item_id"), ("reserved", "invalid_item_id"),
+    ("empty", "empty_section"), ("duplicate", "duplicate_item_id"), ("reserved", "reserved_item_id"), ("empty_id", "empty_item_id"),
     ("blank", "empty_text"), ("unknown_ref", "unknown_requirement"), ("unknown_decision", "unknown_decision"),
     ("heading", "fixed_heading"),
 ])
 def test_generated_content_keeps_strict_validation(draft, sheet, mutation, reason):
     if mutation == "empty": draft.background = []
     elif mutation == "duplicate": draft.background[0].item_id = draft.mission[0].item_id
+    elif mutation == "empty_id": draft.background[0].item_id = "   "
     elif mutation == "reserved": draft.background[0].item_id = "LOCKED-NS-001"
     elif mutation == "blank": draft.background[0].text = "   "
     elif mutation == "unknown_ref": draft.background[0].requirement_ids = ["UNKNOWN-001"]
@@ -61,6 +62,7 @@ def test_generated_content_keeps_strict_validation(draft, sheet, mutation, reaso
     assert diagnostic["validation_reason"] == reason
     assert diagnostic["validation_section"] == "background"
     assert diagnostic["validation_index"] == (None if mutation == "empty" else 0)
+    assert diagnostic["validation_field"] == {"duplicate": "item_id", "reserved": "item_id", "empty_id": "item_id", "blank": "text", "unknown_ref": "requirement_ids", "unknown_decision": "decision_ids", "heading": "text"}.get(mutation)
     assert "UNKNOWN-001" not in str(diagnostic)
 
 
@@ -101,7 +103,7 @@ def test_compiler_repairs_generated_block_with_shared_retry_budget(draft, sheet,
     monkeypatch.setattr("backend.services.spec_compiler.complete_with_usage", complete)
     result = _stage("spec_compile", lambda state: {"spec": compiler.compile(sheet, None, writer=writer)}, None)({})
     assert "# Final Agent Specification" in result["spec"]
-    assert attempts == [(0, None), (1, "invalid_item_id")]
+    assert attempts == [(0, None), (1, "duplicate_item_id")]
     assert CURRENT_RETRY.get() is None
 
 
@@ -130,11 +132,11 @@ def test_discarded_scope_prose_is_not_subject_to_model_language_contract(draft):
 
 def test_saved_validation_records_bind_explicit_execution_context(draft, sheet, monkeypatch):
     from protocol.logging import log_context
-    draft.background = []
+    draft.background[0].requirement_ids = ["PRIVATE_REFERENCE"]
     compiler, writer = compiler_and_writer()
     monkeypatch.setattr("backend.services.spec_compiler.complete_with_usage", lambda *a, **kw: draft)
     with log_context(execution_id="a" * 32):
         with pytest.raises(SpecCompilationError): compiler.compile(sheet, None, writer=writer)
     records = [call.args[1] for call in writer.write_json.call_args_list if call.args[0] == "analysis/spec_compile_validation.json"]
     assert len(records) == 4
-    assert all(record["execution_id"] == "a" * 32 and record["validation_reason"] == "empty_section" and record["validation_section"] == "background" for record in records)
+    assert all(record["execution_id"] == "a" * 32 and record["validation_reason"] == "unknown_requirement" and record["validation_section"] == "background" and record["validation_index"] == 0 and record["validation_field"] == "requirement_ids" for record in records)

@@ -28,6 +28,13 @@ const stageLabel = (node?: Step) =>
   node?.title ||
   {
     request: "요청 접수",
+    planner: "작업 계획",
+    project_context: "프로젝트 자료 확인",
+    knowledge_search: "기존 근거 확인",
+    web_research: "외부 자료 조사",
+    ask_user: "사용자 결정 확인",
+    blocked: "진행 중단",
+    requirement_lock_stage: "요구사항 확정",
     generate: "요청 접수",
     interview: "요청 분석",
     await_user: "요구사항 확인 필요",
@@ -125,6 +132,40 @@ export default function Workspace() {
   const result = detail?.result || {};
   const currentDocument = actualJob && [...graphNodes(actualJob)].reverse().find((node) => node.has_document && (!actualJob.execution_id || !node.execution_id || node.execution_id === actualJob.execution_id));
   const showConversation = () => setTab("conversation");
+  const selectedDetail = () => actualJob ? <>
+    {tab === "history" && detail && !detail.unavailable && <StepResult node={node} detail={detail} />}
+    {detail?.unavailable ? (
+      <Notice>기록 확인 불가: {detail.message}</Notice>
+    ) : !detail ? (
+      <p role="status">
+        {loading ? "작업" : "단계 상세"}를 불러오는
+        중입니다.
+      </p>
+    ) : detail.document?.content && tab === "history" ? (
+      <Button onClick={() => setTab("document")}>이 단계의 명세 문서 보기</Button>
+    ) : detail.document?.content ? (
+      <DocumentView
+        jobId={actualJob.id}
+        stepId={step}
+        initialLanguage={new URLSearchParams(location.search).has("completed_id") ? "en" : "ko"}
+        document={detail.document}
+        reviewOnly={evidenceOnly}
+        onShowDocument={() => setEvidenceOnly(false)}
+        onQuestion={question => {
+          const key = `draft:${auth.user?.id || "local"}:${actualJob.id}:feedback`;
+          const prior = sessionStorage.getItem(key)?.trim();
+          sessionStorage.setItem(key, prior ? `${prior}\n\n${question}` : question);
+          showConversation();
+        }}
+      />
+    ) : tab !== "history" ? (
+      <StepResult node={node} detail={detail} hideQuestions={!!actualJob.session_events?.find(event => event.id === node?.execution_id)?.questions?.length && JSON.stringify(actualJob.session_events?.find(event => event.id === node?.execution_id)?.questions) === JSON.stringify(detail?.result?.questions || detail?.result?.blocking_questions || [])} />
+    ) : null}
+    {(result.issues?.length ||
+      result.resolved_issues?.length ||
+      result.report) && <Issues result={result} open={tab === "history"} />}
+
+  </> : null;
   return (
     <SidebarProvider className="shell">
       <AppSidebar>
@@ -255,38 +296,11 @@ export default function Workspace() {
                         {tab === "history" && actualJob.usage && <p className="subtle">{usageLabel(actualJob.usage)}</p>}
                         {tab === "history" && (
                           <>
-                            <ExecutionTimeline key={actualJob.id} job={actualJob} nodes={graphNodes(actualJob)} selected={step} select={session.select} />
+                            <ExecutionTimeline key={actualJob.id} job={actualJob} nodes={graphNodes(actualJob)} selected={step} select={session.select} detail={selectedDetail()} />
                             {actualJob.execution_graph?.recording_incomplete && <Notice>일부 이력 기록 누락</Notice>}
                           </>
                         )}
-                        {detail?.unavailable ? (
-                          <Notice>기록 확인 불가: {detail.message}</Notice>
-                        ) : !detail ? (
-                          <p role="status">
-                            {loading ? "작업" : "단계 상세"}를 불러오는
-                            중입니다.
-                          </p>
-                        ) : detail.document?.content ? (
-                          <DocumentView
-                            jobId={actualJob.id}
-                            stepId={step}
-                            initialLanguage={new URLSearchParams(location.search).has("completed_id") ? "en" : "ko"}
-                            document={detail.document}
-                            reviewOnly={evidenceOnly}
-                            onShowDocument={() => setEvidenceOnly(false)}
-                            onQuestion={question => {
-                              const key = `draft:${auth.user?.id || "local"}:${actualJob.id}:feedback`;
-                              const prior = sessionStorage.getItem(key)?.trim();
-                              sessionStorage.setItem(key, prior ? `${prior}\n\n${question}` : question);
-                              showConversation();
-                            }}
-                          />
-                        ) : (
-                          <StepResult node={node} detail={detail} hideQuestions={!!actualJob.session_events?.find(event => event.id === node?.execution_id)?.questions?.length && JSON.stringify(actualJob.session_events?.find(event => event.id === node?.execution_id)?.questions) === JSON.stringify(detail?.result?.questions || detail?.result?.blocking_questions || [])} />
-                        )}
-                        {(result.issues?.length ||
-                          result.resolved_issues?.length ||
-                          result.report) && <Issues result={result} />}
+                        {tab !== "history" && selectedDetail()}
                       </section>
                       <aside className="action-panel">
                         <section className="action-card document-chat-cta"><p>답변·수정·승인은 대화에서 진행합니다.</p><Button className="primary" onClick={showConversation}><ChatCircleDotsIcon size={18} aria-hidden />대화에서 답변하기</Button></section>
@@ -362,7 +376,7 @@ function CompletedDocuments({
     </div></details>
   );
 }
-function StepResult({ node, detail, hideQuestions = false }: { node?: Step; detail: RecordData; hideQuestions?: boolean }) {
+export function StepResult({ node, detail, hideQuestions = false }: { node?: Step; detail: RecordData; hideQuestions?: boolean }) {
   const result = detail.result || {};
   const source = result.requirements || result;
   const groups = Array.isArray(source)
@@ -377,6 +391,23 @@ function StepResult({ node, detail, hideQuestions = false }: { node?: Step; deta
     <section className="step-result">
       <span className="eyebrow">{statusLabel(node?.status)}</span>
       <h2>{stageLabel(node)}</h2>
+      {node?.stage === "planner" && (result.plan ? <section aria-label="저장된 작업 계획">
+        <h3>{result.plan.goal}</h3>
+        <p><strong>선택한 작업: </strong>{stageLabel({ id: "", stage: result.plan.action })}</p>
+        <p><strong>판단 근거: </strong>{result.plan.reason}</p>
+        {result.plan.target && <p><strong>작업 대상: </strong>{result.plan.target}</p>}
+        {result.plan.expected_result && <p><strong>예상 결과: </strong>{result.plan.expected_result}</p>}
+        {!!result.plan.tasks?.length && <ul>{result.plan.tasks.map((task: RecordData) => <li key={task.id}>{task.title} · {({ pending: "예정", completed: "완료", blocked: "대기" } as Record<string, string>)[task.status] || task.status}</li>)}</ul>}
+        {!!result.plan.input_refs?.length && <p><strong>참조한 근거: </strong>{result.plan.input_refs.join(", ")}</p>}
+        {!!result.plan.affected_requirement_ids?.length && <p><strong>관련 요구사항: </strong>{result.plan.affected_requirement_ids.join(", ")}</p>}
+      </section> : <p>당시 작업 계획의 상세 내용이 저장되지 않았습니다.</p>)}
+      {node?.stage === "review_resolution" && result.action && <p><strong>다음 처리: </strong>{({ repair: "초안 수정·재검토", ask_user: "사용자 결정 확인", stop: "보완 중단", approve: "승인 후보 준비" } as Record<string, string>)[result.action] || result.action}</p>}
+      {result.wait_reason && <p><strong>중단·대기 사유: </strong>{result.wait_reason}</p>}
+      {result.diagnostic && <section aria-label="실패 진단"><h3>실패 진단</h3>
+        <p>{result.diagnostic.error_code || "분류되지 않은 실행 오류"}</p>
+        {result.diagnostic.error_stage && <p>실패 단계: {result.diagnostic.error_stage}</p>}
+        {!!result.diagnostic.failed_checks?.length && <p>검증 항목: {result.diagnostic.failed_checks.join(", ")}</p>}
+      </section>}
       {detail.recording_incomplete && (
         <Notice>
           일부 상세 기록이 누락되었습니다. 표시 가능한 결과만 제공합니다.
@@ -411,7 +442,7 @@ function StepResult({ node, detail, hideQuestions = false }: { node?: Step; deta
     </section>
   );
 }
-function Issues({ result }: { result: RecordData }) {
+function Issues({ result, open = false }: { result: RecordData; open?: boolean }) {
   const render = (items: RecordData[], resolved = false) =>
     items.map((issue, i) => (
       <article className="issue-card" key={i}>
@@ -429,6 +460,8 @@ function Issues({ result }: { result: RecordData }) {
           ["section", "섹션"],
           ["defect_kind", "결함 유형"],
           ["resolution_reason", "해결 판단"],
+          ["resolution_kind", "처리 분류"],
+          ["decision_answer_id", "재사용한 답변"],
           ["missing_information", "미확정 내용"],
           ["decision_key", "결정 주제"],
           ["required_change", "필요한 수정"],
@@ -440,6 +473,7 @@ function Issues({ result }: { result: RecordData }) {
             </p>
           ) : null,
         )}
+        {!!issue.basis_refs?.length && <p><strong>확정 근거: </strong>{issue.basis_refs.join(", ")}</p>}
         {(Array.isArray(issue.evidence)
           ? issue.evidence
           : issue.evidence
@@ -453,7 +487,7 @@ function Issues({ result }: { result: RecordData }) {
       </article>
     ));
   return (
-    <details className="issues">
+    <details className="issues" open={open || undefined}>
       <summary>검토 항목 · {result.issues?.length || 0}건</summary>
       {render(result.issues || [])}
       {!!result.resolved_issues?.length && (

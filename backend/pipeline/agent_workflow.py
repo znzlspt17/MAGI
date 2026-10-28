@@ -122,13 +122,18 @@ class AgentWorkflow:
         state = {**state, "execution_constraints": execution_constraints(state, self.engine.config)}
         from backend.pipeline.builder import _progress
         _progress(self.progress, "planner", "started")
-        plan = self.durable("planner", state, lambda current: {"plan": plan_next(current, self.nodes)})["plan"]
+        try:
+            plan = self.durable("planner", state, lambda current: {"plan": plan_next(current, self.nodes)})["plan"]
+        except Exception as exc:
+            from backend.server.diagnostics import diagnose_exception
+            _progress(self.progress, "planner", "failed", {"diagnostic": diagnose_exception(exc)})
+            raise
         history = [*state.get("plan_history", []), {**plan, "revision": state.get("revision", 0)}]
         result = {"plan": plan, "plan_history": history, "allowed_actions": [],
                   "execution_constraints": state["execution_constraints"],
                   "segment_steps": state.get("segment_steps", 0) + 1}
         self.persist("planner", {**state, **result})
-        _progress(self.progress, "planner", "completed")
+        _progress(self.progress, "planner", "completed", {"plan": plan})
         return result
 
     def blocked(self, state, reason=None, stop_reason=None):

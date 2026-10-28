@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { CaretDownIcon } from "@phosphor-icons/react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./components/ui/collapsible";
 import { Button, formatTime, statusLabel } from "./UI";
@@ -7,7 +7,7 @@ import type { Job, Step } from "./types";
 const actions: Record<string, string> = { generate: "최초 요청", answer: "질문에 답변", revise: "수정 요청", approve: "명세 승인", retry: "다시 시도" };
 const meaningful = (text?: string) => text && !["단계를 완료했습니다.", "사용자 작업을 접수했습니다."].includes(text) ? text : "상세 결과 기록 없음";
 
-export function ExecutionTimeline({ job, nodes, selected, select }: { job: Job; nodes: Step[]; selected: string; select: (id: string) => void }) {
+export function ExecutionTimeline({ job, nodes, selected, select, detail }: { job: Job; nodes: Step[]; selected: string; select: (id: string) => void; detail?: ReactNode }) {
   const events = job.session_events || [];
   const ids = [...new Set([...events.map(e => e.id), ...nodes.flatMap(n => n.execution_id ? [n.execution_id] : [])])];
   const initial = nodes.find(n => n.status === "running")?.execution_id || ids.at(-1);
@@ -31,7 +31,12 @@ export function ExecutionTimeline({ job, nodes, selected, select }: { job: Job; 
         </section>
         {!!questions.length && <section><h3>요구사항 확인 {steps.some(n => n.status === "waiting") ? "· 답변 대기" : ""}</h3><ol>{questions.map((q, i) => <li key={i}>{q.replace(/^\[[^\]]+\]\s*/, "")}</li>)}</ol></section>}
         <Collapsible className="execution-steps"><CollapsibleTrigger className="execution-detail-trigger">하위 처리 단계 {steps.length}개<CaretDownIcon size={14} aria-hidden /></CollapsibleTrigger><CollapsibleContent>
-          <div className="execution-step-list" role="group" aria-label="실행 흐름">{steps.map(node => <Button key={node.id} aria-pressed={selected === node.id} onClick={() => select(node.id)}>{node.title || node.stage || "처리 단계"} · {statusLabel(node.status)}</Button>)}</div>
+          <div className="execution-step-list" role="group" aria-label="실행 흐름">{steps.map((node, stepIndex) => <div key={node.id}>
+            <Button aria-pressed={selected === node.id} aria-expanded={selected === node.id} aria-controls={`step-detail-${node.id}`} onClick={() => select(node.id)}><span aria-hidden="true">{stepIndex + 1}.</span>{node.title || node.stage || "처리 단계"} · {statusLabel(node.status)}</Button>
+            {selected === node.id && <section id={`step-detail-${node.id}`} className="execution-step-detail" aria-label={`${stepIndex + 1}번째 단계 상세`}>
+              {detail || <p>{meaningful(node.summary)}</p>}
+            </section>}
+          </div>)}</div>
         </CollapsibleContent></Collapsible>
       </CollapsibleContent>
     </Collapsible></li>;

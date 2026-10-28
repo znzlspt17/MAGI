@@ -19,7 +19,7 @@ _GENERATION = 0
 _FIELDS = {"trace_id", "request_id", "job_id", "execution_id", "stage", "duration_ms",
            "error_code", "error_stage", "exception_type", "frames", "failed_checks",
            "attempt", "max_attempts", "method", "status", "logger_name",
-           "validation_reason", "validation_section", "validation_index"}
+           "validation_reason", "validation_section", "validation_index", "validation_field"}
 _SENSITIVE = re.compile(
     r"(?i)(authorization|cookie|set-cookie)\s*[:=]\s*[^\r\n]+|"
     r"\b(?:sk-[a-zA-Z0-9_-]{8,})\b|"

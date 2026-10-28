@@ -101,18 +101,21 @@ def test_block_diagnostic_only_logs_allowlisted_reason_section_and_numeric_index
     error = SpecCompilationError(["PRIVATE_RESPONSE"], check="spec_blocks", block_reason="PRIVATE_REASON", section="PRIVATE_SECTION", index="PRIVATE_INDEX")
     error.block_reason = "PRIVATE_REASON"
     error.block_reasons = {"PRIVATE_REASON"}
+    error.block_field = "PRIVATE_FIELD"
+    error.block_fields = {"PRIVATE_FIELD"}
     diagnostic = diagnose_exception(error)
     assert diagnostic["validation_reason"] is None
     assert diagnostic["validation_section"] is None
     assert diagnostic["validation_index"] is None
+    assert diagnostic["validation_field"] is None
     assert "PRIVATE" not in str(diagnostic)
-    error = SpecCompilationError(["PRIVATE_RESPONSE"], check="spec_blocks", block_reason="unknown_requirement", section="architecture", index=2)
+    error = SpecCompilationError(["PRIVATE_RESPONSE"], check="spec_blocks", block_reason="unknown_requirement", section="architecture", index=2, field="requirement_ids")
     def fail(state):
         raise error
     with pytest.raises(SpecCompilationError):
         _stage("spec_compile", fail, None)({})
     rows = [json.loads(line) for line in json_log.getvalue().splitlines()]
-    assert all(row["validation_reason"] == "unknown_requirement" and row["validation_section"] == "architecture" and row["validation_index"] == 2 for row in rows)
+    assert all(row["validation_reason"] == "unknown_requirement" and row["validation_section"] == "architecture" and row["validation_index"] == 2 and row["validation_field"] == "requirement_ids" for row in rows)
     assert "PRIVATE_RESPONSE" not in json_log.getvalue()
 
 
@@ -143,3 +146,36 @@ def test_trace_failure_preserves_check_without_logging_details(name, check):
     diagnostic = diagnose_exception(raised.value)
     assert diagnostic["failed_checks"] == [check]
     assert "PRIVATE_TRACE" not in str(diagnostic)
+
+
+def test_final_job_log_preserves_stage_diagnostic(json_log, monkeypatch):
+    from threading import RLock
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from backend.server.job_manager import JobManager
+    from backend.access.validation import safe_record
+    from backend.server.execution_history import _safe_result
+    from gateway.logs import normalize
+
+    error = SpecCompilationError(["PRIVATE_RESPONSE"], check="spec_blocks",
+        block_reason="duplicate_item_id", section="background", index=0, field="item_id")
+    engine = Mock()
+    engine.execute.side_effect = lambda *a, **kw: _stage("spec_compile", lambda state: (_ for _ in ()).throw(error), None)({})
+    history = Mock()
+    monkeypatch.setattr("backend.server.job_manager.ExecutionHistory", Mock(return_value=history))
+    job = {"execution_id": "a" * 32, "request": "PRIVATE_REQUEST"}
+    manager = SimpleNamespace(lock=RLock(), _get_locked=lambda ident: job,
+        _save_locked=Mock(return_value=True), _notify=Mock(), _set_error_metadata=Mock(),
+        workspace=SimpleNamespace(documents=Mock(), engine=Mock(return_value=engine), state=lambda ident: {}))
+    JobManager._run_logged(manager, "b" * 32, "retry", {})
+    rows = [json.loads(line) for line in json_log.getvalue().splitlines()]
+    assert len(rows) == 5 and rows[-1]["event"] == "job_failed"
+    keys = ("validation_reason", "validation_section", "validation_index", "validation_field")
+    expected = dict(zip(keys, ("duplicate_item_id", "background", 0, "item_id")))
+    assert all({key: row[key] for key in keys} == expected for row in rows)
+    diagnostic = history.terminal.call_args.kwargs["result"]["diagnostic"]
+    assert {key: _safe_result({"diagnostic": diagnostic})["diagnostic"][key] for key in keys} == expected
+    record = safe_record(json.dumps({"stage": "spec_compile", **diagnostic}))
+    assert {key: record[key] for key in keys} == expected
+    assert normalize(rows[-1])["fields"]["validation_field"] == "item_id"
+    assert "PRIVATE" not in json_log.getvalue()

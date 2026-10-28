@@ -424,6 +424,8 @@ def _log_exception(
         event, method=method, error_code=diagnostic["error_code"],
         error_stage=diagnostic["error_stage"], failed_checks=diagnostic["failed_checks"],
         exception_type=diagnostic["exception_type"], frames=diagnostic["frames"],
+        validation_reason=diagnostic["validation_reason"], validation_section=diagnostic["validation_section"],
+        validation_index=diagnostic["validation_index"], validation_field=diagnostic["validation_field"],
     )
 
 
