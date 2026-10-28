@@ -446,7 +446,7 @@ class WorkflowTasks:
             action = "ask_user"
         elif selected and (
             stop
-            or state.get("critic_pass_count", 0) >= state.get("max_critic_passes", 3)
+            or state.get("critic_pass_count", 0) >= self.config.max_critic_passes
         ):
             action = "stop"
         else:

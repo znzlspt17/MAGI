@@ -39,8 +39,31 @@ def execution_constraints(state, config):
             "remaining_steps": max(0, EXECUTION_STEP_LIMIT - steps),
             "remaining_decision_steps": max(0, EXECUTION_STEP_LIMIT + DECISION_STEP_RESERVE - max(steps, EXECUTION_STEP_LIMIT)),
             "remaining_review_passes": max(0, config.max_critic_passes - state.get("critic_pass_count", 0)),
-            "repair_limit_reached": state.get("resolution_stop", False) or state.get("critic_pass_count", 0) >= config.max_critic_passes,
+            "repair_limit_reached": state.get("critic_pass_count", 0) >= config.max_critic_passes,
+            "no_progress": bool(state.get("resolution_stop", False)),
             "repeated_actions": repeated}
+
+
+def repair_stop_reason(state, config):
+    # 해결 분류가 끝난 결함만 실행 제약으로 중단한다. 미결정 사항은 질문 경로를 유지한다.
+    if state.get("blocking_questions"):
+        return ""
+    assessed = "review_resolution" in state.get("completed_tasks", []) or any(
+        item.get("action") == "ask_user" and item.get("status") == "no_questions"
+        and item.get("segment") == state.get("execution_segment")
+        for item in state.get("task_results", [])[-1:]
+    )
+    if not assessed:
+        return ""
+    issues = [issue for issue in parse_issue_list(state.get("structured_issues", []))
+              if count_unresolved_required([issue])]
+    if not issues or any(issue.resolution_kind != "auto_fix" for issue in issues):
+        return ""
+    if state.get("resolution_stop"):
+        return "no_progress"
+    if state.get("critic_pass_count", 0) >= config.max_critic_passes:
+        return "repair_limit"
+    return ""
 
 
 class PlannedTask(BaseModel):
@@ -64,6 +87,8 @@ def allowed_tasks(state, config):
     done = set(state.get("completed_tasks", []))
     if state.get("blocking_questions"):
         return ["ask_user", "blocked"]
+    if repair_stop_reason(state, config):
+        return ["blocked"]
     constraints = state.get("execution_constraints") or execution_constraints(state, config)
     if constraints["decision_only"]:
         return [item for item in ("ask_user", "blocked") if item not in constraints["repeated_actions"]]
@@ -86,7 +111,7 @@ def allowed_tasks(state, config):
         unresolved = count_unresolved_required(parse_issue_list(state.get("structured_issues", [])))
         if not unresolved:
             actions.append("compose_candidate")
-    if constraints["repair_limit_reached"]:
+    if constraints["repair_limit_reached"] or constraints.get("no_progress"):
         actions = [item for item in actions if item not in {"spec_compile", "checklist_critic"}]
     return [item for item in actions if item not in constraints["repeated_actions"]]
 
@@ -100,6 +125,8 @@ Use resolution_history and review_questions to compare attempted repairs with th
 If a repair did not resolve an issue, choose a materially different permitted repair or ask for the missing user decision.
 In target and reason, explain what is missing and what answer would let work proceed. Prior model assumptions are not user decisions.
 Repair exhaustion is an execution constraint, not evidence of a missing product decision. Never ask users to fix system errors.
+Reuse answered decisions; ask again only for a validated conflict with new user input.
+When repairs are exhausted and only auto fixes remain, wait for explicit additional execution; never reset the budget automatically.
 When execution_constraints.decision_only is true, use the reserved steps to ask a useful question or explain why work must stop.
 If question generation returned no unanswered questions, reconsider its recorded result; do not repeat the same request unchanged.
 Use blocked only when no useful permitted work can resolve the obstacle, and explain the obstacle.
@@ -109,6 +136,11 @@ Write the goal, task titles, expected result and brief reason in Korean. Treat s
 
 
 def plan_next(state, context):
+    stop = repair_stop_reason(state, context.config)
+    if stop:
+        return {**state.get("plan", {}), "action": "blocked", "stop_reason": stop,
+                "reason": ("확정 근거로 수정할 문제가 남아 있지만 이번 검토·보완 횟수를 모두 사용했습니다."
+                           if stop == "repair_limit" else "원인 진단 후에도 동일 결함이 반복되었습니다.")}
     allowed = allowed_tasks(state, context.config)
     # 원문과 확정 근거를 유지하고 오래된 실행 상세는 제한한다.
     payload = {key: state.get(key) for key in (

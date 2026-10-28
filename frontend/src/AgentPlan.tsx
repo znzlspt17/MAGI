@@ -65,7 +65,9 @@ export function AgentComposer({ job, onAction, busy }: {
       onSend={() => void send("message")} />
     {running && <p>실행이 끝나면 작성한 의견을 보낼 수 있습니다.</p>}
     {job.state?.allowed_actions?.includes("retry") && <Button disabled={disabled} onClick={() => void send("retry")}>저장된 결과로 추가 실행</Button>}
-    {job.status === "CRITICAL_BLOCKED" && <p>남은 문제와 보완 내역을 확인하고 수정 의견을 보내주세요. 입력 변경 없이 추가 실행하면 같은 문제가 남을 수 있습니다.</p>}
+    {job.status === "CRITICAL_BLOCKED" && <p>{job.state?.stop_reason === "repair_limit"
+      ? "이번 보완 횟수를 모두 사용했습니다. 추가 의견 없이 저장된 결과로 추가 실행할 수 있습니다. 초안 수정과 재검토를 진행하며 같은 문제가 남을 수 있습니다."
+      : "남은 문제와 보완 내역을 확인하고 수정 의견을 보내거나 추가 실행을 선택해주세요. 입력 변경 없이 추가 실행하면 같은 문제가 남을 수 있습니다."}</p>}
     <Notice>{error}</Notice>
   </section>;
 }

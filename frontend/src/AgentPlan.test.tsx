@@ -44,6 +44,15 @@ it("제출 실패 시 작성 내용을 유지한다", async () => {
   expect(screen.getByText("연결을 확인해주세요.")).toBeVisible();
 });
 
+it("보완 한도에서는 의견 없이 저장된 결과로 추가 실행한다", async () => {
+  const user = userEvent.setup(), action = vi.fn().mockResolvedValue(undefined);
+  render(<AgentComposer job={{ ...job, state: { ...job.state, stop_reason: "repair_limit" } }} onAction={action} busy={false} />);
+  expect(screen.getByText(/추가 의견 없이 저장된 결과로 추가 실행/)).toBeVisible();
+  expect(screen.getByRole("textbox")).toHaveValue("");
+  await user.click(screen.getByRole("button", { name: "저장된 결과로 추가 실행" }));
+  expect(action).toHaveBeenCalledExactlyOnceWith("retry", null);
+});
+
 it("시스템 중단 시 추가 실행의 한계와 요구사항 확인 완료의 의미를 표시한다", async () => {
   const user = userEvent.setup();
   render(<><AgentPlan job={{ ...job, state: { ...job.state, stop_reason: "no_progress", task_results: [{ action: "interview", revision: 0, status: "completed", reason: "조작 키 확인" }] } }} /><AgentComposer job={job} onAction={vi.fn()} busy={false} /></>);

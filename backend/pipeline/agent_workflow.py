@@ -103,7 +103,7 @@ class AgentWorkflow:
                   "execution_constraints": {},
                   "execution_segment": state.get("execution_segment", 0) + 1,
                   "wait_reason": "", "stop_reason": ""}
-        if action == "retry":
+        if action in {"answer", "revise", "message", "retry"}:
             result.update(critic_pass_count=0, resolution_stop=False, diagnosed_keys=[])
         if action in {"answer", "revise", "message"}:
             result.update(candidate_hash="", user_approval_status="PENDING", critical_report=None)
@@ -140,7 +140,10 @@ class AgentWorkflow:
                  "execution_limit": "자동 실행 한도", "invalid_plan": "유효한 계획 생성 실패"}.get(stop_reason, "진행 중단")
         if not reason.startswith(label + " · "):
             reason = label + " · " + reason
-        reason += " 남은 문제와 보완 내역을 확인하고 수정 의견을 보내거나 저장된 결과로 추가 실행해주세요. 같은 문제가 남을 수 있습니다."
+        if stop_reason == "repair_limit":
+            reason += " 저장된 결과로 추가 실행을 선택하면 남은 결함의 초안 수정과 재검토를 진행합니다. 추가 의견 없이도 실행할 수 있으며, 같은 문제가 남을 수 있습니다."
+        else:
+            reason += " 남은 문제와 보완 내역을 확인하고 수정 의견을 보내거나 저장된 결과로 추가 실행해주세요. 같은 문제가 남을 수 있습니다."
         result = {"status": "CRITICAL_BLOCKED", "wait_reason": reason,
                   "stop_reason": stop_reason,
                   "allowed_actions": ["message", "revise", "retry"],

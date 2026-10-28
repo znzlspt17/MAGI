@@ -316,7 +316,8 @@ def test_planned_review_question_recovers_uncertain_call_and_resumes_with_answer
                 self.planner_payloads.append(payload)
                 result = planner_result(messages)
                 answered = any(ref.startswith("user_answer:REVIEW-") for ref in payload.get("confirmed_user_sources", {}))
-                if payload.get("resolution_history") and payload["execution_constraints"]["repair_limit_reached"] and not answered:
+                # 보관 기간은 실제 미결정 사항이므로 자동 수정 확정 전에 질문 판단을 요청한다.
+                if "checklist_critic" in payload.get("completed_tasks", []) and payload["execution_constraints"]["repair_limit_reached"] and not answered:
                     result.parsed.action = "ask_user"
                     result.parsed.target = "메모 보관 기간"
                     result.parsed.reason = "보완 이력만으로 보관 기간을 확정할 수 없습니다."

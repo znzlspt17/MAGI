@@ -86,11 +86,23 @@ def failure_report(state):
                   "원인 진단: " + ("실행" if attempt.get("diagnosed_keys") else "없음")]
         for issue in attempt["issues"]:
             lines += [f"- [{issue['decision_key']}] {issue['problem']}",
-                      f"  - 판단: {issue['resolution_reason']}", f"  - 시도한 보완: {issue['required_change']}",
+                      f"  - 판단: {issue['resolution_reason']}", f"  - 제안한 보완: {issue['required_change']}",
                       "  - 근거: " + ", ".join(issue.get("basis_refs", []))]
     lines += ["", "## 남은 결함"]
     for issue in state.get("structured_issues", []):
         if issue.get("status") != "resolved" and (issue.get("severity") in {"blocking", "major"} or issue.get("decision_answer_id")):
             lines.append(f"- [{issue['decision_key']}] {issue['problem']}")
+            if issue.get("decision_answer_id"):
+                lines.append("  - 재사용한 답변: " + issue["decision_answer_id"])
+            if issue.get("basis_refs"):
+                lines.append("  - 확정 근거: " + ", ".join(issue["basis_refs"]))
+            if issue.get("required_change"):
+                lines.append("  - 다음 보완: " + issue["required_change"])
+    lines += ["", "## 수행한 작업"]
+    for task in state.get("task_results", []):
+        if task.get("status") == "completed":
+            lines.append(f"- {task['action']}: {task.get('reason', '')}")
+    if state.get("stop_reason") == "repair_limit":
+        lines += ["", "## 추가 실행", "추가 의견 없이 저장된 결과로 추가 실행할 수 있습니다. 남은 결함의 초안 수정과 재검토를 진행합니다."]
     lines += ["", "종료 이유: " + (state.get("wait_reason") or ("원인 진단 후에도 동일 결함이 남았습니다." if state.get("resolution_stop") else "설정된 검토·보완 횟수를 모두 사용했습니다."))]
     return "\n".join(lines) + "\n"

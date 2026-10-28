@@ -94,7 +94,8 @@ def test_model_plan_wording_cannot_bypass_repeat_detection():
 
 
 @pytest.mark.parametrize("answered", [False, True])
-def test_exhausted_review_is_reclassified_but_confirmed_answer_is_not_asked(monkeypatch, answered):
+@pytest.mark.parametrize("passes", [1, 3])
+def test_exhausted_review_is_reclassified_but_confirmed_answer_is_not_asked(monkeypatch, answered, passes):
     import backend.pipeline.tasks as tasks
     from backend.models import IssuePacket, ReviewResolutionResponse
     from backend.services.review_resolution import defect_identity, decision_identity
@@ -117,10 +118,10 @@ def test_exhausted_review_is_reclassified_but_confirmed_answer_is_not_asked(monk
     node = object.__new__(tasks.WorkflowTasks)
     node.writer = Mock()
     node.writer.read_text.return_value = "Draft"
-    node.config = SimpleNamespace(model_routing={"critic": SimpleNamespace(model="fake")})
+    node.config = SimpleNamespace(max_critic_passes=3, model_routing={"critic": SimpleNamespace(model="fake")})
     node.provider = None
     state = {
-        "user_request": "키보드 게임", "requirement_lock_sheet": {}, "critic_pass_count": 3,
+        "user_request": "키보드 게임", "requirement_lock_sheet": {}, "critic_pass_count": passes,
         "structured_issues": [issue.to_dict(), auto_issue.to_dict()], "diagnosed_keys": [defect_identity(issue)],
         "resolution_history": [{"issues": [issue.to_dict()]}],
     }
@@ -129,6 +130,7 @@ def test_exhausted_review_is_reclassified_but_confirmed_answer_is_not_asked(monk
         state["review_questions"] = [{"decision_key": decision_identity(issue), "question_id": "Q1"}]
     result = node.review_resolution(state, final=True)
     assert complete.call_count == 1
+    assert result["resolution_stop"] is (passes > 1)
     assert bool(result["blocking_questions"]) is not answered
     assert result["structured_issues"][0]["resolution_kind"] == ("auto_fix" if answered else "user_decision")
     assert result["structured_issues"][1]["resolution_kind"] == "auto_fix"
