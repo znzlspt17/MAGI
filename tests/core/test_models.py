@@ -54,6 +54,7 @@ def invoke(payload, *, status=200, model="gpt-6-luna"):
             model=model,
             temperature=0,
             cache_key="test-stage",
+            conversation_id="conv_test",
         )
     return result, requests
 
@@ -65,12 +66,14 @@ def test_langchain_responses_request_and_usage():
     assert body["model"] == "gpt-6-luna" and body["service_tier"] == "default"
     assert body["max_output_tokens"] == 128_000
     assert body["input"][0] == {
-        "role": "system",
+        "role": "developer",
         "content": "Instructions",
         "type": "message",
     }
     assert body["input"][1] == {"role": "user", "content": "Request", "type": "message"}
-    assert "conversation" not in body and "previous_response_id" not in body
+    assert body["conversation"] == "conv_test" and "previous_response_id" not in body
+    assert "instructions" not in body
+    assert body["prompt_cache_options"] == {"mode": "implicit", "ttl": "30m"}
     assert "temperature" not in body and body["prompt_cache_key"] == "test-stage"
     assert result.text == "Result"
     assert (result.input_tokens, result.output_tokens, result.cached_tokens) == (
@@ -122,8 +125,9 @@ def test_explicit_instructions_override_source_system_message():
             [{"role": "system", "content": "Superseded"}],
             model="gpt-6-luna",
             instructions="Current",
+            conversation_id="conv_test",
         )
-    assert llm.invoke.call_args.args[0] == [{"role": "system", "content": "Current"}]
+    assert llm.invoke.call_args.args[0] == [{"role": "developer", "content": "Current"}]
     assert factory.call_args.kwargs["max_retries"] == 0
     assert factory.call_args.kwargs["use_previous_response_id"] is False
 
@@ -177,6 +181,7 @@ def test_structured_output_parse_failure_keeps_observed_usage():
             [{"role": "user", "content": "Request"}],
             model="gpt-6-luna",
             text_format=Output,
+            conversation_id="conv_test",
         )
     assert result.parsed.value == "ok"
     assert requests[0]["text"]["format"]["type"] == "json_schema"
@@ -195,5 +200,6 @@ def test_structured_output_parse_failure_keeps_observed_usage():
             [{"role": "user", "content": "Request"}],
             model="gpt-6-luna",
             text_format=Output,
+            conversation_id="conv_test",
         )
     assert failure.value.completion.input_tokens == 20

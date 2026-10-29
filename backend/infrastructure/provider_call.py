@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from protocol.logging import get_logger
 from contextvars import ContextVar
+from hashlib import sha256
+import json
 import re
 from datetime import datetime, timezone
 from time import perf_counter
@@ -19,11 +21,11 @@ from backend.models import CompletionResult
 from backend.providers.llm_provider import ChatModelProvider
 from backend.infrastructure.stage_retry import attempt_limit, current_messages, retry_messages
 from backend.infrastructure.prompt_context import prepare_context
+from backend.infrastructure.conversation_state import cache_key, call_started, call_finished, job_conversation
 from backend.errors import RequirementNormalizationError, ReviewValidationError, SpecCompilationError
 
 
 LOGGER = get_logger("backend.server")
-_CACHE_KEY_VERSION = "v3"
 WORKFLOW_MESSAGES = ContextVar("workflow_messages", default=None)
 
 
@@ -59,8 +61,16 @@ def _complete_once(
     temperature: float | None = 0,
     isolated_schema: type | None = None,
 ) -> Any:
+    with job_conversation(writer, provider) as conversation_id:
+        return _complete_connected(writer, provider, messages, model=model, stage=stage,
+                                   temperature=temperature, isolated_schema=isolated_schema,
+                                   conversation_id=conversation_id)
+
+
+def _complete_connected(writer, provider, messages, *, model, stage, temperature,
+                        isolated_schema, conversation_id):
     """사용량과 작업별 메시지를 저장하고 단계별 구조화 결과를 전달한다."""
-    # 변경 검토는 생성 대화와 검색 문맥을 공유하지 않는 단발 호출이다.
+    # 별도 스키마의 전처리 경계와 원격 대화 수명주기는 독립적이다.
     references = None
     if isolated_schema is None:
         messages, references = prepare_context(writer, messages, stage)
@@ -109,18 +119,33 @@ def _complete_once(
     started = perf_counter()
     try:
         schema = isolated_schema or STAGE_SCHEMAS.get(stage)
-        instructions = "\n\n".join([POLICY, *(item["content"] for item in messages if item.get("role") == "system"), LANGUAGE_RULES.get(stage, "")])
+        version = sha256(json.dumps(messages, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+        instructions = "\n\n".join([
+            f"Current stage: {stage}. Current input version: {version}. "
+            "Apply these stage instructions only to this call. Use only the current call's allowed source references; "
+            "older outputs and superseded drafts are historical data. Return the current output schema only.",
+            *(item["content"] for item in messages if item.get("role") in {"system", "developer"}
+              and item["content"] != POLICY), LANGUAGE_RULES.get(stage, "")])
         recorder = WORKFLOW_MESSAGES.get()
         if recorder is not None:
-            recorder[stage] = [{"role": "system", "content": instructions},
+            recorder[stage] = [{"role": "developer", "content": instructions},
                                *(item for item in messages if item.get("role") != "system")]
-        if not isinstance(provider, ChatModelProvider):
+        callbacks = {}
+        if isinstance(provider, ChatModelProvider):
+            # 비용 예약·입력 준비 실패를 원격 호출 불확실성으로 기록하지 않는다.
+            callbacks["before_request"] = lambda: call_started(writer, provider)
+        else:
             from backend.infrastructure.workflow_store import provider_entered
+            call_started(writer, provider)
             provider_entered()
         result = provider.complete_result(
-            messages, model=model, temperature=temperature, cache_key=_cache_key(stage),
+            messages, model=model, temperature=temperature, cache_key=cache_key(writer.job_id),
             instructions=instructions, text_format=schema,
+            conversation_id=conversation_id,
+            **callbacks,
         )
+        if isinstance(result, CompletionResult):
+            call_finished(writer, provider, result)
         if schema is not None and not isinstance(result.parsed, schema):
             raise TypeError("Provider structured result is invalid.")
         if not isinstance(result, CompletionResult):
@@ -128,6 +153,8 @@ def _complete_once(
     except Exception as exc:
         failed_result = getattr(exc, "completion", None)
         if isinstance(failed_result, CompletionResult):
+            if safe_response_id(failed_result.response_id):
+                call_finished(writer, provider, failed_result)
             attempt.update(input_tokens=_count(failed_result.input_tokens),
                            output_tokens=_count(failed_result.output_tokens),
                            cached_tokens=_count(failed_result.cached_tokens))
@@ -187,10 +214,6 @@ def _record_usage(writer: Documents, usage: dict[str, Any]) -> bool:
         _log_usage_io("write", exc)
         return False
     return True
-
-
-def _cache_key(stage: str) -> str:
-    return f"{_CACHE_KEY_VERSION}:{_safe_stage(stage)}:v2"
 
 
 def _safe_stage(stage: object) -> str:

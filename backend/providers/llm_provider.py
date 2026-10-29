@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import re
+import json
 from dataclasses import replace
 from typing import Any
 import httpx2
+from openai import OpenAI
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import AIMessage
@@ -16,6 +18,7 @@ from backend.infrastructure.cache_diagnostics import safe_response_id, safe_diag
 from backend.models import CompletionResult
 from backend.model_policy import require_model, MAX_OUTPUT_TOKENS, SERVICE_TIER
 from backend.infrastructure.model_usage import UsageObservation
+from backend.infrastructure.conversation_state import valid_conversation_id
 
 
 class ChatModelProvider:
@@ -30,14 +33,37 @@ class ChatModelProvider:
         if not self.api_key and not os.environ.get("OPENAI_API_KEY"):
             raise MissingCredentialError("OPENAI_API_KEY is not set for MAGI runtime.")
 
+    def create_conversation(self) -> str:
+        try:
+            with OpenAI(api_key=self.api_key, timeout=120, max_retries=0) as client:
+                identifier = client.conversations.create().id
+            if not valid_conversation_id(identifier):
+                raise ValueError()
+            return identifier
+        except Exception:
+            raise Error("OpenAI 대화 생성 완료 여부를 확인할 수 없습니다. 자동 재생성을 중단했습니다.") from None
+
+    def initialize_conversation(self, conversation_id, messages):
+        if not valid_conversation_id(conversation_id):
+            raise Error("OpenAI 대화 ID가 올바르지 않습니다.")
+        try:
+            with OpenAI(api_key=self.api_key, timeout=120, max_retries=0) as client:
+                client.conversations.items.create(conversation_id, items=messages)
+        except Exception:
+            raise Error("OpenAI 대화 초기 문맥 저장 완료 여부를 확인할 수 없습니다. 자동 반복을 중단했습니다.") from None
+
 
     def complete_result(
         self, messages: list[dict], *, model: str,
         temperature: float | None = None, instructions: str | None = None,
         text_format: type[BaseModel] | None = None,
         cache_key: str | None = None,
+        conversation_id: str,
+        before_request=None,
     ) -> CompletionResult:
         require_model(model)
+        if not valid_conversation_id(conversation_id):
+            raise Error("OpenAI 대화 ID가 올바르지 않습니다.")
         meter = self.meter
         options: dict[str, Any] = {
             "model_provider": "openai", "use_responses_api": True,
@@ -49,12 +75,30 @@ class ChatModelProvider:
             options["api_key"] = self.api_key
         if temperature is not None and not re.match(r"^gpt-(?:5|6)(?:[.-]|$)", model, re.I):
             options["temperature"] = temperature
+        options["model_kwargs"] = {"conversation": conversation_id}
         if cache_key:
-            options["model_kwargs"] = {"prompt_cache_key": cache_key}
-        inputs = list(messages)
+            options["model_kwargs"]["prompt_cache_key"] = cache_key
+        if re.match(r"^gpt-(?:5\.6|6)(?:[.-]|$)", model, re.I):
+            options["prompt_cache_options"] = {"mode": "implicit", "ttl": "30m"}
+        # 과거 assistant 응답은 서버 대화가 보존한다. 원본 요청도 초기화 시 한 번만 넣는다.
+        inputs = [{**item, "role": "developer" if item.get("role") == "system" else item["role"]}
+                  for item in messages if item.get("role") != "assistant"
+                  and not (isinstance(item.get("content"), str)
+                           and item["content"].startswith("Original user request (immutable):\n"))]
+        for item in inputs:
+            content = item.get("content")
+            if item["role"] == "user" and isinstance(content, str) and content.startswith("{"):
+                try:
+                    data = json.loads(content)
+                except ValueError:
+                    continue
+                if isinstance(data, dict) and "original_user_request" in data:
+                    data.pop("original_user_request")
+                    data["original_user_request_from"] = "Initial conversation user message (immutable)"
+                    item["content"] = json.dumps(data, ensure_ascii=False)
         if instructions is not None:
-            inputs = [{"role": "system", "content": instructions},
-                      *(item for item in inputs if item.get("role") != "system")]
+            inputs = [{"role": "developer", "content": instructions},
+                      *(item for item in inputs if item.get("role") not in {"system", "developer"})]
         reservation = meter.reserve(model) if meter else None
         result = None
         observation = UsageObservation()
@@ -68,11 +112,15 @@ class ChatModelProvider:
                 structured = llm.with_structured_output(
                     text_format, method="json_schema", include_raw=True, strict=True,
                 )
+                if before_request is not None:
+                    before_request()
                 provider_entered()
                 packet = structured.invoke(inputs)
                 raw, parsed = packet["raw"], packet["parsed"]
                 parsing_error = packet["parsing_error"]
             else:
+                if before_request is not None:
+                    before_request()
                 provider_entered()
                 raw, parsed, parsing_error = llm.invoke(inputs), None, None
             if not isinstance(raw, AIMessage):
@@ -85,7 +133,7 @@ class ChatModelProvider:
                     or raw.response_metadata.get("finish_reason") in {"length", "content_filter"}
                     or (text_format is None and not result.text)):
                 raise Error("모델 응답이 거부되었거나 완전한 결과를 반환하지 않았습니다.")
-        except Exception:
+        except Exception as exc:
             if result is None and observation.values is not None:
                 result = CompletionResult(text="", **observation.values)
             if meter:
@@ -95,7 +143,12 @@ class ChatModelProvider:
                                        result.cache_write_30m_tokens, result.cache_write_12h_tokens)
                 meter.settle(reservation, model, None)
             # 통합 예외에는 요청 본문이 포함될 수 있으므로 외부로 전달하지 않는다.
-            error = Error("모델 호출을 완료하지 못했습니다.")
+            message = "모델 호출을 완료하지 못했습니다."
+            if getattr(exc, "status_code", None) == 404:
+                message = "OpenAI 대화에 접근할 수 없습니다. 대화를 자동 교체하지 않고 중단했습니다."
+            elif getattr(exc, "code", None) == "context_length_exceeded":
+                message = "OpenAI 대화의 문맥 한도를 초과했습니다. 자동 절단이나 대화 교체 없이 중단했습니다."
+            error = Error(message)
             error.completion = result
             raise error from None
         finally:

@@ -62,6 +62,15 @@ _KNOWN_REASONS = {
     "OpenAI response did not complete.": "OpenAI 응답이 완료되지 않았습니다.",
     "OpenAI returned no text response.": "OpenAI가 텍스트 결과를 반환하지 않았습니다.",
     "OpenAI request failed.": "OpenAI 제공자 요청을 처리하지 못했습니다.",
+    **{message: message for message in (
+        "OpenAI 대화 생성 완료 여부를 확인할 수 없습니다. 자동 재생성을 중단했습니다.",
+        "OpenAI 대화 초기 문맥 저장 완료 여부를 확인할 수 없습니다. 자동 반복을 중단했습니다.",
+        "OpenAI 대화 초기화 완료 여부를 확인할 수 없어 자동 반복을 중단했습니다.",
+        "OpenAI 대화 ID가 올바르지 않습니다.",
+        "이전 OpenAI 호출의 완료 여부를 확인할 수 없습니다. 호출 반복 가능성에 동의한 뒤 다시 실행하세요.",
+        "OpenAI 대화에 접근할 수 없습니다. 대화를 자동 교체하지 않고 중단했습니다.",
+        "OpenAI 대화의 문맥 한도를 초과했습니다. 자동 절단이나 대화 교체 없이 중단했습니다.",
+    )},
 }
 
 # 코드와 단계는 서버가 허용한 값만 외부 작업 메타데이터에 남긴다. 예외 원문을

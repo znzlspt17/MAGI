@@ -60,7 +60,7 @@ class AgentWorkflow:
             recorded = {}
             token = WORKFLOW_MESSAGES.set(recorded)
             from backend.infrastructure.workflow_store import CURRENT_ATTEMPT
-            attempt = {"journal": self.journal, "task_id": ident, "call_count": 0}
+            attempt = {"journal": self.journal, "task_id": ident, "call_count": 0, "allow_replay": replay}
             attempt_token = CURRENT_ATTEMPT.set(attempt)
             try:
                 result = operation(deepcopy(state))

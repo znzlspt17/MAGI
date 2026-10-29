@@ -37,6 +37,13 @@ def retry_state(documents):
         State.from_workflow_state(snapshot.values)
         if snapshot.values.get("workflow_schema") != 1:
             raise ValueError()
+        with documents.store.transaction(mode="read") as conn:
+            conversation = conn.execute(
+                "SELECT openai_conversation_state,openai_call_pending FROM jobs WHERE id=%s",
+                (documents.job_id,),
+            ).fetchone()
+        if conversation and conversation["openai_conversation_state"] in {"creating", "initializing"}:
+            return {**result, "retry_unavailable_reason": "OpenAI 대화 초기화 완료 여부가 불확실하여 자동 재시도할 수 없습니다."}
         if any(task.interrupts for task in snapshot.tasks) and snapshot.values.get("status") == "CRITICAL_BLOCKED" and "retry" in snapshot.values.get("allowed_actions", []):
             return {**result, "can_retry": True}
         if not snapshot.next or any(task.interrupts for task in snapshot.tasks):
@@ -46,7 +53,8 @@ def retry_state(documents):
             raise ValueError()
         ident = task_id(snapshot.values, name)
         with workflow_store(documents.store, documents.job_id) as (_, journal):
-            uncertain = name != "approve" and journal.status(ident) == "pending"
+            uncertain = name != "approve" and (journal.status(ident) == "pending"
+                                              or bool(conversation and conversation["openai_call_pending"]))
         return {**result, "can_retry": True, "retry_requires_replay": uncertain, "task_id": ident}
     except (InvalidStateError, ValueError, TypeError, KeyError):
         return {**result, "retry_unavailable_reason": "저장된 checkpoint 형식이 올바르지 않아 다시 시도할 수 없습니다."}
@@ -113,6 +121,14 @@ class TaskJournal:
             "UPDATE workflow_task_results SET status='failed' WHERE thread_id=%s AND task_id=%s",
             (self.thread_id, task_id),
         )
+
+    def response(self, task_id, response_id):
+        row = self.conn.execute("SELECT payload FROM workflow_task_results WHERE thread_id=%s AND task_id=%s",
+                                (self.thread_id, task_id)).fetchone()
+        data = json.loads(row["payload"])
+        data.setdefault("response_ids", []).append(response_id)
+        self.conn.execute("UPDATE workflow_task_results SET payload=%s WHERE thread_id=%s AND task_id=%s",
+                          (json.dumps(data), self.thread_id, task_id))
 
     def complete(self, task_id, payload):
         row = self.conn.execute("SELECT payload FROM workflow_task_results WHERE thread_id=%s AND task_id=%s",

@@ -21,6 +21,7 @@ dependencies = [
   "requests>=2.32,<3",
   "langchain==1.4.7",
   "langchain-openai==1.7.2",
+  "openai==3.31.0",
   "langgraph-checkpoint-postgres==3.2.0",
   "httpx2==2.13.1",
 ]

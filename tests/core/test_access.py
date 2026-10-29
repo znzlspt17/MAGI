@@ -70,7 +70,7 @@ def test_provider_followup_calls_continue_over_thresholds_with_usage_observed(st
         try:
             with transport(handle):
                 for _ in range(2):
-                    assert provider.complete_result([{"role":"user","content":"test"}],model=MODEL).text == "Result"
+                    assert provider.complete_result([{"role":"user","content":"test"}],model=MODEL,conversation_id="conv_test").text == "Result"
         finally:
             CURRENT_ATTEMPT.reset(token)
         assert len(calls) == attempt["call_count"] == 2

@@ -4,10 +4,13 @@ from contextlib import contextmanager
 from unittest.mock import patch
 import httpx2
 from langchain.chat_models import init_chat_model
+from openai import OpenAI
 
 
 @contextmanager
 def transport(handler):
+    def openai_factory(**kwargs):
+        return OpenAI(**kwargs, http_client=httpx2.Client(transport=httpx2.MockTransport(handler)))
     def factory(model, **kwargs):
         client = kwargs.pop("http_client", None)
         hooks = client.event_hooks if client is not None else {}
@@ -26,5 +29,6 @@ def transport(handler):
             {"LANGSMITH_TRACING": "false", "LANGCHAIN_TRACING_V2": "false"},
         ),
         patch("backend.providers.llm_provider.init_chat_model", side_effect=factory),
+        patch("backend.providers.llm_provider.OpenAI", side_effect=openai_factory),
     ):
         yield

@@ -34,6 +34,13 @@ class KnowledgeStore(ChunkStore, CleanupStore, ProjectDecisionStore):
         self._connections = threading.BoundedSemaphore(2)
         # 대기 중인 쓰기가 두 연결을 모두 점유하지 않게 연결 전에 직렬화한다.
         self._writers = threading.Lock()
+        self._conversation_locks = {}
+        self._conversation_guard = threading.Lock()
+
+    def conversation_lock(self, job_id):
+        # 워크플로와 부가 분석이 같은 원격 대화에 동시에 쓰지 못하게 한다.
+        with self._conversation_guard:
+            return self._conversation_locks.setdefault(job_id, threading.RLock())
 
     @contextmanager
     def transaction(self, *, mode="write"):
