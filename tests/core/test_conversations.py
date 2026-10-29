@@ -15,7 +15,7 @@ from backend.infrastructure.conversation_state import (
     cache_key, call_finished, call_started, job_conversation,
 )
 from backend.infrastructure.provider_call import _complete_once
-from backend.infrastructure.workflow_store import CURRENT_ATTEMPT, TaskJournal
+from backend.infrastructure.workflow_store import CURRENT_ATTEMPT, workflow_store
 from backend.knowledge.core import Documents
 from backend.models import CompletionResult
 from backend.model_policy import MODEL
@@ -158,19 +158,18 @@ def test_uncertain_call_blocks_until_explicit_replay_and_records_response(store)
     with pytest.raises(InvalidStateError, match="호출 반복"):
         with job_conversation(docs, client):
             pytest.fail("불확실한 호출을 반복하면 안 된다")
-    journal = TaskJournal(store.connect(), docs.job_id)
-    journal.conn.execute("SET search_path TO workflow, public")
-    journal.begin("task")
-    token = CURRENT_ATTEMPT.set({"allow_replay": True, "journal": journal, "task_id": "task"})
-    try:
-        with job_conversation(docs, client):
-            call_finished(docs, client, CompletionResult(text="ok", response_id="resp_replayed"))
-        assert CURRENT_ATTEMPT.get()["allow_replay"] is False
-        row = journal.conn.execute("SELECT payload FROM workflow_task_results WHERE thread_id=%s", (docs.job_id,)).fetchone()
-        assert json.loads(row["payload"])["response_ids"] == ["resp_replayed"]
-    finally:
-        CURRENT_ATTEMPT.reset(token)
-        journal.conn.close()
+    # 실제 PostgreSQL과 로컬 대체 저장소 모두 운영 checkpointer 연결을 사용한다.
+    with workflow_store(store, docs.job_id) as (_, journal):
+        journal.begin("task")
+        token = CURRENT_ATTEMPT.set({"allow_replay": True, "journal": journal, "task_id": "task"})
+        try:
+            with job_conversation(docs, client):
+                call_finished(docs, client, CompletionResult(text="ok", response_id="resp_replayed"))
+            assert CURRENT_ATTEMPT.get()["allow_replay"] is False
+            row = journal.conn.execute("SELECT payload FROM workflow_task_results WHERE thread_id=%s", (docs.job_id,)).fetchone()
+            assert json.loads(row["payload"])["response_ids"] == ["resp_replayed"]
+        finally:
+            CURRENT_ATTEMPT.reset(token)
     assert saved(store)["openai_call_pending"] is False
     client.create_conversation.assert_called_once()
 
