@@ -165,3 +165,58 @@ def test_graph_wait_retry_repair_and_review(monkeypatch):
     flow.nodes.review_resolution.assert_called_once()
     assert final["allowed_actions"] == ["approve", "message", "revise"]
     assert final["confirmed_user_sources"] == state["confirmed_user_sources"]
+
+
+def test_stop_diagnostic_links_proposals_to_changed_draft_reviews():
+    from backend.services.review_resolution import stop_diagnostic
+
+    state = exhausted()
+    issue = state["structured_issues"][0]
+    issue["required_change"] = "무기 유지 규칙 반영"
+    state["resolution_history"] = [
+        {"review_round": 1, "draft_hash": "a", "issues": [dict(issue)]},
+        {"review_round": 2, "draft_hash": "b", "issues": [dict(issue)]},
+    ]
+    diagnostic = stop_diagnostic(state)
+    attempts = diagnostic["issues"][0]["attempts"]
+    assert "같은 결함" in attempts[0]["outcome"]
+    assert "확인되지 않습니다" in attempts[1]["outcome"]
+    assert "미확정" in diagnostic["cause"]
+    assert attempts[0]["proposed_change"] == "무기 유지 규칙 반영"
+    state["resolution_history"][1]["draft_hash"] = "a"
+    assert "확인되지 않습니다" in stop_diagnostic(state)["issues"][0]["attempts"][0]["outcome"]
+
+
+def test_old_terminal_diagnostic_uses_same_execution_only():
+    from types import SimpleNamespace
+    from backend.server.execution_history import ExecutionHistory
+
+    history = ExecutionHistory(SimpleNamespace())
+    issue = exhausted()["structured_issues"][0]
+    nodes = [
+        {"id": "other", "execution_id": "old", "result": {"resolution_history": [{"issues": [issue]}]}},
+        {"id": "review", "execution_id": "current", "detail": {"issues": [issue]}},
+        {"id": "stop", "execution_id": "current", "stage": "workflow", "status": "blocked"},
+    ]
+    history._load = lambda **kwargs: {"nodes": nodes}
+    diagnostic = history.detail("stop")["result"]["stop_diagnostic"]
+    assert diagnostic["issues"][0]["problem"] == issue["problem"]
+    assert diagnostic["issues"][0]["attempts"] == []
+    assert diagnostic["recording_incomplete"]
+    nodes[1].pop("detail")
+    assert history.detail("stop")["result"]["stop_diagnostic"]["issues"] == []
+
+
+def test_terminal_diagnostic_records_only_completed_work_counts():
+    from backend.server.execution_history import _safe_result
+
+    state = exhausted()
+    state.update(status="CRITICAL_BLOCKED", stop_reason="repair_limit", task_results=[
+        {"action": "spec_compile", "status": "completed", "raw_response": "untrusted content"},
+        {"action": "spec_compile", "status": "reused"},
+        {"action": "spec_compile", "status": "failed"},
+    ])
+    result = _safe_result(state)
+    assert result["stop_diagnostic"]["completed_work"] == [{"action": "spec_compile", "count": 1}]
+    assert "untrusted content" not in str(result)
+    assert "task_results" not in result

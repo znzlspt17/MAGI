@@ -500,6 +500,25 @@ class ExecutionHistory:
             result["requirements"] = copy.deepcopy(detail["requirements"])
         if isinstance(detail.get("result"), dict):
             result.update(copy.deepcopy(detail["result"]))
+        if result.get("status") == "CRITICAL_BLOCKED" or (
+            node.get("stage") in {"workflow", "critical_report"} and node.get("status") == "blocked"
+        ):
+            from backend.services.review_resolution import stop_diagnostic
+
+            # 과거 중단 기록도 같은 실행에서 저장한 검토 결과만 사용한다.
+            evidence = {}
+            for previous in nodes[:nodes.index(node) + 1]:
+                if previous.get("execution_id") != node.get("execution_id"):
+                    continue
+                saved = previous.get("result") or {}
+                captured = previous.get("detail") or {}
+                for key in ("structured_issues", "resolution_history", "stop_reason"):
+                    if key in saved:
+                        evidence[key] = saved[key]
+                if "issues" in captured:
+                    evidence["issues"] = captured["issues"]
+            if not isinstance(result.get("stop_diagnostic"), dict):
+                result["stop_diagnostic"] = stop_diagnostic({**evidence, **result})
         payload = _summary_node(node)
         payload["result"] = result
         if isinstance(detail.get("change_review"), dict):
@@ -696,6 +715,10 @@ def _safe_result(value: dict) -> dict:
         "diagnosed_keys",
     }
     result = {key: copy.deepcopy(value[key]) for key in allowed if key in value}
+    if value.get("status") == "CRITICAL_BLOCKED":
+        from backend.services.review_resolution import stop_diagnostic
+
+        result["stop_diagnostic"] = stop_diagnostic(value)
     if isinstance(value.get("plan"), dict):
         result["plan"] = {key: copy.deepcopy(value["plan"][key]) for key in (
             "goal", "tasks", "action", "target", "input_refs", "expected_result", "reason",
