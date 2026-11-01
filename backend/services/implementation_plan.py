@@ -1,4 +1,5 @@
 """승인 전에 작업 참조와 의존관계를 검증하고 같은 자료로 명세를 조립한다."""
+from typing import Any, NoReturn
 
 from backend.errors import SpecCompilationError
 from backend.services.change_review import digest, normalize
@@ -9,7 +10,7 @@ CHECKS = {"acceptance_criteria", "test_plan", "manual_verification_checklist"}
 
 
 def prepare_plan(draft, sheet):
-    def fail(message):
+    def fail(message: str) -> NoReturn:
         raise SpecCompilationError(["implementation_order: " + message], check="implementation_plan")
 
     groups = {item.id: group for group in ("mandatory_requirements", "recommended_requirements", "optional_requirements", "constraints") for item in getattr(sheet, group)}
@@ -40,7 +41,7 @@ def prepare_plan(draft, sheet):
         fail("Cover every mandatory requirement with implementation tasks.")
     if any(t["scope"] == "required" and any(tasks[d]["scope"] != "required" for d in t["depends_on"]) for t in raw):
         fail("Required work cannot depend on optional or recommended work.")
-    ordered = []
+    ordered: list[dict[str, Any]] = []
     while len(ordered) < len(raw):
         done = {t["item_id"] for t in ordered}
         ready = next((t for t in raw if t["item_id"] not in done and set(t["depends_on"]) <= done), None)

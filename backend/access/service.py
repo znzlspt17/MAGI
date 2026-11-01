@@ -244,7 +244,7 @@ class PublicService:
         fingerprint = digest(json.dumps([method,params],sort_keys=True,ensure_ascii=False))
         jid = params.get('id') if method != 'generate' else uuid4().hex
         execution_id = uuid4().hex
-        deferred = []
+        deferred: list[tuple[str, str, object]] = []
         with self.manager.lock:
             previous_job = deepcopy(self.manager.jobs.get(jid))
             mark = DEFERRED.set(deferred)

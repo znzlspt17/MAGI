@@ -26,7 +26,7 @@ class ClientError(RuntimeError):
 class Client:
     def __init__(self, url: str) -> None:
         self.url = _loopback_url(url)
-        self.context = {}
+        self.context: dict[str, str] = {}
         self.internal_key = os.environ.get('INTERNAL_KEY','')
 
     def _headers(self):
@@ -64,7 +64,7 @@ class Client:
             code = error.get("code")
             raise ClientError(
                 error.get("message", "요청을 처리하지 못했습니다."),
-                status=HTTP_STATUS.get(code, 503),
+                status=HTTP_STATUS.get(code, 503) if isinstance(code, str) else 503,
                 response_received=True,
                 uncertain=(
                     method in UNCERTAIN_METHODS

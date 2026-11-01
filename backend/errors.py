@@ -1,8 +1,17 @@
 """Domain errors raised by MAGI."""
 
 
+from __future__ import annotations
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from backend.models import CompletionResult
+
+
 class Error(Exception):
     """Base class for actionable MAGI errors."""
+
+    completion: CompletionResult | None
 
 
 class MissingCredentialError(Error):
@@ -20,6 +29,8 @@ class InvalidStateError(Error):
 class RequirementNormalizationError(Error):
     """요구사항 잠금 응답을 안전하게 정규화할 수 없을 때 발생한다."""
 
+    category: str
+    validation_details: list[str]
     code = "REQUIREMENT_NORMALIZATION_FAILED"
     stage = "requirement_lock"
 
@@ -47,6 +58,9 @@ class ReviewValidationError(Error):
 
 class SpecCompilationError(Error):
     """명세 응답의 검증 실패를 보정·공개 진단 경로로 전달한다."""
+
+    validation_phase: str
+    validation_location: dict[str, str | int]
 
     code = "SPEC_COMPILATION_INVALID"
     stage = "spec_compile"
@@ -81,6 +95,7 @@ TRANSLATION_RULES = {
 class TranslationValidationError(Error):
     """원문을 포함하지 않는 번역 보존 검증 실패."""
 
+    number_mismatches: list[dict[str, Any]]
     code = "SPEC_TRANSLATION_INVALID"
     stage = "spec_translation"
 

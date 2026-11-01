@@ -5,9 +5,16 @@ import hashlib
 import json
 import threading
 import time
+from typing import TypedDict
 
 from backend.services.implementation_plan import valid_plan
 from backend.services.spec_compiler import _rendered_sections
+
+
+class PackageEntry(TypedDict):
+    name: str
+    size: int
+    sha256: str
 
 CHUNK = 48 * 1024
 FILE_LIMIT = 4 * 1024 * 1024
@@ -63,7 +70,8 @@ def create_package(completed_id, archive, korean=None):
         "## 자료 범위\n\n", "\n".join("- " + v for v in limits) or "- 승인된 구조화 작업 계획 포함", "\n"]
     if korean:
         documents["SPEC.ko.md"] = [korean]
-    files, entries = {}, []
+    files: dict[str, bytes] = {}
+    entries: list[PackageEntry] = []
     for name, parts in documents.items():
         size, checksum, data = 0, hashlib.sha256(), bytearray()
         for part in parts:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from typing import Any
 from protocol.logging import get_logger
 from backend.infrastructure.stage_retry import CURRENT_RETRY, MAX_RETRIES
 
@@ -84,12 +85,12 @@ def _progress(
 ) -> None:
     if callback is None:
         return
-    event = {"stage": stage, "state": state}
+    event: dict[str, Any] = {"stage": stage, "state": state}
     if state == "retrying":
         event["result"] = result
     if state in {"completed", "failed"} and isinstance(result, dict):
         # 실행 이력에는 상태 판단에 필요한 결과만 전달한다.
-        from backend.server.execution_history import _safe_result
+        from backend.application.execution_history import _safe_result
         event["result"] = _safe_result(result)
         if stage == "await_user" and "blocking_questions" not in event["result"]:
             questions = (

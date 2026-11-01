@@ -526,7 +526,7 @@ class RequirementLockSheet:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "RequirementLockSheet":
+    def from_dict(cls, data: object) -> "RequirementLockSheet":
         from backend.errors import InvalidStateError
         if not isinstance(data, dict) or not isinstance(data.get("workflow_constraints"), list):
             raise InvalidStateError("Requirement lock contract is invalid. Start a new generation.")
@@ -772,12 +772,14 @@ class ImplementationTask(SpecBlock):
 
 
 # 저장·조회 형식인 SpecResponse는 유지하고 제공자 출력만 블록 구조로 분리한다.
-SpecDraftResponse = create_model("SpecDraftResponse", __base__=ResponseModel,
-    decisions=(list[DecisionTrace], Field(default_factory=list)),
+_draft_fields: dict[str, Any] = {
+    "decisions": (list[DecisionTrace], Field(default_factory=list)),
     **{name: (list[ImplementationTask] if name == "implementation_order" else list[SpecBlock], Field(description=(
         "Application-owned section assembled from locked product non_scope. Return an empty array; do not generate content or references."
         if name == "out_of_scope" else "Ordered substantive English content blocks for this section. Include at least one block.")))
-       for name in SpecResponse.model_fields if name not in {"decisions", "spec_links"}})
+       for name in SpecResponse.model_fields if name not in {"decisions", "spec_links"}},
+}
+SpecDraftResponse = create_model("SpecDraftResponse", __base__=ResponseModel, **_draft_fields)
 
 
 def assemble_spec_draft(draft, sheet, task_plan=None):
@@ -790,7 +792,9 @@ def assemble_spec_draft(draft, sheet, task_plan=None):
     headings = set(REQUIRED_FINAL_SPEC_HEADINGS) | {"### Locked Constraints"}
     from backend.services.implementation_plan import prepare_plan
     task_plan = task_plan or prepare_plan(draft, sheet)
-    sections, links, identities = {}, [], set()
+    sections: dict[str, str] = {}
+    links: list[SpecLink] = []
+    identities: set[str] = set()
     for name in SpecResponse.model_fields:
         if name in {"decisions", "spec_links"}:
             continue
@@ -832,12 +836,62 @@ def assemble_spec_draft(draft, sheet, task_plan=None):
     return SpecResponse(decisions=draft.decisions, spec_links=links, **sections)
 
 
-# 실행 상태의 필드 목록은 State 한 곳에서 정의한다.
-from typing import get_type_hints
-WorkflowState = TypedDict("WorkflowState", {**get_type_hints(State), "_interview_direction_changing": bool}, total=False)
+# LangGraph 경계에서 사용할 정적 계약. State와의 필드 일치는 계약 테스트로 확인한다.
+class WorkflowState(TypedDict, total=False):
+    run_id: str
+    status: str
+    user_request: str
+    original_user_request: str
+    web_search_mode: str
+    research: dict[str, Any]
+    request_type: str
+    assumptions: list[str]
+    blocking_questions: list[str]
+    question_forms: dict[str, Any]
+    awaiting_input_reason: Literal['interview', 'review'] | None
+    review_questions: list[dict[str, Any]]
+    review_history: list[dict[str, Any]]
+    resolution_history: list[dict[str, Any]]
+    diagnosed_keys: list[str]
+    resolution_stop: bool
+    confirmed_user_sources: dict[str, str]
+    reused_decisions: list[dict[str, Any]]
+    interview_pre_answers: list[dict[str, Any]]
+    requirement_lock: str
+    requirement_lock_sheet: dict[str, Any] | None
+    structured_issues: list[dict[str, Any]]
+    critic_pass_count: int
+    max_critic_passes: int
+    approval_candidate_spec: str | None
+    final_agent_spec: str | None
+    latest_completed: dict[str, str] | None
+    critical_report: str | None
+    user_approval_status: str
+    revision_feedback: str
+    revision_history: list[str]
+    created_artifacts: list[str]
+    workflow_schema: int
+    revision: int
+    plan: dict[str, Any]
+    plan_history: list[dict[str, Any]]
+    task_results: list[dict[str, Any]]
+    task_messages: dict[str, list[dict[str, Any]]]
+    knowledge_context: dict[str, Any]
+    completed_tasks: list[str]
+    segment_steps: int
+    execution_segment: int
+    execution_constraints: dict[str, Any]
+    wait_reason: str
+    stop_reason: str
+    final_resolution_keys: list[str]
+    allowed_actions: list[str]
+    candidate_hash: str
+    document_versions: list[dict[str, Any]]
+    pending_input: dict[str, Any]
+    _interview_direction_changing: bool
 
 
-STAGE_SCHEMAS = {
+STAGE_SCHEMAS: dict[str, type[BaseModel]] = {
     "spec_translation": SpecTranslationResponse,
     "interview": InterviewResponse,
     "requirement_lock": LockResponse,

@@ -7,14 +7,15 @@ from backend.errors import ReviewValidationError
 from backend.infrastructure.output_language import has_hangul, prose
 from backend.knowledge.trace import REQUIREMENT_GROUPS
 from backend.models import ReviewResolutionResponse
+from backend.services.issue_identity import decision_key, defect_key
 
 
 def decision_identity(issue):
-    return (issue.requirement_id or "structure") + ":" + issue.decision_key.casefold()
+    return decision_key(issue.requirement_id, issue.decision_key)
 
 
 def defect_identity(issue):
-    return decision_identity(issue) + ":" + issue.checklist_id.casefold()
+    return defect_key(issue.requirement_id, issue.decision_key, issue.checklist_id)
 
 
 def text_hash(text):
@@ -108,47 +109,5 @@ def failure_report(state):
     return "\n".join(lines) + "\n"
 
 
-def stop_diagnostic(state):
-    """저장된 검토 사실을 연결하며 제안과 실제 수정 효과를 구분한다."""
-    history = state.get("resolution_history") or []
-    issues = state.get("structured_issues")
-    if issues is None:
-        issues = history[-1].get("issues", []) if history else state.get("issues", [])
-    remaining = []
-    for issue in issues or []:
-        if issue.get("status") == "resolved" or not (
-            issue.get("severity") in {"major", "blocking"}
-            or issue.get("resolution_kind") == "user_decision" or issue.get("decision_answer_id")
-        ):
-            continue
-        attempts = []
-        for index, record in enumerate(history):
-            previous = next((item for item in record.get("issues", [])
-                             if (item.get("requirement_id"), item.get("decision_key"), item.get("checklist_id"))
-                             == (issue.get("requirement_id"), issue.get("decision_key"), issue.get("checklist_id"))), None)
-            if previous is None:
-                continue
-            later = history[index + 1:]
-            reviewed = next((entry for entry in later if entry.get("draft_hash") and record.get("draft_hash")
-                             and entry["draft_hash"] != record["draft_hash"]), None)
-            outcome = "제안 이후 수정·재검토 여부는 기록으로 확인되지 않습니다."
-            if reviewed:
-                match = next((item for item in reviewed.get("issues", [])
-                              if (item.get("requirement_id"), item.get("decision_key"), item.get("checklist_id"))
-                              == (issue.get("requirement_id"), issue.get("decision_key"), issue.get("checklist_id"))), None)
-                outcome = ("다른 초안의 재검토에서도 같은 결함이 지적됐습니다." if match and match.get("status") != "resolved"
-                           else "다음 초안에는 같은 미해결 지적이 기록되지 않았습니다. 해소 여부는 확정할 수 없습니다.")
-            attempts.append({"review_round": record.get("review_round", index + 1),
-                             "proposed_change": previous.get("required_change", ""), "outcome": outcome})
-        remaining.append({**{key: issue[key] for key in (
-            "issue_id", "requirement_id", "problem", "required_change", "resolution_reason",
-            "resolution_kind", "basis_refs", "decision_answer_id",
-        ) if key in issue}, "attempts": attempts})
-    completed = [item for item in state.get("task_results", []) if item.get("status") == "completed"]
-    work = [{"action": action, "count": sum(item.get("action") == action for item in completed)}
-            for action in ("spec_compile", "checklist_critic", "review_resolution")
-            if any(item.get("action") == action for item in completed)]
-    return {"stop_reason": state.get("stop_reason", ""), "issues": remaining, "completed_work": work,
-            "cause": "실패 원인은 미확정입니다. 검토 기록만으로 수정 미반영인지, 반영 후에도 불충분했는지 단정할 수 없습니다.",
-            "next_check": "다음 보완에서는 지적 위치와 최신 초안을 대조해 제안한 수정의 반영 여부와 재검토 결과를 확인해야 합니다.",
-            "recording_incomplete": not bool(history) or not bool(remaining)}
+# 기존 호출자를 위한 공개 진입점.
+from backend.services.stop_diagnostics import stop_diagnostic

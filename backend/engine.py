@@ -1,9 +1,11 @@
 """웹 명령을 그래프 입력으로 바꾼다. 파일 저장과 독립 실행 API는 제공하지 않는다."""
 
 from __future__ import annotations
+from typing import Sequence
 
 import copy
 import hashlib
+from dataclasses import replace
 from typing import Callable
 
 from backend.config import Config
@@ -17,6 +19,7 @@ from backend.models import (
 )
 from backend.providers.llm_provider import ChatModelProvider
 from backend.services.saved_answers import saved_answers
+from backend.services.execution_segment import fresh_review_budget
 from backend.services.skill_registry import SkillRegistry
 
 
@@ -78,9 +81,7 @@ class Engine:
                 state.structured_issues = []
                 state.blocking_questions = []
                 state.awaiting_input_reason = None
-                state.critic_pass_count = 0
-                state.diagnosed_keys = []
-                state.resolution_stop = False
+                state = replace(state, **fresh_review_budget())
                 state.final_agent_spec = None
                 state.user_approval_status = "PENDING"
                 action = "message" if action == "continue" else action
@@ -180,9 +181,7 @@ class Engine:
         # Reset compile/critic state
         if not is_review_answer:
             state.structured_issues = []
-        state.critic_pass_count = 0
-        state.diagnosed_keys = []
-        state.resolution_stop = False
+        state = replace(state, **fresh_review_budget())
         state.status = STATUS_NEEDS_USER_INPUT
         state.blocking_questions = pending_questions
 
@@ -314,7 +313,7 @@ def _validate_answers(answers: list[dict], questions: list[str], forms=None):
     return result
 
 
-def _question_is_answered(question: str, ids: set[str], answers: list[object]) -> bool:
+def _question_is_answered(question: str, ids: set[str], answers: Sequence[object]) -> bool:
     if any(f"[{question_id}]" in question for question_id in ids):
         return True
     return any(

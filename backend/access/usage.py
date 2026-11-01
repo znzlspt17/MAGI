@@ -60,7 +60,7 @@ def conditions(params, clock):
             raise ValueError()
     except ValueError:
         raise AccessError('조회 기간은 YYYY-MM-DD 형식으로 최대 366일을 선택하세요.', 'invalid') from None
-    values = [start,end]
+    values: list[str | None] = [start,end]
     for key in ('user_id','job_id'):
         value = params.get(key)
         if value == '': value = None

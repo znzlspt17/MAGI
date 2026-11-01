@@ -161,7 +161,7 @@ class ChatModelProvider:
 
 def completion_result(message: AIMessage, parsed=None) -> CompletionResult:
     """공식 표준 사용량을 우선하며 누락과 관측된 0을 구분한다."""
-    usage = message.usage_metadata or {}
+    usage: dict = dict(message.usage_metadata or {})
     details = usage.get("input_token_details") or {}
     metadata = message.response_metadata
     raw_usage = metadata.get("token_usage") or metadata.get("usage") or {}

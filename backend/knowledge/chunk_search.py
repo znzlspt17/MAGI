@@ -1,7 +1,8 @@
 """청크 순위 결합과 출처 범위 중복 제거."""
+from typing import Any
 
 def merge_matches(row, matches):
-    merged = []
+    merged: list[dict[str, Any]] = []
     for match in matches:
         source = match["source_ranges"][0]
         previous = next((m for m in merged if m["source_ranges"][0]["field"] == source["field"] and
@@ -54,23 +55,29 @@ def search(store, query, kinds, active, filters, params, vector, model_id):
             semantic = conn.execute(columns + joins + chunks + base +
                 " AND m.id=%s ORDER BY v.embedding <=> %s::vector,c.id LIMIT 60",
                 (kinds, *params, model_id, json.dumps(vector))).fetchall()
-    scores, rows = {}, {}
+    return rank_results(lexical, semantic, public_node=store._public, semantic_enabled=vector is not None)
+
+
+def rank_results(lexical, semantic, *, public_node, semantic_enabled):
+    """DB 조회와 무관하게 순위를 결합하고 공개 검색 결과를 구성한다."""
+    scores: dict[tuple[str, str], float] = {}
+    rows: dict[tuple[str, str], dict[str, Any]] = {}
     for ranking in (lexical, semantic):
         for rank, row in enumerate(ranking, 1):
             key = (row["id"], row.get("chunk_id", ""))
             scores[key] = scores.get(key, 0) + 1 / (60 + rank)
             rows[key] = row
-    grouped = {}
+    grouped: dict[str, list[tuple[str, str]]] = {}
     for key in sorted(scores, key=lambda key: (-scores[key], key)):
         grouped.setdefault(key[0], []).append(key)
     result = []
     for keys in list(grouped.values())[:20]:
         row = rows[keys[0]]
-        node = store._public(row)
+        node = public_node(row)
         for field in ("chunk_id", "quote", "source_ranges", "title_path"):
             node.pop(field, None)
         matches = [{key: rows[k][key] for key in ("chunk_id", "quote", "source_ranges", "title_path")}
                    for k in keys if rows[k].get("chunk_id")][:2]
         node["matches"] = merge_matches(row, matches)
         result.append(node)
-    return {"nodes": result, "mode": "hybrid" if vector is not None else "text"}
+    return {"nodes": result, "mode": "hybrid" if semantic_enabled else "text"}

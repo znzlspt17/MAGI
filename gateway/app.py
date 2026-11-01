@@ -1,6 +1,7 @@
 """Loopback Flask API and browser event relay."""
 
 from __future__ import annotations
+from typing import Any
 
 import base64
 import io
@@ -47,7 +48,7 @@ def create_app(config: dict | None = None) -> Flask:
         raise ValueError('신뢰할 프록시 수가 올바르지 않습니다.')
     if hops:
         from werkzeug.middleware.proxy_fix import ProxyFix
-        app.wsgi_app=ProxyFix(app.wsgi_app,x_for=hops,x_proto=hops,x_host=0)
+        app.wsgi_app=ProxyFix(app.wsgi_app,x_for=hops,x_proto=hops,x_host=0)  # type: ignore[method-assign]  # Flask의 WSGI 미들웨어 확장 지점
     sock = Sock(app)
 
     def client() -> Client:
@@ -266,7 +267,7 @@ def create_app(config: dict | None = None) -> Flask:
     def knowledge(action):
         if action not in {"search", "graph", "node", "document", "impact"}:
             abort(404)
-        params = dict(request.args)
+        params: dict[str, Any] = dict(request.args)
         for key in ("depth", "limit", "offset"):
             if key in params:
                 try:

@@ -112,6 +112,7 @@ class LocalEmbedding:
             return {"id": self.model_id, "dimensions": self.dimensions, "max_length": self.max_length}
 
     def _prompt(self, query=False):
+        assert self.model is not None  # _load 성공 이후에만 프롬프트를 조회한다.
         prompts = self.model.prompts or {}
         name = "query" if query else next((key for key in ("document", "passage", "corpus") if key in prompts), "document")
         return prompts.get(name, prompts.get(self.model.default_prompt_name, ""))
@@ -119,12 +120,14 @@ class LocalEmbedding:
     def chunks(self, node):
         with self.lock:
             self._load()
+            assert self.model is not None
         yield from chunks(node, self.model.tokenizer, self.max_length, self._prompt())
 
     def encode(self, texts, *, query=False):
         with self.lock:
             try:
                 self._load()
+                assert self.model is not None
                 result = []
                 for text in texts:
                     if len(self.model.tokenizer.encode(self._prompt(query) + text, add_special_tokens=True)) > self.max_length:

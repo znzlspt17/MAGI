@@ -14,7 +14,7 @@ from test_workflow import manager_for
 
 
 def test_message_during_translation_has_safe_conflict_and_can_be_sent_afterwards(store, monkeypatch):
-    import backend.server.workspace as workspace
+    import backend.application.document_queries as workspace
 
     manager, _ = manager_for(store, monkeypatch)
     entered, finish = Event(), Event()
@@ -24,10 +24,10 @@ def test_message_during_translation_has_safe_conflict_and_can_be_sent_afterwards
         ident = manager.create("메모를 저장해주세요")["id"]
         manager._run(ident, "generate", None)
         execution = manager.get(ident)["execution_id"]
-        monkeypatch.setattr(manager.workspace, "step", lambda *args: {
+        monkeypatch.setattr(manager.workspace._documents, "step", lambda *args: {
             "document": {"content": "Saved English specification.", "filename": "SPEC.en.md"},
         })
-        monkeypatch.setattr(manager.workspace, "engine", lambda *args, **kwargs: SimpleNamespace(
+        monkeypatch.setattr(manager.workspace._documents, "engine", lambda *args, **kwargs: SimpleNamespace(
             provider=None, config=SimpleNamespace(model_routing={"compiler": SimpleNamespace(model="fake")}),
         ))
 

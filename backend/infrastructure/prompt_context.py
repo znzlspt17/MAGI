@@ -1,4 +1,5 @@
 """저장용 출처와 모델용 짧은 참조를 분리한다."""
+from typing import Any
 
 from copy import deepcopy
 import json
@@ -38,7 +39,7 @@ REFERENCE_RULES = (
 class PromptContext:
     def __init__(self, writer=None):
         self.writer = writer
-        self.data = {"sources": {}, "knowledge": {}}
+        self.data: dict[str, dict[str, dict[str, Any]]] = {"sources": {}, "knowledge": {}}
         if writer is not None and writer.exists(PATH):
             try:
                 self.data = writer.read_json(PATH)
@@ -55,7 +56,7 @@ class PromptContext:
                         raise ValueError()
             except (OSError, ValueError, TypeError, KeyError):
                 raise ArtifactError("모델 출처 대응표를 읽을 수 없습니다.") from None
-        self.available = {"sources": set(), "knowledge": set()}
+        self.available: dict[str, set[str]] = {"sources": set(), "knowledge": set()}
         self.aliases = {}
         self.source_items = {}
         self.semantic_ids = set()
@@ -134,8 +135,8 @@ class PromptContext:
                     else:
                         answers.append({**self.project(item), **({"confirmation": "model_inference"} if key in {"saved_answers", "user_answers"} else {})})
                 return answers
-            projected = [self.project(item, key) for item in value]
-            return [item for item in projected if item is not None] if key in REFERENCE_FIELDS else projected
+            projected_items = [self.project(item, key) for item in value]
+            return [item for item in projected_items if item is not None] if key in REFERENCE_FIELDS else projected_items
         if not isinstance(value, dict):
             if isinstance(value, str) and key in REFERENCE_FIELDS:
                 if value in self.aliases:
@@ -298,7 +299,7 @@ def prepare_context(writer, payload, stage):
         if alias in context.aliases:
             ref = context.aliases[alias]
             context.source(alias, context.data["sources"][ref]["text"], question=question.get("question", ""))
-    knowledge = {"items": {}, "relations": []}
+    knowledge: dict[str, Any] = {"items": {}, "relations": []}
     if stage in {"interview", "requirement_lock", "spec_compile"} and runtime is not None:
         confirmed_text = set(sources.values()) | {original}
         for key in ("requirement_lock_sheet", "validated_requirements", "previous_lock_sheet"):

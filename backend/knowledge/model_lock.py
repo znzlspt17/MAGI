@@ -1,6 +1,6 @@
 """동일 PC의 백엔드와 재색인 프로세스가 모델 메모리를 중복 점유하지 않게 한다."""
 
-import os
+import sys
 from pathlib import Path
 import tempfile
 import threading
@@ -21,7 +21,7 @@ def acquire(owner, path=None):
         path = Path(path) if path else Path(tempfile.gettempdir()) / "local-embedding.lock"
         stream = path.open("a+b")
         try:
-            if os.name == "nt":
+            if sys.platform == "win32":
                 import msvcrt
                 stream.seek(0)
                 if not stream.read(1):

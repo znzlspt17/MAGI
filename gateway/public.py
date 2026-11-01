@@ -1,4 +1,5 @@
 """브라우저용 서버 세션·CSRF·운영 API 경계."""
+from typing import Any
 
 import secrets
 import hashlib
@@ -23,7 +24,7 @@ def install(app, client):
     cookie='local_session' if local_login else COOKIE
     login_cookie='local_login' if local_login else LOGIN_COOKIE
     app.config['SESSION_COOKIE']=cookie
-    windows={}
+    windows: dict[str, tuple[int, int]]={}
     rate_lock=threading.Lock()
     salt=secrets.token_bytes(32)
     if public and (origin or local_login):
@@ -210,7 +211,7 @@ def install(app, client):
         allowed={'overview','job','user_jobs','usage','projects','jobs','graph','search','node','document'} if request.method=='GET' else {'user','claim','stop','settle','settings'}
         if action not in allowed:
             abort(404)
-        params=dict(request.args) if request.method=='GET' else request.get_json(silent=True) or {}
+        params: dict[str, Any]=dict(request.args) if request.method=='GET' else request.get_json(silent=True) or {}
         for key in ('depth','limit','offset'):
             if key in params:
                 try: params[key]=int(params[key])
@@ -219,7 +220,7 @@ def install(app, client):
 
     @app.get('/api/admin/usage/rows')
     def admin_usage_rows():
-        params=dict(request.args)
+        params: dict[str, Any]=dict(request.args)
         for key in ('limit','offset'):
             if key in params:
                 try: params[key]=int(params[key])

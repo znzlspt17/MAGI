@@ -70,6 +70,9 @@ answers.json
 # 이전 로컬 검증 자료는 제외하고 현재 제품 경계 검사는 버전 관리한다.
 /tests/*
 !/tests/core/
+!/tests/e2e/
+!/tests/support/
+!/tests/conftest.py
 
 # 로컬 DB와 모델 가중치 (backend/models 소스는 포함)
 /pgdata/

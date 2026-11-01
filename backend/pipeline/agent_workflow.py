@@ -57,7 +57,7 @@ class AgentWorkflow:
                 self.replay_task_id = None
             self.writer.changed = {}
             from backend.infrastructure.provider_call import WORKFLOW_MESSAGES
-            recorded = {}
+            recorded: dict[str, list[dict]] = {}
             token = WORKFLOW_MESSAGES.set(recorded)
             from backend.infrastructure.workflow_store import CURRENT_ATTEMPT
             attempt = {"journal": self.journal, "task_id": ident, "call_count": 0, "allow_replay": replay}
@@ -88,28 +88,9 @@ class AgentWorkflow:
         return result
 
     def prepare(self, state):
-        action = state.get("pending_input", {}).get("action", "generate")
-        done = list(state.get("completed_tasks", []))
-        revision = state.get("revision", 0)
-        if action in {"answer", "revise", "message"}:
-            revision += 1
-            # 변경 영향을 확정할 수 없는 입력은 생성물을 보수적으로 재검증한다.
-            preserved = {"project_context", "knowledge_search", "web_research"}
-            if action == "answer" and state.get("pending_input", {}).get("origin_reason") == "review":
-                preserved.add("interview")
-            done = [name for name in done if name in preserved]
-        result = {"workflow_schema": 1, "revision": revision, "completed_tasks": done,
-                  "segment_steps": 0, "allowed_actions": [], "pending_input": {},
-                  "execution_constraints": {},
-                  "execution_segment": state.get("execution_segment", 0) + 1,
-                  "wait_reason": "", "stop_reason": ""}
-        if action in {"answer", "revise", "message", "retry"}:
-            result.update(critic_pass_count=0, resolution_stop=False, diagnosed_keys=[])
-        if action in {"answer", "revise", "message"}:
-            result.update(candidate_hash="", user_approval_status="PENDING", critical_report=None)
-            reused = [{"action": name, "revision": revision, "status": "reused",
-                       "reason": "새 입력의 영향을 받지 않는 이전 자료를 재사용합니다."} for name in done]
-            result["task_results"] = [*state.get("task_results", []), *reused]
+        from backend.services.execution_segment import prepare_segment
+
+        result = prepare_segment(state)
         self.persist("input", {**state, **result})
         return result
 
@@ -202,9 +183,9 @@ class AgentWorkflow:
             done = [name for name in done if name not in {"checklist_critic", "review_resolution", "compose_candidate"}]
         versions = list(state.get("document_versions", []))
         if action == "spec_compile":
-            from backend.server.execution_history import ExecutionHistory
+            from backend.application.execution_history import ExecutionHistory
             history = ExecutionHistory(self.writer).graph()
-            step = next((item for item in reversed(history.get("nodes", [])) if item.get("stage") == "spec_compile"), {})
+            step: dict = next((item for item in reversed(history.get("nodes", [])) if item.get("stage") == "spec_compile"), {})
             versions.append({"revision": state.get("revision", 0), "hash": self._candidate_hash(),
                              "step_id": step.get("id"),
                              "requirements_hash": digest(state.get("requirement_lock_sheet")),
@@ -321,7 +302,7 @@ class AgentWorkflow:
             if snapshot.values and snapshot.next:
                 if any(task.interrupts for task in snapshot.tasks):
                     resume_action = "revise" if action == "revise" else action
-                    inputs = Command(resume={"action": resume_action, "state": incoming})
+                    inputs: Command | dict | None = Command(resume={"action": resume_action, "state": incoming})
                 elif action == "retry" or (action == "approve" and snapshot.next == ("finalize",)):
                     # 실패 복구에는 새 입력 대신 None으로 저장된 실행을 이어간다.
                     inputs = None

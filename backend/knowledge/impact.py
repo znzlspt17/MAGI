@@ -1,4 +1,5 @@
 """화면 표시 한도와 독립적으로 현재 명세의 기록된 검토 경로를 조회한다."""
+from typing import Any
 
 import json
 
@@ -40,7 +41,7 @@ def impact_context(store, job_id, node_id=None):
 
 
 def recorded_paths(node_id, nodes, edges):
-    found = {}
+    found: dict[str, Any] = {}
 
     def add(target, route, kind):
         if target == node_id:

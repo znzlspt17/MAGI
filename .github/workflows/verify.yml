@@ -41,6 +41,10 @@ jobs:
           uv sync --locked --no-dev --extra test --group gateway
           npm install --global pnpm@11.25.0
           pnpm --dir frontend install --frozen-lockfile
+      - name: Python contracts and architecture
+        run: |
+          uvx --from mypy==1.18.2 mypy --python-executable .venv/bin/python
+          .venv/bin/python -m pytest -q tests/core/test_architecture.py
       - name: Frontend tests and production assets
         run: |
           pnpm --dir frontend test

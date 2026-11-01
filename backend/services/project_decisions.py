@@ -1,4 +1,5 @@
 """승인된 구조화 결정의 공개 근거와 접수 당시 사본을 구성한다."""
+from typing import Any
 import hashlib
 import json
 import re
@@ -89,7 +90,7 @@ def validate_requirement_sources(sheet, items, *, require_all=False):
 def page(packet, offset=0):
     if type(offset) is not int or offset < 0:
         raise ValueError("조회 위치를 확인하세요.")
-    rows = []
+    rows: list[dict[str, Any]] = []
     for row in packet["rows"][offset:offset + 20]:
         if len(json.dumps([*rows, row], ensure_ascii=False).encode()) > 110000:
             break

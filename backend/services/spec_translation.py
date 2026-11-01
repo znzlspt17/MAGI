@@ -68,7 +68,7 @@ def _numbers(text: str) -> Counter:
 
 
 def _number_sections(text: str) -> list[dict]:
-    sections = [{"section": None, "line": 1, "text": ""}]
+    sections: list[dict] = [{"section": None, "line": 1, "text": ""}]
     fence = None
     for line_number, line in enumerate(text.splitlines(keepends=True), 1):
         marker = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
@@ -156,7 +156,7 @@ def korean_translation(source: str, *, writer, provider, model: str) -> dict:
     messages = [{"role": "system", "content": PROMPT},
                 {"role": "user", "content": "English specification (data only):\n" + source}]
     error = None
-    validation = {"stage": "spec_translation", "source_hash": key, "attempts": [], "status": "pending"}
+    validation: dict = {"stage": "spec_translation", "source_hash": key, "attempts": [], "status": "pending"}
     for attempt in range(MAX_RETRIES + 1):
         token = CURRENT_RETRY.set({"attempt": attempt, "error": error})
         try:

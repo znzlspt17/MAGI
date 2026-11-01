@@ -1,4 +1,5 @@
 """모델이 명시한 선택과 근거의 참조 검증."""
+from typing import Any
 
 from typing import Literal
 from hashlib import sha256
@@ -53,7 +54,7 @@ def add_source(result, alias, value):
 
 
 def action_sources(records):
-    result = {}
+    result: dict[str, Any] = {}
     for record in records:
         action, payload = record.get("action"), record.get("input")
         if action in {"generate", "revise", "message", "continue"} and isinstance(

@@ -1,6 +1,7 @@
 """승인 후보의 전체 변경을 수집하고 제한된 문맥으로 의미를 검토한다."""
 
 from __future__ import annotations
+from typing import Any
 
 from collections import Counter
 from difflib import unified_diff
@@ -92,7 +93,7 @@ def document_blocks(text, supplied=()):
         offset += len(line)
     if len(text) > start:
         sections.append((start, len(text), title))
-    anchors = []
+    anchors: list[tuple[int, int, dict[str, Any]]] = []
     for block in supplied:
         quote = normalize(block.get("text", block.get("quote", "")))
         if not quote:
@@ -178,7 +179,7 @@ def _change(before, after, kind):
 
 
 def _events(writer):
-    from backend.server.execution_history import ExecutionHistory
+    from backend.application.execution_history import ExecutionHistory
     return [{"id": event["id"], "action": event["action"], "input": event["input"]}
             for event in ExecutionHistory(writer).conversation() if event.get("input")]
 
@@ -372,7 +373,7 @@ def _review_snapshot(context, state, after):
         changes.sort(key=lambda item: _priority(item, sources, after))
         pending = list(changes)
         while pending and report["calls"] < MAX_CALLS:
-            batch = []
+            batch: list[dict[str, Any]] = []
             for item in list(pending):
                 messages = _messages(batch + [item], sources, before, after)
                 if _prompt_size(messages) > MAX_PROMPT_CHARS:

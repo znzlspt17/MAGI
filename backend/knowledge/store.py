@@ -24,8 +24,11 @@ from backend.access.context import ACTOR, TRANSACTION, AccessError
 from backend.knowledge.project_decisions import ProjectDecisionStore
 
 
-class KnowledgeStore(ChunkStore, CleanupStore, ProjectDecisionStore):
+class KnowledgeStore:
     def __init__(self, config, connect=None):
+        self.chunks = ChunkStore(self)
+        self.cleanup = CleanupStore()
+        self.decisions = ProjectDecisionStore(self)
         self.config = config
         if connect is None:
             import psycopg
@@ -109,8 +112,9 @@ class KnowledgeStore(ChunkStore, CleanupStore, ProjectDecisionStore):
         if not isinstance(name, str) or not 1 <= len(name.strip()) <= 120:
             raise ValueError("프로젝트 이름은 1~120자로 입력하세요.")
         ident = ident or uuid4().hex
+        actor = ACTOR.get()
         with self.transaction() as conn:
-            conn.execute("INSERT INTO projects(id,name,owner_id) VALUES (%s,%s,%s) ON CONFLICT(id) DO NOTHING", (ident, name.strip(), ACTOR.get()['id'] if ACTOR.get() else None))
+            conn.execute("INSERT INTO projects(id,name,owner_id) VALUES (%s,%s,%s) ON CONFLICT(id) DO NOTHING", (ident, name.strip(), actor['id'] if actor else None))
             return conn.execute("SELECT id,name FROM projects WHERE id=%s", (ident,)).fetchone()
 
     def save_job(self, job, *, expected_generation=None):
@@ -392,3 +396,33 @@ class KnowledgeStore(ChunkStore, CleanupStore, ProjectDecisionStore):
     def embedding_failure(self):
         with self.transaction() as conn:
             conn.execute("UPDATE embedding_queue SET attempts=attempts+1 WHERE status='pending'")
+
+    def chunk_vector(self, chunk, model_id):
+        return self.chunks.chunk_vector(chunk, model_id)
+
+    def save_chunk(self, info, chunk, vector):
+        return self.chunks.save_chunk(info, chunk, vector)
+
+    def complete_chunks(self, node_id, model_id, expected):
+        return self.chunks.complete_chunks(node_id, model_id, expected)
+
+    def cleanup_inventory(self, conn, scope, ids):
+        return self.cleanup.cleanup_inventory(conn, scope, ids)
+
+    def cleanup_delete(self, conn, inventory):
+        return self.cleanup.cleanup_delete(conn, inventory)
+
+    def require_project(self, conn, ident):
+        return self.decisions.require_project(conn, ident)
+
+    def registered_decisions(self, ident):
+        return self.decisions.registered_decisions(ident)
+
+    def register_decision(self, ident, candidate):
+        return self.decisions.register_decision(ident, candidate)
+
+    def deactivate_decision(self, ident, decision_id, version):
+        return self.decisions.deactivate_decision(ident, decision_id, version)
+
+    def freeze_decisions(self, ident, selections):
+        return self.decisions.freeze_decisions(ident, selections)

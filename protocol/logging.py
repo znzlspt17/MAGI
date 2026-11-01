@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import logging
 import re
 import sys
+from typing import BinaryIO, TextIO, cast
 
 import orjson
 import structlog
@@ -100,8 +101,9 @@ def configure_logging(service: str, *, stream=None) -> None:
     target = stream if stream is not None else _STDERR
     # 캡처 스트림도 지원하며 서비스 시작 전에 한 번 설정한다.
     binary = stream is None or hasattr(target, "buffer")
-    factory = (structlog.BytesLoggerFactory(file=_STDERR_BYTES if stream is None else target.buffer)
-               if binary else structlog.WriteLoggerFactory(file=target))
+    # structlog는 write/flush만 사용한다. 캡처를 따라가는 프록시를 그 스트림 경계에 연결한다.
+    factory = (structlog.BytesLoggerFactory(file=cast(BinaryIO, _STDERR_BYTES if stream is None else getattr(target, "buffer")))
+               if binary else structlog.WriteLoggerFactory(file=cast(TextIO, target)))
     serializer = orjson.dumps if binary else lambda v, **kw: orjson.dumps(v, **kw).decode()
     structlog.configure(
         cache_logger_on_first_use=True,
@@ -120,7 +122,7 @@ def configure_logging(service: str, *, stream=None) -> None:
             logger.propagate = True
             continue
         handler = logging.StreamHandler(target)
-        handler._magi_json = True
+        setattr(handler, "_magi_json", True)
         handler.setFormatter(_JSONFormatter())
         logger.addHandler(handler)
     # 외부 SDK의 로그 레벨은 변경하지 않는다.

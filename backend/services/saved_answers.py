@@ -47,7 +47,7 @@ def _qa_items(value: object) -> list[QAItem]:
         question_id = item.get("question_id")
         question = item.get("question")
         answer = item.get("answer")
-        if not all(isinstance(field, str) for field in (question_id, question, answer)):
+        if not isinstance(question_id, str) or not isinstance(question, str) or not isinstance(answer, str):
             continue
         if not question_id.strip() or not answer.strip():
             continue

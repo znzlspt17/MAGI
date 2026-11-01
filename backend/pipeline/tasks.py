@@ -562,7 +562,7 @@ class WorkflowTasks:
         research.update(sources=sources, result_count=len(sources))
         self.writer.write_json("research/research_record.json", research)
         if failure is not None and mode == "on":
-            failure.research_record = research
+            setattr(failure, "research_record", research)
             raise failure
         for source in sources:
             self.evidence.add(

@@ -69,7 +69,7 @@ export function resourcesAndNotices() {
       const failures = results.filter((r) => r.status === "rejected");
       if (failures.length) throw new Error(failures.map((r) => r.reason.message).join("; "));
       const entries = results.map((r) => r.value);
-      entries.push({ name: "shadcn/ui", version: revision, license: "MIT", url: `https://github.com/shadcn-ui/ui/tree/${revision}`, text: await readFile(join(root, "src/components/ui/LICENSE.txt"), "utf8") });
+      entries.push({ name: "shadcn/ui", version: revision, license: "MIT", url: `https://github.com/shadcn-ui/ui/tree/${revision}`, text: await readFile(join(root, "src/shared/ui/LICENSE.txt"), "utf8") });
       const vendor = join(root, "static/vendor");
       // 기존 vendored 에셋의 고지도 배포 내역에서 빠뜨리지 않는다.
       for (const filename of (await readdir(vendor)).filter((name) => /-LICENSE\.txt$/.test(name))) {

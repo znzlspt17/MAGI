@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from typing import Any
+from typing import Any, Mapping
 
 from backend.errors import InvalidStateError
 from backend.infrastructure.prompt_messages import messages as build_messages
@@ -27,7 +27,7 @@ class SpecInterviewer:
 
     def run(
         self,
-        state: dict[str, Any],
+        state: Mapping[str, Any],
         manifest: dict[str, Any],
         *,
         provider_messages_fn: Any,
@@ -74,7 +74,7 @@ class SpecInterviewer:
         answered_text = {_normalise(item.question) for item in answers if item.question}
 
         blocking: list[str] = []
-        forms = {}
+        forms: dict[str, Any] = {}
         from backend.services.question_forms import question_form
         for item in [
             *parsed["blocking_questions"],
@@ -107,7 +107,7 @@ def _build_messages(
     manifest: dict[str, Any],
     candidates: list[Question],
     answers: list[QAItem],
-    state: dict[str, Any],
+    state: Mapping[str, Any],
 ) -> list[dict[str, str]]:
     summary = {
         "root": manifest.get("root"),
@@ -141,7 +141,7 @@ def _build_messages(
     )
 
 
-def _saved_answers(state: dict[str, Any]) -> tuple[list[QAItem], list[QAItem]]:
+def _saved_answers(state: Mapping[str, Any]) -> tuple[list[QAItem], list[QAItem]]:
     explicit_raw = []
     if isinstance(state.get("requirement_lock_sheet"), dict):
         explicit_raw = state["requirement_lock_sheet"].get("user_answers", [])

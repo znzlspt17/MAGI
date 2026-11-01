@@ -24,7 +24,7 @@ def safe_diagnostics(value: object) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return {"type": "unknown", "reason": "unknown"}
     kind, reason = value.get("type"), value.get("reason")
-    result = {
+    result: dict[str, Any] = {
         "type": kind if isinstance(kind, str) and kind in _TYPES else "unknown",
         "reason": reason if isinstance(reason, str) and reason in _REASONS else "unknown",
     }

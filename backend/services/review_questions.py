@@ -30,7 +30,7 @@ def collect_review_questions(
             prior = previous.get(decision_identity(issue))
             if prior:
                 record = by_key.get(decision_identity(issue))
-                answer = by_id.get(prior.decision_answer_id) or (by_id.get(record["question_id"]) if record else None)
+                answer = by_id.get(prior.decision_answer_id or "") or (by_id.get(record["question_id"]) if record else None)
                 if answer:
                     # 같은 지적이 남아 있으면 분류나 심각도가 바뀌어도 반영 확인을 요구한다.
                     issue.decision_answer_id = answer.question_id
@@ -73,9 +73,9 @@ def collect_review_questions(
         for name, value in (("issue_ids", issue.issue_id), ("problems", issue.problem), ("required_changes", issue.required_change)):
             if value not in record[name]:
                 record[name].append(value)
-        for name, value in (("requirement_ids", issue.requirement_id), ("missing_information", issue.missing_information), ("resolution_reasons", issue.resolution_reason)):
-            if value and value not in record[name]:
-                record[name].append(value)
+        for name, optional_value in (("requirement_ids", issue.requirement_id), ("missing_information", issue.missing_information), ("resolution_reasons", issue.resolution_reason)):
+            if optional_value and optional_value not in record[name]:
+                record[name].append(optional_value)
         for evidence in issue.evidence:
             if evidence.to_dict() not in record["evidence"]:
                 record["evidence"].append(evidence.to_dict())

@@ -1,4 +1,5 @@
 """검색 서비스와 명시적으로 전달하는 작업 실행 문맥."""
+from typing import Any
 
 from concurrent.futures import ThreadPoolExecutor
 import threading
@@ -216,7 +217,7 @@ class RunKnowledge:
             documents,
             meter,
         )
-        self.retrieved = {"nodes": [], "edges": [], "mode": "text"}
+        self.retrieved: dict[str, Any] = {"nodes": [], "edges": [], "mode": "text"}
         self.initial_sources = dict(documents.state.get("confirmed_user_sources", {}))
         from backend.knowledge.trace import action_sources
 

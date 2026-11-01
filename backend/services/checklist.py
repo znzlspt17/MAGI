@@ -468,7 +468,7 @@ def _contains_ambiguous_word(text: str, word: str) -> bool:
 
 def _headings_in_required_order(text: str) -> bool:
     positions = [_heading_position(text, heading) for heading in REQUIRED_FINAL_SPEC_HEADINGS]
-    return all(position is not None for position in positions) and positions == sorted(positions)
+    return all(position is not None for position in positions) and positions == sorted(position for position in positions if position is not None)
 
 
 def _section_content(text: str, heading: str) -> str:

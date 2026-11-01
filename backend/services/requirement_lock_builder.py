@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from protocol.logging import get_logger
 import re
-from typing import Any
+from typing import Any, Mapping
 from uuid import uuid4
 
 from backend.errors import RequirementNormalizationError
@@ -30,7 +30,7 @@ class RequirementLockBuilder:
 
     def build(
         self,
-        state: dict[str, Any],
+        state: Mapping[str, Any],
         manifest: dict[str, Any],
         interview: InterviewResult,
         *,
@@ -100,7 +100,7 @@ class RequirementLockBuilder:
 
 
 def _build_messages(
-    state: dict[str, Any],
+    state: Mapping[str, Any],
     manifest: dict[str, Any],
     interview: InterviewResult,
     user_request: str,
@@ -193,7 +193,7 @@ def _validate_preserved_mandatory_ids(
 
 def _covers_source(item: RequirementItem, marker: str) -> bool:
     return (
-        item.text.strip()
+        bool(item.text.strip())
         and not _contains_hangul(item.text)
         and marker in {item.source, *item.sources}
     )

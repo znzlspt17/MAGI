@@ -4,8 +4,11 @@ import json
 
 
 class ChunkStore:
+    def __init__(self, store):
+        self.store = store
+
     def chunk_vector(self, chunk, model_id):
-        with self.transaction(mode='read') as conn:
+        with self.store.transaction(mode='read') as conn:
             row = conn.execute("SELECT v.embedding::text AS embedding FROM chunk_vectors v "
                 "JOIN chunks c ON c.id=v.chunk_id WHERE c.input_hash=%s AND c.input=%s AND v.model_id=%s LIMIT 1",
                 (chunk["input_hash"], chunk["input"], model_id)).fetchone()
@@ -19,7 +22,7 @@ class ChunkStore:
         norm = math.sqrt(sum(v*v for v in vector))
         if not math.isclose(norm, 1.0, rel_tol=1e-5):
             raise KnowledgeError("청크 벡터가 정규화되지 않았습니다.")
-        with self.transaction() as conn:
+        with self.store.transaction() as conn:
             if not conn.execute("SELECT 1 FROM nodes WHERE id=%s", (chunk["node_id"],)).fetchone():
                 return False
             conn.execute("INSERT INTO chunk_sets(node_id,model_id) VALUES (%s,%s) ON CONFLICT DO NOTHING",
@@ -27,13 +30,13 @@ class ChunkStore:
             conn.execute("INSERT INTO chunks(id,node_id,ordinal,rule,title_path,body,input,input_hash,source_ranges) "
                          "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
                          tuple(chunk[key] for key in ("id", "node_id", "ordinal", "rule", "title_path", "body", "input", "input_hash"))
-                         + (self._json(chunk["source_ranges"]),))
+                         + (self.store._json(chunk["source_ranges"]),))
             conn.execute("INSERT INTO chunk_vectors(chunk_id,model_id,embedding) VALUES (%s,%s,%s::vector) ON CONFLICT DO NOTHING",
                          (chunk["id"], info["id"], json.dumps(vector)))
 
     def complete_chunks(self, node_id, model_id, expected):
         from backend.knowledge.config import KnowledgeError
-        with self.transaction() as conn:
+        with self.store.transaction() as conn:
             if not conn.execute("SELECT 1 FROM nodes WHERE id=%s", (node_id,)).fetchone():
                 return False
             count = conn.execute("SELECT count(*) AS total FROM chunks c JOIN chunk_vectors v ON v.chunk_id=c.id "

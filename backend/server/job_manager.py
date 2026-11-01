@@ -1,6 +1,10 @@
 """웹 작업의 접수·예약·실행. 실행 상태는 LangGraph에서만 조회한다."""
 
 from __future__ import annotations
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from backend.access.service import PublicService
 
 import copy
 from protocol.logging import get_logger
@@ -22,6 +26,8 @@ _ACTIVE = {"queued", "running"}
 
 
 class JobManager:
+    public_service: PublicService
+
     def __init__(self, knowledge, *, engine_factory=Engine, on_change=None):
         self.knowledge, self.engine_factory, self.on_change = (
             knowledge,
@@ -30,7 +36,8 @@ class JobManager:
         )
         self.lock = threading.RLock()
         self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="workflow")
-        self._futures, self._activities = {}, {}
+        self._futures = {}
+        self._activities: dict[str, int] = {}
         self.closed = False
         from backend.server.workspace import Workspace
 
@@ -83,10 +90,10 @@ class JobManager:
             raise ValueError("공통 결정 선택은 목록이어야 합니다.")
         self._next_order += 1
         ident, now = (ADMISSION.get() or (uuid4().hex, None))[0], _utc_now()
-        job = dict(
+        job: dict[str, Any] = dict(
             id=ident,
             project_id=project_id or ident,
-            owner_id=ACTOR.get()["id"] if ACTOR.get() else None,
+            owner_id=actor["id"] if (actor := ACTOR.get()) is not None else None,
             provider="openai",
             request=request.strip(),
             status="queued",
@@ -272,6 +279,7 @@ class JobManager:
             )
 
     def ids(self) -> list[str]:
+        actor = ACTOR.get()
         with self.lock:
             return [
                 job["id"]
@@ -280,7 +288,7 @@ class JobManager:
                     key=lambda item: (item.get("updated_at", ""), item["order"]),
                     reverse=True,
                 )
-                if ACTOR.get() is None or job.get("owner_id") == ACTOR.get()["id"]
+                if actor is None or job.get("owner_id") == actor["id"]
             ]
 
     def get(self, ident: str) -> dict:
@@ -303,11 +311,12 @@ class JobManager:
 
             run = service.worker if service else self._run
             kwargs = {"execution": execution} if service else {}
+            context = copy_context()
             future = self.executor.submit(
-                copy_context().run, run, ident, action, payload, **kwargs
+                context.run, lambda: run(ident, action, payload, **kwargs)
             )
         except RuntimeError as exc:
-            if service:
+            if service and execution is not None:
                 from backend.access.recovery import Failure
 
                 service.recovery.record(Failure(execution, False, execution.initial))
@@ -362,7 +371,8 @@ class JobManager:
         ):
             raise KeyError(ident)
         job = self.jobs[ident]
-        if ACTOR.get() is not None and job.get("owner_id") != ACTOR.get()["id"]:
+        actor = ACTOR.get()
+        if actor is not None and job.get("owner_id") != actor["id"]:
             raise KeyError(ident)
         return job
 

@@ -259,7 +259,7 @@ class SpecCompiler:
     def has_required_headings(text: str) -> bool:
         visible_text = _mask_fenced_code(text)
         positions = [_heading_position(visible_text, heading) for heading in REQUIRED_FINAL_SPEC_HEADINGS]
-        return all(position is not None for position in positions) and positions == sorted(positions)
+        return all(position is not None for position in positions) and positions == sorted(position for position in positions if position is not None)
 
 
 def _rendered_sections(spec: str) -> dict[str, str]:

@@ -1,4 +1,5 @@
 """관리자가 저장된 명세 검증 기록을 원문 노출 없이 조회하는 경계."""
+from typing import Any
 
 from datetime import datetime
 import json
@@ -51,7 +52,7 @@ def _legacy(details):
 
 def safe_record(content):
     """파싱 결과에도 문서 원문이나 임의 문자열을 포함하지 않는다."""
-    result = {"state": "unrecognized", "stage": "spec_compile", "error_code": None,
+    result: dict[str, Any] = {"state": "unrecognized", "stage": "spec_compile", "error_code": None,
               "failed_checks": [], "attempt": None, "execution_id": None,
               "execution_link": "unconfirmed", "validation_reason": None,
               "validation_section": None, "validation_index": None, "validation_field": None}
@@ -75,7 +76,7 @@ def safe_record(content):
     valid_index = index is None if reason == "empty_section" else type(index) is int and 0 <= index <= 100000
     if ("spec_blocks" in result["failed_checks"] and isinstance(reason, str) and reason in _REASONS
             and isinstance(section, str) and section in _SECTIONS and valid_index):
-        parsed = reason, section, index
+        parsed: tuple[str, str, int | None] | None = reason, section, index
     else:
         parsed = _legacy(value.get("validation_details")) if "spec_blocks" in result["failed_checks"] else None
     if parsed:

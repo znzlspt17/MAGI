@@ -157,7 +157,7 @@ def _normalization_error(chain: list[BaseException]) -> dict[str, str] | None:
             continue
         code = getattr(item, "code", None)
         details = _NORMALIZATION_ERRORS.get(code) if isinstance(code, str) else None
-        if details is not None:
+        if details is not None and isinstance(code, str):
             return {"code": code, **details}
     return None
 

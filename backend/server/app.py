@@ -21,6 +21,7 @@ from backend.server.job_manager import JobManager
 from backend.server.cleanup import CleanupConflict
 from protocol.messages import (
     MAX_MESSAGE_BYTES,
+    RequestPacket,
     error,
     parse_request,
     result as rpc_result,
@@ -43,7 +44,7 @@ class Server:
         self.manager = JobManager(knowledge, on_change=self.publish_from_worker)
         self.public = public(self.manager) if public is not None else None
         self.internal_key = internal_key
-        self.subscriber_owners = {}
+        self.subscriber_owners: dict[asyncio.Queue[str], str] = {}
 
     def publish_from_worker(self, event: dict) -> None:
         try:
@@ -172,7 +173,7 @@ class Server:
                 _log_exception("websocket sender failed", exc)
                 return
 
-    def _dispatch(self, request: dict) -> str:
+    def _dispatch(self, request: RequestPacket) -> str:
         from protocol.logging import log_context
         from time import monotonic
         with log_context(trace_id=request.get("trace_id"), request_id=request["request_id"]):
@@ -183,7 +184,7 @@ class Server:
                 LOGGER.info("rpc_completed", method=request["method"],
                             duration_ms=round((monotonic() - started) * 1000, 2))
 
-    def _dispatch_logged(self, request: dict) -> str:
+    def _dispatch_logged(self, request: RequestPacket) -> str:
         if request["method"] == "health.check":
             # 내부 키를 검사한 loopback 소켓에서만 DB 준비 상태를 확인한다.
             if (
@@ -244,7 +245,7 @@ class Server:
             request["request_id"], "인증 서비스가 필요합니다.", "configuration"
         )
 
-    def _dispatch_request(self, request: dict):
+    def _dispatch_request(self, request: RequestPacket):
         from backend.access.context import AccessError
         from protocol.commands import COMMAND_KINDS
         from protocol.messages import RPC_METHODS

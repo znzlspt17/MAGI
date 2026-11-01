@@ -1,11 +1,12 @@
 """스레드 간 암묵적으로 공유하지 않는 요청·비용 문맥."""
 
 from contextvars import ContextVar
+from typing import Any
 
-ACTOR = ContextVar('actor', default=None)
-TRANSACTION = ContextVar('transaction', default=None)
-DEFERRED = ContextVar('deferred', default=None)
-ADMISSION = ContextVar('admission', default=None)
+ACTOR: ContextVar[dict[str, Any] | None] = ContextVar('actor', default=None)
+TRANSACTION: ContextVar[tuple[Any, Any, str] | None] = ContextVar('transaction', default=None)
+DEFERRED: ContextVar[list[tuple[str, str, object]] | None] = ContextVar('deferred', default=None)
+ADMISSION: ContextVar[tuple[str, str] | None] = ContextVar('admission', default=None)
 
 
 class AccessError(ValueError):

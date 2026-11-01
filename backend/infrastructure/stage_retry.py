@@ -2,10 +2,16 @@
 
 import json
 from contextvars import ContextVar
+from typing import TypedDict
+
+
+class RetryContext(TypedDict):
+    attempt: int
+    error: Exception | None
 
 
 MAX_RETRIES = 3
-CURRENT_RETRY = ContextVar("stage_retry", default=None)
+CURRENT_RETRY: ContextVar[RetryContext | None] = ContextVar("stage_retry", default=None)
 
 
 def attempt_limit():

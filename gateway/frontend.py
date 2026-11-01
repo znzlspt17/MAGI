@@ -7,7 +7,10 @@ from flask import current_app, render_template
 
 
 def frontend_assets():
-    root = Path(current_app.static_folder) / "dist"
+    static_folder = current_app.static_folder
+    if static_folder is None:
+        raise ValueError("static folder is not configured")
+    root = Path(static_folder) / "dist"
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
     entry = manifest["src/main.tsx"]
     assets = [entry["file"], *entry.get("css", [])]

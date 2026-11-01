@@ -1,4 +1,5 @@
 """확인 가능한 산출물만 지식 노드와 관계로 변환하는 순수 함수."""
+from typing import Any
 
 import hashlib
 import json
@@ -95,7 +96,7 @@ def project(job_id, state, artifacts, stage=None):
         spec = artifacts[spec_path]
         visible = _mask_fenced_code(spec)
         # 섹션은 이전 산출물에서도 추출 가능하다. 관계는 실제 ID 표기가 있을 때만 생성한다.
-        headings = {}
+        headings: dict[int, str] = {}
         for match in re.finditer(r"(?m)^(#{2,3} .+)$", visible):
             level = len(match.group(1).split(" ", 1)[0])
             headings = {key: value for key, value in headings.items() if key < level}

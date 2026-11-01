@@ -47,9 +47,9 @@ def download_package(client, ident, completed_id, bundle_id):
         raise ValueError("묶음 기준 정보를 확인할 수 없습니다.")
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for name, body in bodies.items():
+        for name, archived_body in bodies.items():
             item = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
             item.compress_type = zipfile.ZIP_DEFLATED
-            archive.writestr(item, body)
+            archive.writestr(item, archived_body)
     output.seek(0)
     return output, metadata["filename"]

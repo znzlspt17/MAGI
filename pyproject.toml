@@ -49,9 +49,16 @@ include = ["backend*", "gateway*", "protocol*", "frontend*"]
 "frontend" = ["templates/*.html", "static/dist/manifest.json", "static/dist/assets/*", "static/vendor/*.txt", "static/vendor/*.json"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests/core"]
-pythonpath = [".", "tests/core"]
+testpaths = ["tests/core", "tests/e2e"]
+pythonpath = [".", "tests/core", "tests/e2e"]
 
 [dependency-groups]
 logging = ["structlog>=26.1,<27", "orjson>=3.11,<4"]
 gateway = [{include-group = "logging"}, "Flask>=3.1.0", "Flask-Sock>=0.7.0", "websockets>=15,<17", "gunicorn>=23,<24; sys_platform != 'win32'"]
+
+[tool.mypy]
+files = ["backend", "gateway", "protocol"]
+follow_imports = "silent"
+ignore_missing_imports = true
+warn_unused_ignores = true
+check_untyped_defs = true

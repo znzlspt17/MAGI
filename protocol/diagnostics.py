@@ -2,7 +2,7 @@
 
 
 def traceback_frames(exc: BaseException) -> list[dict[str, object]]:
-    frames = []
+    frames: list[dict[str, object]] = []
     traceback = exc.__traceback__
     while traceback is not None and len(frames) < 12:
         code = traceback.tb_frame.f_code

@@ -1,15 +1,15 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { AuthProvider } from "./Auth";
-import Workspace from "./Workspace";
-import Admin from "./Admin";
-import "./theme.css";
-import "./styles.css";
-import "./workspace-design.css";
-import "./chat-design.css";
-import { Licenses } from "./Licenses";
-import { WorkspaceReturnLink } from "./components/WorkspaceReturnLink";
+import { AuthProvider } from "./features/auth/Auth";
+import Workspace from "./features/workspace/Workspace";
+import Admin from "./features/admin/Admin";
+import "./app/theme.css";
+import "./app/styles.css";
+import "./features/workspace/workspace-design.css";
+import "./features/conversation/chat-design.css";
+import { Licenses } from "./features/legal/Licenses";
+import { WorkspaceReturnLink } from "./features/workspace/WorkspaceReturnLink";
 
 export function Privacy() {
   return (

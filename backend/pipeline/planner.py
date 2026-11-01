@@ -151,7 +151,7 @@ def plan_next(state, context):
     )}
     payload.update(allowed_actions=allowed, task_results=state.get("task_results", [])[-12:],
                    execution_constraints=state.get("execution_constraints") or execution_constraints(state, context.config))
-    errors = []
+    errors: list[str] = []
     for attempt in range(2):
         messages = [{"role": "system", "content": POLICY},
                     {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]

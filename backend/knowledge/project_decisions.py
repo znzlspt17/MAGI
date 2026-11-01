@@ -5,6 +5,9 @@ from backend.access.context import ACTOR
 
 
 class ProjectDecisionStore:
+    def __init__(self, store):
+        self.store = store
+
     def require_project(self, conn, ident):
         if not isinstance(ident, str):
             raise ValueError("프로젝트를 선택하세요.")
@@ -15,24 +18,24 @@ class ProjectDecisionStore:
         return row
 
     def registered_decisions(self, ident):
-        with self.transaction(mode="read") as conn:
+        with self.store.transaction(mode="read") as conn:
             self.require_project(conn, ident)
             return [{**r["data"], "id": r["id"], "version": r["version"], "active": r["active"], "source_available": r["source_job_id"] is not None}
                     for r in conn.execute("SELECT * FROM project_decisions WHERE project_id=%s ORDER BY created_at DESC,id", (ident,)).fetchall()]
 
     def register_decision(self, ident, candidate):
-        with self.transaction() as conn:
+        with self.store.transaction() as conn:
             self.require_project(conn, ident)
             job = conn.execute("SELECT id FROM jobs WHERE id=%s AND project_id=%s", (candidate["job_id"], ident)).fetchone()
             if not job: raise KeyError("job")
             row = conn.execute("INSERT INTO project_decisions(id,project_id,source_job_id,completed_id,decision_id,data) VALUES (%s,%s,%s,%s,%s,%s) "
                 "ON CONFLICT(project_id,completed_id,decision_id) DO UPDATE SET active=true,version=project_decisions.version+CASE WHEN project_decisions.active THEN 0 ELSE 1 END,updated_at=now() RETURNING *",
-                (uuid4().hex, ident, candidate["job_id"], candidate["completed_id"], candidate["decision_id"], self._json(candidate))).fetchone()
+                (uuid4().hex, ident, candidate["job_id"], candidate["completed_id"], candidate["decision_id"], self.store._json(candidate))).fetchone()
             return {**row["data"], "id": row["id"], "version": row["version"], "active": row["active"], "source_available": True}
 
     def deactivate_decision(self, ident, decision_id, version):
         if type(version) is not int: raise ValueError("결정 버전을 확인하세요.")
-        with self.transaction() as conn:
+        with self.store.transaction() as conn:
             self.require_project(conn, ident)
             row = conn.execute("UPDATE project_decisions SET active=false,version=version+1,updated_at=now() WHERE project_id=%s AND id=%s AND version=%s RETURNING id,version,active", (ident, decision_id, version)).fetchone()
             if not row: raise ValueError("결정이 변경되었습니다. 다시 조회하세요.")
@@ -41,7 +44,7 @@ class ProjectDecisionStore:
     def freeze_decisions(self, ident, selections):
         if not isinstance(selections, list) or len(selections) > 20:
             raise ValueError("공통 결정은 최대 20개까지 선택하세요.")
-        with self.transaction() as conn:
+        with self.store.transaction() as conn:
             self.require_project(conn, ident)
             result, seen = [], set()
             for selection in selections:

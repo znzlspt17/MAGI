@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from decimal import Decimal
+from typing import NotRequired, TypedDict
 
 
 MAX_MESSAGE_BYTES = 128 * 1024
@@ -62,7 +63,17 @@ RPC_METHODS = {
 }
 
 
-def parse_request(raw: object) -> dict | None:
+class RequestPacket(TypedDict):
+    request_id: str
+    method: str
+    params: dict[str, object]
+    trace_id: NotRequired[str]
+    session: NotRequired[str]
+    csrf: NotRequired[str]
+    idempotency_key: NotRequired[str]
+
+
+def parse_request(raw: object) -> RequestPacket | None:
     if not isinstance(raw, str) or len(raw.encode("utf-8")) > MAX_MESSAGE_BYTES:
         return None
     try:
@@ -80,7 +91,7 @@ def parse_request(raw: object) -> dict | None:
         return None
     if not isinstance(params, dict):
         return None
-    result = {"request_id": request_id, "method": method, "params": params}
+    result: RequestPacket = {"request_id": request_id, "method": method, "params": params}
     if "trace_id" in data:
         if not isinstance(data["trace_id"], str) or not re.fullmatch(r"[a-f0-9]{24,64}", data["trace_id"]):
             return None

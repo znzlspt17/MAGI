@@ -1,4 +1,5 @@
 """공식 checkpointer와 별도 작업 결과 저널. checkpoint 내부는 수정하지 않는다."""
+from typing import Any
 
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -7,7 +8,7 @@ import json
 from backend.errors import InvalidStateError
 
 
-CURRENT_ATTEMPT = ContextVar("workflow_attempt", default=None)
+CURRENT_ATTEMPT: ContextVar[dict[str, Any] | None] = ContextVar("workflow_attempt", default=None)
 
 
 def provider_entered():
@@ -94,7 +95,7 @@ class TaskJournal:
             "SELECT status,payload FROM workflow_task_results WHERE thread_id=%s AND task_id=%s",
             (self.thread_id,task_id),
         ).fetchone()
-        data = {"call_count": 0}
+        data: dict[str, Any] = {"call_count": 0}
         if previous:
             # 이전 기록은 추정 정산하거나 지우지 않고 새 시도의 감사 정보로 보존한다.
             old = json.loads(previous["payload"])
