@@ -15,6 +15,29 @@ def test_release_inputs_are_available():
     assert set(artifacts.release_inputs()) == {"compose.portainer.yaml", "Caddyfile"}
 
 
+def test_smoke_checks_and_records_built_caddy_image(tmp_path, monkeypatch):
+    commands = []
+
+    def run(*args, **kwargs):
+        commands.append(args)
+        if args[:3] == ("git", "rev-parse", "HEAD"):
+            return "test-commit"
+        if args[:3] == ("docker", "image", "inspect"):
+            if args[3] == "magi-caddy:test-release":
+                assert any(command[:3] == ("docker", "buildx", "build") for command in commands)
+            return json.dumps([{"Architecture": "arm64", "Os": "linux", "Id": "sha256:built"}])
+
+    monkeypatch.setattr(artifacts, "run", run)
+    output = tmp_path / "release"
+    artifacts.smoke(output, "test-release")
+    manifest = json.loads((output / "release.json").read_text(encoding="utf-8"))
+    assert manifest["images"]["caddy"]["id"] == "sha256:built"
+    build = next(command for command in commands if command[:3] == ("docker", "buildx", "build"))
+    assert "--load" in build
+    assert build[build.index("--platform") + 1] == "linux/arm64"
+    assert build[build.index("--tag") + 1] == "magi-caddy:test-release"
+
+
 def test_failed_security_scan_prevents_publish(tmp_path, monkeypatch):
     monkeypatch.setattr(artifacts, "summarize_scans", lambda output: False)
     run = Mock(side_effect=AssertionError("검사 실패 시 Docker를 호출하면 안 된다."))

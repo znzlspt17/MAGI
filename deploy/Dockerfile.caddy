@@ -1,0 +1,4 @@
+ARG CADDY_IMAGE
+FROM ${CADDY_IMAGE}
+# CVE-2026-111497: 고정 원본에 포함된 취약 버전을 수정 버전 이상으로 교체한다.
+RUN apk add --no-cache 'brotli-libs>=1.2.1-r0'

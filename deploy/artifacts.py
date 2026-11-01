@@ -34,8 +34,9 @@ def smoke(output, release):
     output.mkdir(parents=True, exist_ok=True)
     commit = run('git', 'rev-parse', 'HEAD', capture=True)
     images = {role: f'magi-{role}:{release}' for role in ROLES}
-    run('docker', 'pull', '--platform', 'linux/arm64', CADDY)
-    run('docker', 'image', 'tag', CADDY, images['caddy'])
+    run('docker', 'buildx', 'build', '--platform', 'linux/arm64', '--load',
+        '--file', 'deploy/Dockerfile.caddy', '--build-arg', f'CADDY_IMAGE={CADDY}',
+        '--tag', images['caddy'], '.')
     metadata = {}
     for role, tag in images.items():
         info = json.loads(run('docker', 'image', 'inspect', tag, capture=True))[0]
