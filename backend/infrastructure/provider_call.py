@@ -93,6 +93,8 @@ def _complete_connected(writer, provider, messages, *, model, stage, temperature
         if isinstance(result, CompletionResult):
             call_finished(writer, provider, result)
         if schema is not None and not isinstance(result.parsed, schema):
+            if stage in {"rubric_generate", "checklist_critic"}:
+                raise ReviewValidationError(stage=stage, check="rubric_schema" if stage == "rubric_generate" else "review_response")
             raise TypeError("Provider structured result is invalid.")
         if not isinstance(result, CompletionResult):
             raise TypeError("Provider completion result is invalid.")

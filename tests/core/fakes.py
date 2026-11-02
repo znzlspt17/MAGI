@@ -6,6 +6,7 @@ from backend.models import (
     InterviewResponse,
     LockResponse,
     ReviewResponse,
+    RubricResponse,
     ReviewResolutionResponse,
     SpecDraftResponse as SpecResponse,
 )
@@ -129,6 +130,12 @@ class DecisionProvider:
                 acceptance_criteria_seed=["REQ-001: Verify local persistence."],
                 unresolved_questions=[],
             )
+        elif schema is RubricResponse:
+            basis = self.contexts[schema]["confirmed_basis"]
+            parsed = schema(items=[dict(rubric_id="RUB-" + key, requirement_id=key,
+                category="requirement", basis=[{"reference": key, "quote": text}],
+                condition="Verify the confirmed behavior is specified.", sections=["architecture"])
+                for key, text in basis.items() if "." not in key])
         elif schema is SpecResponse:
             from task_fixture import with_tasks
 
@@ -151,7 +158,11 @@ class DecisionProvider:
                 )
             )
         elif schema is ReviewResponse:
-            parsed = schema(issues=next(self.reviews))
+            rubric = model_rubric(messages)
+            parsed = schema(issues=next(self.reviews), rubric_verdicts=[dict(
+                rubric_id=item["rubric_id"], verdict="PASS", section="architecture", evidence_kind="quote",
+                quote="Store notes locally.", reason="확정 동작이 명세에 반영되어 있습니다.", issue_checklist_id=None)
+                for item in rubric.get("items", [])])
             self.last_issues = parsed.issues
         elif schema is ReviewResolutionResponse:
             issues = [
@@ -176,3 +187,8 @@ class DecisionProvider:
         return CompletionResult(
             text="", parsed=parsed, response_id=f"resp_review{len(self.calls)}"
         )
+
+
+def model_rubric(messages):
+    return next((json.loads(item["content"].split("\n", 1)[1]) for item in messages
+                 if item["content"].startswith("Task-specific rubric:\n")), {})

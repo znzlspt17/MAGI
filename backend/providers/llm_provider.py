@@ -11,11 +11,11 @@ from openai import OpenAI
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import AIMessage
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
-from backend.errors import Error, MissingCredentialError
+from backend.errors import Error, MissingCredentialError, ReviewValidationError
 from backend.infrastructure.cache_diagnostics import safe_response_id, safe_diagnostics
-from backend.models import CompletionResult
+from backend.models import CompletionResult, RubricResponse, ReviewResponse
 from backend.model_policy import require_model, MAX_OUTPUT_TOKENS, SERVICE_TIER
 from backend.infrastructure.model_usage import UsageObservation
 from backend.infrastructure.conversation_state import valid_conversation_id
@@ -101,6 +101,7 @@ class ChatModelProvider:
                       *(item for item in inputs if item.get("role") not in {"system", "developer"})]
         reservation = meter.reserve(model) if meter else None
         result = None
+        parsing_error = None
         observation = UsageObservation()
         client = None
         try:
@@ -148,7 +149,12 @@ class ChatModelProvider:
                 message = "OpenAI 대화에 접근할 수 없습니다. 대화를 자동 교체하지 않고 중단했습니다."
             elif getattr(exc, "code", None) == "context_length_exceeded":
                 message = "OpenAI 대화의 문맥 한도를 초과했습니다. 자동 절단이나 대화 교체 없이 중단했습니다."
-            error = Error(message)
+            error: Error = Error(message)
+            if (result is not None and text_format in (RubricResponse, ReviewResponse)
+                    and result.parsed is None and (parsing_error is not None
+                        or observation.values is not None and isinstance(exc, (ValidationError, json.JSONDecodeError)))):
+                error = ReviewValidationError(stage="rubric_generate" if text_format is RubricResponse else "checklist_critic",
+                    check="rubric_schema" if text_format is RubricResponse else "review_response")
             error.completion = result
             raise error from None
         finally:

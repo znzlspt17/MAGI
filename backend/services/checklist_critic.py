@@ -38,6 +38,8 @@ class ChecklistCritic:
         previous_issues: list[IssuePacket] | list[dict[str, Any]] | None = None,
         revision_feedback: str = "",
         revision_history: list[str] | None = None,
+        rubric: dict[str, Any] | None = None,
+        evaluation_sink: Any = None,
     ) -> list[IssuePacket]:
         sheet.require_validated()
         # 1. Deterministic checks (always authoritative, no LLM needed)
@@ -51,11 +53,16 @@ class ChecklistCritic:
             previous_issues=previous_issues,
             revision_feedback=revision_feedback,
             revision_history=revision_history or [],
+            rubric=rubric,
         )
         raw = provider_messages_fn(payload)
         try:
             if not isinstance(raw, ReviewResponse):
                 raise ReviewValidationError()
+            evaluation = None
+            if rubric is not None:
+                from backend.services.rubric import validate_evaluation
+                evaluation = validate_evaluation(raw, rubric, spec_md)
             parsed = raw.model_dump()
             for index, item in enumerate(parsed["issues"], start=1):
                 item["issue_id"] = f"LLM-ISSUE-{index:03d}"
@@ -73,12 +80,17 @@ class ChecklistCritic:
                     for item in items
                     if item.id
                 },
+                absence_checks={(item.issue_checklist_id, item.section) for item in raw.rubric_verdicts
+                                if rubric is not None and item.evidence_kind == "absence" and item.verdict != "PASS"},
             )
         except (AttributeError, TypeError):
             raise ReviewValidationError() from None
 
         # 3. Merge (deterministic wins on checklist_id collision)
-        return merge_issue_lists(deterministic, llm_issues)
+        merged = merge_issue_lists(deterministic, llm_issues)
+        if evaluation is not None and evaluation_sink is not None:
+            evaluation_sink(evaluation)
+        return merged
 
 
 def _build_messages(
@@ -89,6 +101,7 @@ def _build_messages(
     previous_issues: list[IssuePacket] | list[dict[str, Any]] | None,
     revision_feedback: str,
     revision_history: list[str],
+    rubric: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     history = "\n\n".join(item for item in revision_history if item.strip())
     product_sheet = sheet.to_dict()
@@ -102,6 +115,7 @@ def _build_messages(
         ("Latest revision feedback", revision_feedback),
         ("Issues from the previous critic pass", _serialize_previous_issues(previous_issues)),
         ("Draft specification", spec_md),
+        ("Task-specific rubric", json.dumps({"items": rubric["items"]}, ensure_ascii=False) if rubric is not None else ""),
         workflow_constraints=workflow,
     )
 
@@ -109,6 +123,8 @@ def _build_messages(
 def _parse_provider_issues(
     parsed: dict[str, Any] | None,
     known_requirement_ids: set[str],
+    *,
+    absence_checks: set[tuple[str | None, str]] | None = None,
 ) -> list[IssuePacket]:
     if not isinstance(parsed, dict) or not isinstance(parsed.get("issues"), list):
         raise ReviewValidationError()
@@ -151,7 +167,7 @@ def _parse_provider_issues(
                 or not isinstance(entry.get("source"), str)
                 or not entry["source"].strip()
                 or not isinstance(entry.get("quote"), str)
-                or not entry["quote"].strip()
+                or (not entry["quote"].strip() and (item.get("checklist_id"), entry.get("source")) not in (absence_checks or set()))
             for entry in evidence
         ):
             raise ReviewValidationError(check="review_evidence")

@@ -89,6 +89,8 @@ class WorkflowTasks:
         sheet = validate_locked_sources(
             RequirementLockSheet.from_dict(sheet_data).require_validated(), state
         )
+        from backend.services.rubric import ensure_rubric, summary as rubric_summary, PATH as RUBRIC_PATH
+        rubric = ensure_rubric(self.writer, self.provider, self.config.model_routing["critic"].model, sheet, state)
         raw_issues = state.get("structured_issues", [])
         issues = parse_issue_list({"issues": raw_issues}) if raw_issues else None
         path = "draft/approval_candidate_spec.en.md"
@@ -109,14 +111,20 @@ class WorkflowTasks:
             revision_feedback=str(state.get("revision_feedback", "")),
             revision_history=list(state.get("revision_history", [])),
             writer=self.writer,
+            rubric=rubric,
         )
         self.writer.write_text(path, spec, overwrite=True)
         if path not in created:
             created.append(path)
+        if RUBRIC_PATH not in created:
+            created.append(RUBRIC_PATH)
         return {
             "status": STATUS_COMPILING,
             "approval_candidate_spec": path,
             "created_artifacts": created,
+            "rubric": rubric,
+            "rubric_evaluation": {},
+            "rubric_summary": rubric_summary(rubric),
         }
 
     def compose_candidate(self, state: WorkflowState) -> dict[str, Any]:
@@ -140,6 +148,9 @@ class WorkflowTasks:
             spec = ""
         if not spec or not self.compiler.english_only(spec):
             raise InvalidStateError("Reviewed candidate is missing or invalid.")
+        from backend.services.rubric import require_approval_evaluation
+        sheet = validate_locked_sources(RequirementLockSheet.from_dict(state.get("requirement_lock_sheet")).require_validated(), state)
+        require_approval_evaluation(state, sheet, spec)
         if path not in created:
             created.append(path)
         # 변경 검토는 안내 기능이며 승인 후보 검증 결과를 바꾸지 않는다.
@@ -306,6 +317,11 @@ class WorkflowTasks:
         sheet = validate_locked_sources(
             RequirementLockSheet.from_dict(sheet_data).require_validated(), state
         )
+        from backend.services.rubric import current_record, invalid, save_evaluation, summary as rubric_summary, EVALUATION_PATH
+        rubric = state.get("rubric", {})
+        if not current_record(rubric, sheet, state):
+            raise invalid("rubric_stale", stage="checklist_critic")
+        evaluations: list[dict[str, Any]] = []
         route = self.config.model_routing[self.critic.agent_id]
         provider = self.provider
 
@@ -329,7 +345,15 @@ class WorkflowTasks:
             previous_issues=state.get("structured_issues", []),
             revision_feedback=str(state.get("revision_feedback", "")),
             revision_history=list(state.get("revision_history", [])),
+            rubric=rubric,
+            evaluation_sink=evaluations.append,
         )
+        if len(evaluations) != 1:
+            raise invalid("rubric_evaluation_coverage", stage="checklist_critic")
+        evaluation = evaluations[0]
+        save_evaluation(self.writer, evaluation)
+        if EVALUATION_PATH not in created:
+            created.append(EVALUATION_PATH)
         history = list(state.get("review_history", []))
         issue_data = [item.to_dict() for item in issues]
         passes = int(state.get("critic_pass_count", 0)) + 1
@@ -355,6 +379,8 @@ class WorkflowTasks:
             "blocking_questions": [],
             "awaiting_input_reason": None,
             "review_history": history,
+            "rubric_evaluation": evaluation,
+            "rubric_summary": rubric_summary(rubric, evaluation),
             "created_artifacts": created,
         }
 

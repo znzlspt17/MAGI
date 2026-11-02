@@ -5,6 +5,14 @@ import { StepResult } from "../workspace/Workspace";
 
 afterEach(cleanup);
 
+it("루브릭 생성 상태와 항목별 판정 집계를 표시한다", () => {
+  render(<StepResult node={{ id: "review", stage: "checklist_critic" }} detail={{ result: {
+    rubric_summary: { status: "evaluated", policy_version: 1, item_count: 4, PASS: 2, FAIL: 1, UNDETERMINED: 1 },
+  } }} />);
+  expect(screen.getByText("검사 기준 4개 · 평가 완료")).toBeVisible();
+  expect(screen.getByText("충족 2 · 미충족 1 · 판단 불가 1")).toBeVisible();
+});
+
 it("작업 계획의 목표·판단 근거·대상·예상 결과를 표시한다", () => {
   render(<StepResult node={{ id: "plan", stage: "planner", title: "작업 계획" }} detail={{ result: { plan: {
     goal: "무기 정책 반영", reason: "이미 확인한 답변을 반영합니다.", target: "보스 격파 후 무기 유지",

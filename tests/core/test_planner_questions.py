@@ -123,6 +123,7 @@ def test_interview_receives_planner_intent_through_real_prompt_preparation():
 
 
 def test_graph_generates_question_interrupts_and_replans_with_answer(monkeypatch):
+    from backend.models import RequirementLockSheet, RequirementItem
     from langgraph.checkpoint.memory import InMemorySaver
     from langgraph.types import Command
     import backend.pipeline.planner as planner
@@ -147,7 +148,9 @@ def test_graph_generates_question_interrupts_and_replans_with_answer(monkeypatch
     graph = flow.build(InMemorySaver())
     config = {"configurable": {"thread_id": "questions"}}
     state = State(run_id="test", status="CRITIQUING", user_request="게임", critic_pass_count=3,
-                  requirement_lock_sheet={"validated": True}, structured_issues=[{"status": "open", "severity": "major"}]).to_dict()
+                  requirement_lock_sheet=RequirementLockSheet("lock", "feature", "게임", [],
+                      mandatory_requirements=[RequirementItem("REQ-001", "Support player controls.")]).to_dict(),
+                  structured_issues=[{"status": "open", "severity": "major"}]).to_dict()
     graph.invoke(state, config)
     snapshot = graph.get_state(config)
     assert snapshot.tasks[0].interrupts

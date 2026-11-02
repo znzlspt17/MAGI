@@ -32,6 +32,16 @@ def prepare_segment(state: WorkflowState) -> WorkflowState:
               "wait_reason": "", "stop_reason": ""}
     if action in {"answer", "revise", "message", "retry"}:
         result.update(fresh_review_budget())
+    if action in {"generate", "answer", "revise", "message", "retry"} and state.get("requirement_lock_sheet"):
+        from backend.models import RequirementLockSheet
+        from backend.services.rubric import current_record
+        sheet = RequirementLockSheet.from_dict(state["requirement_lock_sheet"])
+        if not current_record(state.get("rubric", {}), sheet, state):
+            # 구형 작업의 완료 표시는 새 정책의 생성·검토를 대신하지 못한다.
+            result["completed_tasks"] = [name for name in done if name not in {
+                "spec_compile", "checklist_critic", "review_resolution", "compose_candidate"}]
+            result["rubric_evaluation"] = {}
+            result["rubric_summary"] = {}
     if action in {"answer", "revise", "message"}:
         result.update({"candidate_hash": "", "user_approval_status": "PENDING", "critical_report": None})
         reused = [{"action": name, "revision": revision, "status": "reused",

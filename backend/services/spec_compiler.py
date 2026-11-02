@@ -81,6 +81,7 @@ class SpecCompiler:
         revision_feedback: str = "",
         revision_history: list[str] | None = None,
         writer: Documents,
+        rubric: dict[str, Any] | None = None,
     ) -> str:
         """검증 진단을 단계의 공통 재시도 예산으로 전달한다."""
         sheet.require_validated()
@@ -92,7 +93,7 @@ class SpecCompiler:
             try:
                 return self._compile_once(sheet, manifest, issues, user_request=user_request,
                     previous_spec=previous_spec, revision_feedback=revision_feedback,
-                    revision_history=revision_history, writer=writer)
+                    revision_history=revision_history, writer=writer, rubric=rubric)
             except (SpecCompilationError, OutputLanguageError) as exc:
                 error = exc
                 from structlog.contextvars import get_contextvars
@@ -128,6 +129,7 @@ class SpecCompiler:
         revision_feedback: str = "",
         revision_history: list[str] | None = None,
         writer: Documents,
+        rubric: dict[str, Any] | None = None,
     ) -> str:
         """Compile a single English Markdown specification from the lock sheet."""
         self.skills.assert_allowed(self.agent_id, "compose_final_spec")
@@ -148,6 +150,7 @@ class SpecCompiler:
             revision_feedback=revision_feedback,
             revision_history=revision_history or [],
             previous_trace=previous_trace,
+            rubric=rubric,
         )
         raw_output = complete_with_usage(
             writer, provider, messages, model=route.model, stage="spec_compile", temperature=0,
@@ -220,6 +223,7 @@ class SpecCompiler:
         revision_feedback: str,
         revision_history: list[str],
         previous_trace: dict | None = None,
+        rubric: dict | None = None,
     ) -> list[dict[str, str]]:
         product_sheet = sheet.to_dict()
         workflow = product_sheet.pop("workflow_constraints")
@@ -241,6 +245,7 @@ class SpecCompiler:
             user_request,
             json.dumps(manifest_summary, ensure_ascii=False, indent=2),
             ("Must-fix issues", json.dumps(required, ensure_ascii=False, indent=2)),
+            ("Task-specific rubric", json.dumps({"items": rubric["items"]}, ensure_ascii=False) if rubric is not None else ""),
             ("Revision feedback history", history),
             ("Latest revision feedback", revision_feedback),
             ("Current draft to preserve and revise", previous_spec),

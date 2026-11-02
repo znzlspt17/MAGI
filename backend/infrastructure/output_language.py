@@ -7,15 +7,19 @@ from backend.models import InterviewResponse, LockResponse, ReviewResponse, Spec
 from backend.models import ReviewResolutionResponse
 from backend.models import SpecTranslationResponse
 from backend.models import QuestionFormSpec
+from backend.models import RubricResponse
 
+
+_QUESTION_LANGUAGE = " question/decision_question, option labels, impact, assumptions and recommendation explanations: Korean; preserve product/OS names."
 
 LANGUAGE_RULES = {
+    "rubric_generate": "Rubric condition: English. Preserve basis quotes and identifiers verbatim.",
     "spec_translation": "Translate specification headings and prose to Korean. Preserve code, paths, IDs, numerical values and marked original quotations verbatim. Do not add or remove requirements.",
-    "interview": "Questions and assumption explanations: Korean. Preserve supplied user answers verbatim. Enums and IDs stay unchanged.",
+    "interview": "Preserve supplied user answers verbatim. Enums and IDs stay unchanged." + _QUESTION_LANGUAGE,
     "requirement_lock": "request_summary and unresolved_questions: Korean. Requirement text, workflow_constraints text, assumption text and acceptance_criteria_seed: English. Preserve original_text and user answers verbatim; do not translate source markers or IDs.",
     "spec_compile": "All section prose: English. Preserve code, paths, product names and necessary original quotations. Put original-language quotations in <original_quote>...</original_quote> blocks or Markdown blockquotes; code belongs in code spans or fenced blocks.",
-    "review_resolution": "resolution_reason, missing_information, decision_question, required_change: Korean. Quote proposed English specification wording verbatim. Keep IDs and basis_refs unchanged.",
-    "checklist_critic": "problem, required_change and decision_question explanations: Korean. Proposed sentences to insert into the specification: English, quoted or in code blocks. Preserve evidence.quote and identifiers verbatim.",
+    "review_resolution": "resolution_reason, missing_information, required_change: Korean. Quote proposed English specification wording verbatim. Keep IDs and basis_refs unchanged." + _QUESTION_LANGUAGE,
+    "checklist_critic": "problem, required_change, resolution_reason, missing_information and rubric_verdicts.reason: Korean. Proposed specification sentences: English, quoted or in code blocks. Preserve evidence.quote and identifiers verbatim." + _QUESTION_LANGUAGE,
 }
 
 
@@ -67,7 +71,10 @@ def language_issues(value):
             for n, text in enumerate(form.recommendation.assumptions):
                 field(f"{path}.recommendation.assumptions[{n}]", text, "ko")
 
-    if isinstance(value, InterviewResponse):
+    if isinstance(value, RubricResponse):
+        for index, rubric_item in enumerate(value.items):
+            field(f"items[{index}].condition", rubric_item.condition, "en")
+    elif isinstance(value, InterviewResponse):
         for name in ("blocking_questions", "additional_questions"):
             for index, item in enumerate(getattr(value, name)):
                 field(f"{name}[{index}].question", item.question, "ko")
@@ -102,6 +109,8 @@ def language_issues(value):
                 if getattr(item, name):
                     field(f"resolutions[{index}].{name}", getattr(item, name), "ko")
     elif isinstance(value, ReviewResponse):
+        for index, verdict in enumerate(value.rubric_verdicts):
+            field(f"rubric_verdicts[{index}].reason", verdict.reason, "ko")
         for index, item in enumerate(value.issues):
             guidance(item.decision_form, f"issues[{index}].decision_form")
             field(f"issues[{index}].resolution_reason", item.resolution_reason, "ko")

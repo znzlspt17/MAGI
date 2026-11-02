@@ -224,6 +224,7 @@ class IssuePacket:
     missing_information: str = ""
     decision_key: str = ""
     basis_refs: list[str] = field(default_factory=list)
+    rubric_ids: list[str] = field(default_factory=list)
 
     def __post_init__(self):
         if not self.decision_key:
@@ -251,6 +252,7 @@ class IssuePacket:
             "missing_information": self.missing_information,
             "decision_key": self.decision_key,
             "basis_refs": list(self.basis_refs),
+            "rubric_ids": list(self.rubric_ids),
         }
 
     @classmethod
@@ -295,10 +297,12 @@ class IssuePacket:
             defect_kind=data["defect_kind"], resolution_reason=data["resolution_reason"],
             missing_information=data["missing_information"], decision_key=data["decision_key"],
             basis_refs=list(data.get("basis_refs", [])),
+            rubric_ids=list(data.get("rubric_ids", [])),
         )
 
 
 class IssueResponse(ResponseModel):
+    rubric_ids: list[str] = Field(default_factory=list)
     decision_form: QuestionFormSpec | None = None
     defect_kind: Literal["requirements_gap", "spec_omission", "verification_gap", "confirmed_conflict"]
     resolution_reason: str = Field(description="Korean explanation grounded in confirmed inputs.")
@@ -354,6 +358,9 @@ class State:
     # requirement lock stage
     requirement_lock: str = ""
     requirement_lock_sheet: dict[str, Any] | None = field(default=None)
+    rubric: dict[str, Any] = field(default_factory=dict)
+    rubric_evaluation: dict[str, Any] = field(default_factory=dict)
+    rubric_summary: dict[str, Any] = field(default_factory=dict)
     # critic stage
     structured_issues: list[dict[str, Any]] = field(default_factory=list)
     critic_pass_count: int = 0
@@ -706,8 +713,37 @@ class ReviewResolutionResponse(ResponseModel):
     resolutions: list[ResolutionItem]
 
 
+class RubricBasis(ResponseModel):
+    reference: str
+    quote: str = Field(min_length=1)
+
+
+class RubricItem(ResponseModel):
+    rubric_id: str = Field(pattern=r"^RUB-[A-Za-z0-9_-]{1,80}$")
+    requirement_id: str
+    category: Literal["requirement", "contract", "data_flow", "failure_completion", "acceptance_test"]
+    basis: list[RubricBasis] = Field(min_length=1)
+    condition: str = Field(min_length=1, description="English check grounded only in confirmed product requirements; never invent an obligation or choose an unresolved design.")
+    sections: list[str] = Field(min_length=1, description="SpecResponse section field names to inspect.")
+
+
+class RubricResponse(ResponseModel):
+    items: list[RubricItem]
+
+
+class RubricVerdict(ResponseModel):
+    rubric_id: str
+    verdict: Literal["PASS", "FAIL", "UNDETERMINED"]
+    section: str
+    evidence_kind: Literal["quote", "absence"]
+    quote: str
+    reason: str = Field(min_length=1, description="Korean explanation of the verdict; absence identifies what is missing in the checked section.")
+    issue_checklist_id: str | None = Field(description="For non-PASS, checklist_id of a matching blocking/major issue with the same requirement and rubric_ids. Null for PASS.")
+
+
 class ReviewResponse(ResponseModel):
     issues: list[IssueResponse]
+    rubric_verdicts: list[RubricVerdict] = Field(default_factory=list)
 
 
 class SpecTranslationResponse(ResponseModel):
@@ -859,6 +895,9 @@ class WorkflowState(TypedDict, total=False):
     interview_pre_answers: list[dict[str, Any]]
     requirement_lock: str
     requirement_lock_sheet: dict[str, Any] | None
+    rubric: dict[str, Any]
+    rubric_evaluation: dict[str, Any]
+    rubric_summary: dict[str, Any]
     structured_issues: list[dict[str, Any]]
     critic_pass_count: int
     max_critic_passes: int
@@ -892,6 +931,7 @@ class WorkflowState(TypedDict, total=False):
 
 
 STAGE_SCHEMAS: dict[str, type[BaseModel]] = {
+    "rubric_generate": RubricResponse,
     "spec_translation": SpecTranslationResponse,
     "interview": InterviewResponse,
     "requirement_lock": LockResponse,
@@ -937,7 +977,10 @@ def merge_issue_lists(
         elif _SEVERITY_RANK.get(issue.severity, -1) > _SEVERITY_RANK.get(
             matching.severity, -1
         ):
+            issue.rubric_ids = list(dict.fromkeys([*matching.rubric_ids, *issue.rubric_ids]))
             merged[merged.index(matching)] = issue
+        else:
+            matching.rubric_ids = list(dict.fromkeys([*matching.rubric_ids, *issue.rubric_ids]))
     return merged
 
 

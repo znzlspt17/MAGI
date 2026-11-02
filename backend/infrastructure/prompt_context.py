@@ -16,7 +16,7 @@ SHEET_FIELDS = {"request_type", "request_summary", "mandatory_requirements", "re
                 "optional_requirements", "constraints", "non_scope", "assumptions", "user_answers",
                 "acceptance_criteria_seed", "unresolved_questions", "decisions"}
 ISSUE_FIELDS = {"issue_id", "section", "severity", "blocking", "checklist_id", "problem", "required_change",
-                "requirement_id", "evidence", "status", "decision_key"}
+                "requirement_id", "evidence", "status", "decision_key", "rubric_ids"}
 CANONICAL_FIELDS = {
     "interview": {"file_count", "files", "request_types", "saved_answers", "validated_requirements",
                   "planner_intent", "execution_constraints", "previous_task_outcomes"},
@@ -28,11 +28,14 @@ CANONICAL_FIELDS = {
                           "final_assessment", "planner_intent", "execution_constraints"},
 }
 REFERENCE_RULES = (
-    "Reference supplied source records using S references and retrieved knowledge using K references. S type project_decision is structured user confirmation, not a user-authored quote; preserve its original_actor and conditions. "
-    "Use only references supplied for this call in source, sources, basis_refs, conflicting_source and reused_node_ids. "
-    "Keep requirement, workflow, decision and issue IDs unchanged. K references are proposals, never user confirmation. "
-    "Input fields ending in _source point to supplied original text; reproduce that exact text when the output schema requires original_text. "
-    "Do not put source/knowledge references or storage metadata in product prose."
+    "Use S for supplied sources, K for retrieved knowledge, and product IDs only where allowed. "
+    "Use only this call's allowed references in source, sources, basis_refs, conflicting_source and reused_node_ids; preserve semantic IDs. "
+    "Fields ending in _source locate original text: reproduce it exactly when original_text is required. "
+    "K knowledge and unselected history are proposals, not confirmation. Adopt only explicitly selected project decisions: "
+    "preserve their text, conditions and original_actor, cite the supplied S source, and do not promote their rationale or other history. "
+    "Selection is structured confirmation, not a user-authored quotation; NEW DecisionTrace records derived from reuse use actor=llm, "
+    "never a fabricated user quote. Conflicts with current input require interview/review resolution, not silent overrides. "
+    "Keep source/knowledge references and storage metadata out of product prose."
 )
 
 

@@ -43,6 +43,11 @@ class AgentWorkflow:
         ident = task_id(state,name)
         replay = ident == getattr(self, "replay_task_id", None)
         saved = self.journal.get(ident, retry_safe=name == "approve" or replay)
+        from backend.services.rubric import POLICY_VERSION
+        rubric_stage = name in {"planner", "spec_compile", "checklist_critic", "review_resolution", "compose_candidate"}
+        if saved is not None and rubric_stage and saved.get("rubric_policy_version") != POLICY_VERSION:
+            # 완료 결과만 새 정책으로 재검증한다. 저널 ID를 바꿔 미확정 호출 보호를 우회하지 않는다.
+            saved = None
         if saved is not None:
             self.writer.bind_versions(saved.get("documents", {}))
             from backend.infrastructure.evidence_registry import EvidenceRegistry
@@ -83,6 +88,7 @@ class AgentWorkflow:
                 WORKFLOW_MESSAGES.reset(token)
             result["task_messages"] = {**state.get("task_messages", {}), **recorded}
             self.journal.complete(ident, {"result": result, "evidence": self.evidence.to_dict(),
+                                          "rubric_policy_version": POLICY_VERSION if rubric_stage else None,
                                           "documents": {k:v for k,v in self.writer.changed.items() if k != "state/provider_usage.json"}})
         self.persist(name, {**state, **result})
         return result

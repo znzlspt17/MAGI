@@ -25,6 +25,8 @@ def task_signature(state, action):
               state.get("structured_issues"), versions[-1]["hash"] if versions else state.get("candidate_hash"),
               state.get("critic_pass_count", 0), state.get("diagnosed_keys", []),
               state.get("confirmed_user_sources"), state.get("knowledge_context")]
+    from backend.services.rubric import POLICY_VERSION
+    inputs.extend([POLICY_VERSION, state.get("rubric", {}).get("rubric_hash"), state.get("rubric_evaluation")])
     return hashlib.sha256(json.dumps(inputs, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 

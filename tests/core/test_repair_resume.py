@@ -120,13 +120,15 @@ def test_weapon_answer_is_reused_instead_of_asking_again():
 
 
 def test_graph_wait_retry_repair_and_review(monkeypatch):
+    from backend.models import RequirementLockSheet, RequirementItem
     from langgraph.checkpoint.memory import InMemorySaver
     from langgraph.types import Command
     import backend.pipeline.agent_workflow as agent
 
     flow = workflow()
     state = exhausted()
-    state["requirement_lock_sheet"] = {"validated": True}
+    state["requirement_lock_sheet"] = RequirementLockSheet("lock", "feature", "게임", [],
+        mandatory_requirements=[RequirementItem("REQ-001", "Retain boss weapons.")]).to_dict()
     flow.nodes.spec_compile = Mock(return_value={})
     flow.nodes.checklist_critic = Mock(return_value={"critic_pass_count": 1})
     repaired = {**state["structured_issues"][0], "status": "resolved"}
@@ -142,7 +144,9 @@ def test_graph_wait_retry_repair_and_review(monkeypatch):
         if current["critic_pass_count"] >= 3:
             return {"action": "blocked", "stop_reason": "repair_limit", "reason": "횟수 소진"}
         done = current["completed_tasks"]
-        if "review_resolution" in done:
+        if "spec_compile" not in done:
+            action = "spec_compile"
+        elif "review_resolution" in done:
             action = "compose_candidate" if current["structured_issues"][0]["status"] == "resolved" else "spec_compile"
         elif "checklist_critic" in done:
             action = "review_resolution"

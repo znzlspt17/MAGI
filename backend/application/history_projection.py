@@ -41,6 +41,12 @@ def _safe_result(value: dict) -> dict:
         "diagnosed_keys",
     }
     result = {key: copy.deepcopy(value[key]) for key in allowed if key in value}
+    rubric = value.get("rubric_summary")
+    if isinstance(rubric, dict):
+        result["rubric_summary"] = {key: rubric[key] for key in ("policy_version", "item_count", "PASS", "FAIL", "UNDETERMINED")
+                                   if type(rubric.get(key)) is int and 0 <= rubric[key] <= 100000}
+        if isinstance(rubric.get("status"), str) and rubric["status"] in {"ready", "evaluated"}:
+            result["rubric_summary"]["status"] = rubric["status"]
     if value.get("status") == "CRITICAL_BLOCKED":
         from backend.services.review_resolution import stop_diagnostic
 
@@ -103,6 +109,7 @@ def _safe_issues(value: object) -> list[dict]:
         "missing_information",
         "decision_key",
         "basis_refs",
+        "rubric_ids",
     }
     return [
         {key: copy.deepcopy(item[key]) for key in allowed if key in item}
@@ -131,6 +138,12 @@ def _issue_key(issue: dict) -> tuple[str, str] | None:
 
 
 def _summary(stage: str, result: dict) -> str:
+    rubric = result.get("rubric_summary")
+    if isinstance(rubric, dict):
+        if stage == "spec_compile":
+            return f"루브릭 {rubric.get('item_count', 0)}개 기준을 반영해 명세를 생성했습니다."
+        if stage == "checklist_critic":
+            return f"루브릭 검토: 충족 {rubric.get('PASS', 0)} · 미충족 {rubric.get('FAIL', 0)} · 판단 불가 {rubric.get('UNDETERMINED', 0)}"
     if result.get("stop_reason") and result.get("wait_reason"):
         return result["wait_reason"]
     if stage == "await_user":

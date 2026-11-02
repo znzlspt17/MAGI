@@ -7,7 +7,7 @@ const groups = object({ mandatory_requirements: requirements, recommended_requir
 const evidence = (value: unknown) => typeof value === "string" ? value : object({ source: text, quote: text })(value);
 const issue = object({ issue_id: text, requirement_id: optional(text), problem: text, title: text, severity: text, lifecycle: text,
   section: text, defect_kind: text, resolution_reason: text, resolution_kind: text, decision_answer_id: optional(text),
-  missing_information: text, decision_key: text, required_change: text, basis_refs: strings,
+  missing_information: text, decision_key: text, required_change: text, basis_refs: strings, rubric_ids: strings,
   evidence: value => Array.isArray(value) ? value.map(evidence) : value == null ? [] : [evidence(value)] });
 const attempt = object({ review_round: number, proposed_change: text, outcome: text });
 const diagnosticIssue = object({ issue_id: text, requirement_id: optional(text), problem: text, required_change: text,
@@ -23,6 +23,8 @@ const resultFields = {
   mandatory_requirements: requirements, recommended_requirements: requirements, optional_requirements: requirements, constraints: requirements,
   plan, action: text, stop_diagnostic: stop, wait_reason: text, summary: text, purpose: text, request: text, feedback: text,
   diagnostic: object({ error_code: text, error_stage: text, failed_checks: strings }),
+  rubric_summary: object({ status: literal("ready", "evaluated"), policy_version: number, item_count: number,
+    PASS: number, FAIL: number, UNDETERMINED: number }),
   answers: array(object({ question: text, answer: text, question_id: text })), questions: strings, blocking_questions: strings,
   issues: array(issue), resolved_issues: array(issue), report: text, research,
 };

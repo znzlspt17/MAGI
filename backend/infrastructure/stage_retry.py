@@ -20,15 +20,12 @@ def attempt_limit():
 
 def retry_messages(messages, *, stage, attempt, error):
     # 예외 원문에는 외부 응답이 포함될 수 있으므로 검증 정보만 전달한다.
-    from backend.infrastructure.output_language import LANGUAGE_RULES
-
     payload = {
         "stage": stage,
         "retry_attempt": attempt,
         "max_retries": MAX_RETRIES,
         "error_type": type(error).__name__,
         "validation_failures": getattr(error, "validation_details", []),
-        "language_rules": LANGUAGE_RULES.get(stage, "Follow the original stage instructions."),
         "instructions": (
             "Retry only the current stage using the original inputs and latest confirmed decisions. "
             "Correct the listed validation failures. Preserve requirement IDs, source markers, "

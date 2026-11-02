@@ -28,6 +28,10 @@ export function StepResult({ node, detail, hideQuestions = false }: { node?: Ste
       </section> : <p>당시 작업 계획의 상세 내용이 저장되지 않았습니다.</p>)}
       {content.kind === "resolution" && content.action && <p><strong>다음 처리: </strong>{({ repair: "초안 수정·재검토", ask_user: "사용자 결정 확인", stop: "보완 중단", approve: "승인 후보 준비" } as Record<string, string>)[content.action] || content.action}</p>}
       <StopDiagnostic value={result.stop_diagnostic} />
+      {result.rubric_summary && <section aria-label="루브릭 검증"><h3>루브릭 검증</h3>
+        <p>검사 기준 {result.rubric_summary.item_count}개 · {result.rubric_summary.status === "ready" ? "생성 완료" : "평가 완료"}</p>
+        {result.rubric_summary.status === "evaluated" && <p>충족 {result.rubric_summary.PASS} · 미충족 {result.rubric_summary.FAIL} · 판단 불가 {result.rubric_summary.UNDETERMINED}</p>}
+      </section>}
       {result.wait_reason && <p><strong>중단·대기 사유: </strong>{result.wait_reason}</p>}
       {result.diagnostic && <section aria-label="실패 진단"><h3>실패 진단</h3>
         <p>{result.diagnostic.error_code || "분류되지 않은 실행 오류"}</p>

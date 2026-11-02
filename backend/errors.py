@@ -43,11 +43,13 @@ class ReviewValidationError(Error):
     """검토 응답 오류를 제품 명세 결함과 구분한다."""
 
     code = "REVIEW_VALIDATION_FAILED"
-    stages = frozenset({"interview", "requirement_lock", "spec_compile", "checklist_critic", "review_resolution"})
+    stages = frozenset({"interview", "requirement_lock", "spec_compile", "checklist_critic", "review_resolution", "rubric_generate", "compose_candidate"})
     checks = frozenset({"review_response", "source_reference", "review_requirement", "review_evidence",
                         "review_classification", "decision_key", "resolution_schema", "resolution_coverage",
                         "resolution_language", "resolution_basis", "resolution_question", "resolution_auto_fix",
-                        "resolution_reconfirmation", "question_text", "question_form", "question_pending"})
+                        "resolution_reconfirmation", "question_text", "question_form", "question_pending",
+                        "rubric_schema", "rubric_identity", "rubric_basis", "rubric_boundary", "rubric_coverage",
+                        "rubric_evaluation_coverage", "rubric_evidence", "rubric_issue", "rubric_stale"})
 
     def __init__(self, details=None, *, stage="checklist_critic", check="review_response"):
         super().__init__("Checklist review response could not be validated.")

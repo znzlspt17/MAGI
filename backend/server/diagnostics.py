@@ -152,7 +152,9 @@ def _normalization_error(chain: list[BaseException]) -> dict[str, str] | None:
             stage = getattr(item, "stage", None)
             return {"code": "REVIEW_VALIDATION_FAILED",
                     "stage": stage if isinstance(stage, str) and stage in ReviewValidationError.stages else "checklist_critic",
-                    "reason": "검토 응답의 근거·형식 또는 추가 질문을 검증하지 못해 작업을 중단했습니다."}
+                    "reason": "루브릭의 근거·완전성 또는 최신 평가를 검증하지 못해 작업을 중단했습니다. 사용자 요구사항 부족으로 판정한 결과가 아닙니다."
+                    if any(check.startswith("rubric_") for check in item.failed_checks)
+                    else "검토 응답의 근거·형식 또는 추가 질문을 검증하지 못해 작업을 중단했습니다."}
         if not isinstance(item, (RequirementNormalizationError, SpecCompilationError, TranslationValidationError)):
             continue
         code = getattr(item, "code", None)
