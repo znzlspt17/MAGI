@@ -16,6 +16,19 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 function mount() { return render(<MemoryRouter><UsageDashboard version={0} save={save} /></MemoryRouter>); }
 
+it("요청이 null인 작업·호출도 제목 없음으로 표시하고 페이지를 이동한다", async () => {
+  vi.mocked(api).mockImplementation(async path => path.includes("/rows?") ? {
+    rows: [{ ...row, request: null, ...(path.includes("group_by=call") && { id: "call-id", model: "gpt-6-luna", state: "settled" }) }], total: 30,
+  } : summary);
+  mount();
+  expect((await screen.findByRole("link", { name: "작업 제목 없음" })).getAttribute("href")).toBe("/admin/data?job_id=job-id");
+  fireEvent.click(screen.getByRole("button", { name: "다음" }));
+  await waitFor(() => expect(api).toHaveBeenCalledWith(expect.stringContaining("offset=25")));
+  fireEvent.mouseDown(screen.getByRole("tab", { name: "호출별" }), { button: 0, ctrlKey: false });
+  await screen.findByText("gpt-6-luna");
+  expect(screen.getByRole("link", { name: "작업 제목 없음" })).toBeTruthy();
+});
+
 it("호출별 표에서 사용량 기반 산정·수동 정산·불완전한 근거를 구분한다", async () => {
   const evidence = ["unknown", "complete", "manual", "missing_usage"];
   vi.mocked(api).mockImplementation(async (path: string) => path.includes("/rows?") ? {

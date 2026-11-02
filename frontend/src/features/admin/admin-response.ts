@@ -8,8 +8,8 @@ export const decodeOverview = object({ embedding_status: nullable(text), users: 
 const jobFields = { id: text, request: optional(text), status: optional(text), owner_id: optional(text), created_at: optional(text) };
 export const decodeCatalog = requiredObject({ jobs: array(requiredObject(jobFields)), pending: strings });
 export const decodeAdminJob = requiredObject({ ...jobFields, final: optional(text), candidate: optional(text), critical: optional(text),
-  session_events: optional(array(object({ id: text, action: text, retry_of: text, status: text, started_at: text, summary: text,
-    questions: strings, document_step_id: text, input: object({ request: text, feedback: text,
+  session_events: optional(array(object({ id: text, action: text, retry_of: text, status: text, started_at: nullable(text), summary: text,
+    questions: strings, document_step_id: nullable(text), input: object({ request: text, feedback: text,
       answers: array(object({ question_id: text, question: text, answer: text })) }) }))) });
 export const decodeCleanup = requiredObject({ id: text, scope: text, targets: optional(strings),
   counts: requiredObject({ jobs: number, files: optional(number), project_decisions: optional(number) }),
@@ -32,7 +32,7 @@ const statsFields = { records: number, calls: number, pending_calls: number, unk
 export const decodeUsageSummary = requiredObject({ start: text, end: text, summary: requiredObject(statsFields),
   daily: array(requiredObject({ ...statsFields, day: text })),
   today: requiredObject({ day: text, spent: text, outstanding: text, limit: text }), users: array(requiredObject({ id: text })) });
-const usageFields = object({ ...statsFields, id: text, job_id: text, request: text, model: text, state: text, actual: nullable(text), reserved: text,
+const usageFields = object({ ...statsFields, id: text, job_id: text, request: nullable(text), model: text, state: text, actual: nullable(text), reserved: text,
   called_at: nullable(text), reserved_at: nullable(text), settled_at: nullable(text), settlement_source: nullable(literal("calculated", "manual")),
   cost_policy: nullable(text), cost_evidence: literal("manual", "unknown", "complete", "missing_usage", "invalid_usage"),
   cache_write_tokens: nullable(number), cache_write_30m_tokens: nullable(number), cache_write_12h_tokens: nullable(number),

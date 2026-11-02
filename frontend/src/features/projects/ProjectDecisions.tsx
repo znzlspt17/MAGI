@@ -1,5 +1,5 @@
 import { decodeProjects, decodeProject } from "../knowledge/knowledge-response";
-import { decodeDecisions } from "./project-response";
+import { decodeDecisionCandidates, decodeDecisions, decodeReusedDecisions, type CommonDecision, type DecisionCandidate, type ReusedDecision, type DecisionSource as DecisionSourceData } from "./project-response";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { FolderPlusIcon, LinkSimpleIcon, CheckCircleIcon, CaretDownIcon } from "@phosphor-icons/react";
@@ -19,17 +19,16 @@ import { Skeleton } from "../../shared/ui/skeleton";
 import { Pagination, PaginationContent, PaginationItem } from "../../shared/ui/pagination";
 import "./project-decisions.css";
 
-export type CommonDecision = { id: string; version: number; active: boolean; text: string; conditions: string; actor: "user" | "llm"; decision_id: string; job_id: string; project_id: string; completed_id: string; source_hash: string; source_available?: boolean; stale?: boolean; evidence: { item_id: string; section: string; quote: string }[] };
-type Packet = { rows: CommonDecision[]; total: number; next_offset: number | null; project_id: string };
+export type { CommonDecision } from "./project-response";
 type Project = { id: string; name: string };
 export type DecisionSelection = Pick<CommonDecision, "id" | "version" | "source_hash">;
 
 function ErrorNotice({ error }: { error: string }) { return error ? <Alert role="alert"><AlertDescription>{error}</AlertDescription></Alert> : null; }
-function DecisionSource({ item }: { item: CommonDecision }) {
+function DecisionSource({ item }: { item: DecisionSourceData }) {
   return <div className="pd-source"><Badge variant="outline">승인본 {item.completed_id.slice(0, 12)}</Badge><Popover><PopoverTrigger asChild><Button><LinkSimpleIcon size={16} aria-hidden />출처 확인</Button></PopoverTrigger><PopoverContent className="pd-citation"><strong>승인본 {item.completed_id.slice(0, 12)}</strong>{item.evidence.map((e, i) => <blockquote key={i}><small>{e.section} · {e.item_id}</small><p>{e.quote}</p></blockquote>)}{item.source_available === false ? <p>출처를 현재 조회할 수 없습니다. 당시 확인한 원문 사본입니다.</p> : <Link to={`/jobs/${encodeURIComponent(item.job_id)}?completed_id=${encodeURIComponent(item.completed_id)}`}>해당 승인 명세 열기</Link>}<Collapsible><CollapsibleTrigger>출처 전체 식별값</CollapsibleTrigger><CollapsibleContent><p>{item.completed_id}</p><p>SHA-256: {item.source_hash}</p></CollapsibleContent></Collapsible></PopoverContent></Popover></div>;
 }
-function DecisionBody({ item, descriptionId }: { item: CommonDecision; descriptionId?: string }) {
-  return <><ItemTitle>{item.text}</ItemTitle><p id={descriptionId} className="pd-condition">적용 조건: {item.conditions || "기록된 추가 조건 없음"}</p><div className="pd-badges"><Badge variant="outline">{item.actor === "user" ? "사용자 작성" : "모델 작성"}</Badge><Badge variant="secondary">{item.active === false ? "등록 해제됨" : "등록 확인됨"}</Badge>{item.stale && <Badge variant="outline">등록 이후 새 승인본 있음</Badge>}{item.source_available === false && <Badge variant="outline">출처 확인 불가</Badge>}</div><DecisionSource item={item} /></>;
+function DecisionBody({ item, descriptionId }: { item: CommonDecision | ReusedDecision; descriptionId?: string }) {
+  return <><ItemTitle>{item.text}</ItemTitle><p id={descriptionId} className="pd-condition">적용 조건: {item.conditions || "기록된 추가 조건 없음"}</p><div className="pd-badges"><Badge variant="outline">{item.actor === "user" ? "사용자 작성" : "모델 작성"}</Badge><Badge variant="secondary">{"active" in item ? (item.active === false ? "등록 해제됨" : "등록 확인됨") : "접수 당시 사본"}</Badge>{item.stale && <Badge variant="outline">등록 이후 새 승인본 있음</Badge>}{item.source_available === false && <Badge variant="outline">출처 확인 불가</Badge>}</div><DecisionSource item={item} /></>;
 }
 
 export function ProjectDecisionPicker({ projectId, onProject, selections, onSelections }: { projectId: string; onProject: (id: string) => void; selections: DecisionSelection[]; onSelections: (items: DecisionSelection[]) => void }) {
@@ -47,7 +46,7 @@ export function ProjectDecisionPicker({ projectId, onProject, selections, onSele
 }
 
 function RegisteredDecisions({ projectId, selections, onSelections }: { projectId: string; selections: DecisionSelection[]; onSelections: (items: DecisionSelection[]) => void }) {
-  const [packet, setPacket] = useState<Packet | null>(null), [query, setQuery] = useState(""), [status, setStatus] = useState("active"), [offsets, setOffsets] = useState([0]), [retry, setRetry] = useState(0), [error, setError] = useState(""), [busy, setBusy] = useState(false);
+  const [packet, setPacket] = useState<ReturnType<typeof decodeDecisions> | null>(null), [query, setQuery] = useState(""), [status, setStatus] = useState("active"), [offsets, setOffsets] = useState([0]), [retry, setRetry] = useState(0), [error, setError] = useState(""), [busy, setBusy] = useState(false);
   const sequence = useRef(0), sending = useRef(false), mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const offset = offsets.at(-1)!;
@@ -74,7 +73,7 @@ function DecisionPages({ offsets, setOffsets, next }: { offsets: number[]; setOf
 }
 
 export function ApprovedDecisions({ jobId, completedId }: { jobId: string; completedId: string }) {
-  const [open, setOpen] = useState(false), [packet, setPacket] = useState<Packet | null>(null), [offsets, setOffsets] = useState([0]), [chosen, setChosen] = useState<CommonDecision | null>(null), [error, setError] = useState(""), [busy, setBusy] = useState(false), [notice, setNotice] = useState("");
+  const [open, setOpen] = useState(false), [packet, setPacket] = useState<ReturnType<typeof decodeDecisionCandidates> | null>(null), [offsets, setOffsets] = useState([0]), [chosen, setChosen] = useState<(DecisionCandidate & { id: string }) | null>(null), [error, setError] = useState(""), [busy, setBusy] = useState(false), [notice, setNotice] = useState("");
   const opener = useRef<HTMLButtonElement | null>(null);
   const sequence = useRef(0), sending = useRef(false), registration = useRef(0), alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; registration.current++; }; }, []);
@@ -82,7 +81,7 @@ export function ApprovedDecisions({ jobId, completedId }: { jobId: string; compl
     if (!open) return;
     const controller = new AbortController(), ticket = ++sequence.current;
     setPacket(null); setError("");
-    void api(`/api/jobs/${jobId}/decision-candidates?completed_id=${completedId}&offset=${offsets.at(-1)}`, { signal: controller.signal }).then(decodeDecisions).then(value => { if (!controller.signal.aborted && ticket === sequence.current) setPacket(value); }).catch(e => { if (!controller.signal.aborted && ticket === sequence.current) setError(e.message); });
+    void api(`/api/jobs/${jobId}/decision-candidates?completed_id=${completedId}&offset=${offsets.at(-1)}`, { signal: controller.signal }).then(decodeDecisionCandidates).then(value => { if (!controller.signal.aborted && ticket === sequence.current) setPacket(value); }).catch(e => { if (!controller.signal.aborted && ticket === sequence.current) setError(e.message); });
     return () => { controller.abort(); sequence.current++; };
   }, [jobId, completedId, open, offsets]);
   async function register() {
@@ -96,11 +95,11 @@ export function ApprovedDecisions({ jobId, completedId }: { jobId: string; compl
 }
 
 export function ReusedDecisions({ jobId, count }: { jobId: string; count: number }) {
-  const [open, setOpen] = useState(false), [packet, setPacket] = useState<Packet | null>(null), [error, setError] = useState(""), [offsets, setOffsets] = useState([0]);
+  const [open, setOpen] = useState(false), [packet, setPacket] = useState<ReturnType<typeof decodeReusedDecisions> | null>(null), [error, setError] = useState(""), [offsets, setOffsets] = useState([0]);
   useEffect(() => {
     if (!open) return;
     const controller = new AbortController(); setPacket(null); setError("");
-    void api(`/api/jobs/${jobId}/reused-decisions?offset=${offsets.at(-1)}`, { signal: controller.signal }).then(decodeDecisions).then(value => { if (!controller.signal.aborted) setPacket(value); }).catch(e => { if (!controller.signal.aborted) setError(e.message); });
+    void api(`/api/jobs/${jobId}/reused-decisions?offset=${offsets.at(-1)}`, { signal: controller.signal }).then(decodeReusedDecisions).then(value => { if (!controller.signal.aborted) setPacket(value); }).catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
   }, [jobId, open, offsets]);
   if (!count) return null;

@@ -25,6 +25,19 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
+it("문서·시각이 없는 처리 이력도 상세 화면에 표시한다", async () => {
+  vi.mocked(api).mockImplementation(async path => path.includes("catalog") ? { jobs: entries, pending: [] } : {
+    ...entries[0], session_events: [{ id: "execution", action: "generate", status: "running", started_at: null,
+      document_step_id: null, summary: "요청을 접수했습니다.", questions: [], input: {} }],
+  });
+  mount("/admin/data?job_id=recent");
+  const panel = await screen.findByRole("dialog", { name: "작업 상세" });
+  await within(panel).findByText("전체 요청 내용");
+  fireEvent.mouseDown(within(panel).getByRole("tab", { name: "처리 이력" }), { button: 0, ctrlKey: false });
+  expect(await within(panel).findByText("요청을 접수했습니다.")).toBeTruthy();
+  expect(within(panel).getByText("시각 기록 없음")).toBeTruthy();
+});
+
 it("시각이 없는 작업은 뒤로 정렬하고 한국 시간과 복합 필터를 적용한다", () => {
   expect(filterJobs(entries, "", "", "").map(row => row.id)).toEqual(["recent", "older", "unowned"]);
   expect(filterJobs(entries, "오류", "other", "error").map(row => row.id)).toEqual(["older"]);

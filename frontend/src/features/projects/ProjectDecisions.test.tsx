@@ -8,6 +8,10 @@ vi.mock("../../shared/api/api", () => ({ api: vi.fn(), post: vi.fn() }));
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 const item = { id: "registered", version: 1, active: true, decision_id: "DEC-DB", text: "Use PostgreSQL.", conditions: "A server is operated.", actor: "llm", project_id: "project", job_id: "job", completed_id: "c".repeat(64), source_hash: "h".repeat(64), source_available: true, evidence: [{ item_id: "DB", section: "architecture", quote: "Use PostgreSQL to store notes." }] };
 const packet = { rows: [item], total: 1, next_offset: null, project_id: "project" };
+const { id: _id, version: _version, active: _active, ...candidate } = item;
+const { active: _snapshotActive, ...snapshot } = item;
+const candidatePacket = { ...packet, rows: [candidate] };
+const reusedPacket = { rows: [snapshot], total: 1, next_offset: null };
 function Harness() { const [project, setProject] = useState(""), [selections, setSelections] = useState<DecisionSelection[]>([]); return <MemoryRouter><ProjectDecisionPicker projectId={project} onProject={setProject} selections={selections} onSelections={setSelections} /><output data-testid="selection">{JSON.stringify(selections)}</output></MemoryRouter>; }
 
 it("등록된 결정을 기본 선택하지 않고 ID·버전·해시만 선택한다", async () => {
@@ -54,7 +58,7 @@ it("개인 프로젝트 생성 후 해당 프로젝트로 이동한다", async (
 });
 
 it("출처를 확인한 등록만 제출하고 연속 클릭을 중복 전송하지 않는다", async () => {
-  vi.mocked(api).mockResolvedValue(packet);
+  vi.mocked(api).mockResolvedValue(candidatePacket);
   let resolve!: (value: unknown) => void;
   vi.mocked(post).mockImplementation(() => new Promise(r => { resolve = r; }));
   render(<MemoryRouter><ApprovedDecisions jobId="job" completedId={item.completed_id} /></MemoryRouter>);
@@ -79,10 +83,22 @@ it("등록 해제 후 선택을 지우고 과거 재사용 사본을 별도로 �
   fireEvent.click(screen.getByRole("button", { name: "등록 해제" }));
   await waitFor(() => expect(screen.getByTestId("selection").textContent).toBe("[]"));
   view.unmount();
+  vi.mocked(api).mockResolvedValue(reusedPacket);
   render(<MemoryRouter><ReusedDecisions jobId="job" count={1} /></MemoryRouter>);
   fireEvent.click(screen.getByRole("button", { name: "이번 요청에 재사용한 결정 1개" }));
   await screen.findByText(item.text);
+  expect(screen.queryByText("등록 확인됨")).toBeNull();
+  expect(screen.getByText("접수 당시 사본")).toBeTruthy();
   expect(api).toHaveBeenLastCalledWith("/api/jobs/job/reused-decisions?offset=0", expect.anything());
+});
+
+it("프로젝트 필드가 없는 빈 재사용 페이지도 오류 없이 표시한다", async () => {
+  vi.mocked(api).mockResolvedValue({ rows: [], total: 0, next_offset: null });
+  const view = render(<MemoryRouter><ReusedDecisions jobId="job" count={1} /></MemoryRouter>);
+  fireEvent.click(screen.getByRole("button", { name: "이번 요청에 재사용한 결정 1개" }));
+  await waitFor(() => expect(view.container.querySelector(".pd-skeleton")).toBeNull());
+  expect(screen.getByRole<HTMLButtonElement>("button", { name: "다음" }).disabled).toBe(true);
+  expect(screen.queryByRole("alert")).toBeNull();
 });
 
 it("조회 실패를 표시하고 다시 조회할 수 있다", async () => {
@@ -111,7 +127,7 @@ it("프로젝트 생성 중 닫으면 늦은 응답으로 프로젝트를 자동
 });
 
 it("등록 중 닫은 대화상자를 늦은 응답으로 다시 열거나 완료 안내로 바꾸지 않는다", async () => {
-  vi.mocked(api).mockResolvedValue(packet);
+  vi.mocked(api).mockResolvedValue(candidatePacket);
   let resolve!: (value: unknown) => void;
   vi.mocked(post).mockImplementation(() => new Promise(r => { resolve = r; }));
   render(<MemoryRouter><ApprovedDecisions jobId="job" completedId={item.completed_id} /></MemoryRouter>);

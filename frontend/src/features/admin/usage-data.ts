@@ -12,7 +12,7 @@ export type UsageSummary = {
   users: { id: string }[];
 };
 export type UsageRow = Partial<UsageStats> & {
-  id?: string; user_id: string; job_id?: string; request?: string;
+  id?: string; user_id: string; job_id?: string; request?: string | null;
   model?: string; state?: string; actual?: string | null; reserved?: string;
   called_at?: string | null; reserved_at?: string | null; settled_at?: string | null;
   settlement_source?: "calculated" | "manual" | null;

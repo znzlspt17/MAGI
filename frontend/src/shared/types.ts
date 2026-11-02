@@ -125,10 +125,10 @@ export interface SessionEvent {
     answers?: { question_id?: string; question?: string; answer?: string }[];
   };
   status?: string;
-  started_at?: string;
+  started_at?: string | null;
   summary?: string;
   questions?: string[];
-  document_step_id?: string;
+  document_step_id?: string | null;
 }
 
 export interface ConversationTurn {
@@ -137,8 +137,8 @@ export interface ConversationTurn {
   role: "user" | "magi";
   text: string;
   answers?: NonNullable<NonNullable<SessionEvent["input"]>["answers"]>;
-  timestamp?: string;
+  timestamp?: string | null;
   action?: string;
   questions?: string[];
-  documentStepId?: string;
+  documentStepId?: string | null;
 }
