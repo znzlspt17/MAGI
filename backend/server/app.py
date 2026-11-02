@@ -191,6 +191,8 @@ class Server:
                 not self.internal_key
                 or self.manager.closed
                 or self.manager.knowledge is None
+                or not self.manager.progress_publisher
+                or not self.manager.progress_publisher.broker.ready.is_set()
             ):
                 return error(
                     request["request_id"], "준비되지 않았습니다.", "unavailable"
@@ -377,6 +379,10 @@ async def main() -> None:
         runtime.recover()
         knowledge = KnowledgeService(store)
         server = Server(knowledge, public=service_factory, internal_key=internal_key)
+        from backend.infrastructure.progress_publisher import ProgressPublisher
+        from protocol.amqp import BrokerSettings
+        publisher = ProgressPublisher(store, BrokerSettings.from_mapping(os.environ))
+        server.manager.progress_publisher = publisher
     except Exception as exc:
         _log_exception("server initialization failed", exc)
         if runtime:

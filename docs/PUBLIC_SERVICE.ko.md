@@ -133,7 +133,7 @@ HTTPS 리버스 프록시는 원래 Host와 Origin을 유지하고, 게이트웨
 
 ## Raspberry Pi와 Portainer
 
-제공되는 `deploy/compose.portainer.yaml`은 ARM64용 Caddy·백엔드·게이트웨이 구성입니다. 기존 PostgreSQL에 외부 네트워크 `magi-db`로 연결하며, Caddy와 앱이 네트워크 공간을 공유합니다.
+제공되는 `deploy/compose.portainer.yaml`은 ARM64용 Caddy·백엔드·게이트웨이·RabbitMQ 단일 스택입니다. 기존 PostgreSQL에 외부 네트워크 `magi-db`로 연결하며, Caddy와 앱이 네트워크 공간을 공유합니다. RabbitMQ는 스택 내부 `events` 네트워크에서만 접근하며 호스트 포트를 공개하지 않습니다. 별도 Compose를 합칠 필요가 없습니다.
 
 GitHub Actions의 **Build Raspberry Pi release** 워크플로로 기본 브랜치의 이미지를 GHCR에 게시할 수 있습니다. Portainer Stack에 다음 이미지 변수를 설정합니다.
 
@@ -151,6 +151,7 @@ Stack에서 입력받는 나머지 변수는 다음과 같습니다.
 | `OPENAI_API_KEY`, `GOOGLE_OAUTH_ID`, `GOOGLE_OAUTH_SECRET` | 모델·로그인 인증 설정 |
 | `SUBJECT_PEPPER`, `INTERNAL_KEY` | 기존 계정 식별·내부 인증 설정 |
 | `DB_NAME`, `DB_USER`, `DB_PASSWORD` | 기존 전용 DB와 서비스 계정 |
+| `RABBITMQ_USER`, `RABBITMQ_PASSWORD` | RabbitMQ 초기 전용 계정. backend·gateway에도 같은 값을 주입 |
 | `DB_SSLMODE` | Compose 기본값 `disable` |
 | `DEPLOY_ROOT` | Pi의 배포 폴더 절대 경로 |
 | `MODEL_ROOT` | 준비된 BGE-M3 모델 폴더 절대 경로 |
@@ -165,8 +166,13 @@ Stack에서 입력받는 나머지 변수는 다음과 같습니다.
 | 양쪽 앱 | `PUBLIC_MODE=1`, `LOCAL_LOGIN=0` |
 | 게이트웨이 | `PROXY_HOPS=1`, `SERVER_URL=ws://127.0.0.1:8765` |
 | 백엔드 DB | `DB_HOST=magi-postgres`, `DB_PORT=5432` |
+| RabbitMQ 연결 | `RABBITMQ_HOST=rabbitmq`, `RABBITMQ_PORT=5672`, `RABBITMQ_VHOST=/` |
 | 백엔드 저장·모델 | `EMBEDDING_MODEL_PATH=/models/bge-m3`, `EMBEDDING_DEVICE=cpu` |
 | 모든 서비스 | `TZ=Asia/Seoul` |
+
+RabbitMQ 이미지는 Compose에 공식 멀티아키텍처 digest로 고정되어 있으며 별도 관리 UI는 제공하지 않습니다. `rabbitmq-data` named volume과 고정 hostname으로 브로커 데이터를 유지합니다. 계정 초기화 변수는 빈 볼륨의 최초 기동에 적용됩니다. 기존 볼륨의 계정 변경은 별도 관리 작업이며, 환경변수 변경만으로 갱신되지 않습니다.
+
+스택 전체를 재배포하면 RabbitMQ healthcheck 통과 후 앱을 시작합니다. Caddyfile은 기존 WebSocket 경로를 그대로 사용합니다. 브로커의 일시적 재시작에는 앱을 강제로 재시작하지 않고 AMQP 재연결과 DB 스냅샷 복구를 사용합니다.
 
 이미지는 컨테이너 실행 표시, Python 실행 설정과 모델 오프라인 설정을 포함합니다. 모델 파일은 이미지에 포함되지 않습니다.
 

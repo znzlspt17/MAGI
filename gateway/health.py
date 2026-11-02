@@ -26,6 +26,9 @@ def install_health(app, client):
         local_only()
         try:
             frontend_assets()
+            hub = app.extensions.get('progress_hub')
+            if hub is None or not hub.broker.ready.is_set():
+                raise ValueError
             if client().call('health.check') != {'ready': True}:
                 raise ValueError
         except Exception:

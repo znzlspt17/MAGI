@@ -44,6 +44,14 @@ class CleanupStore:
 
     def cleanup_delete(self, conn, inventory):
         ids = [j["id"] for j in inventory["jobs"]]
+        import json
+        owners: dict[str, list[str]] = {}
+        for row in conn.execute('SELECT id,owner_id FROM jobs WHERE id=ANY(%s)', (ids,)).fetchall():
+            if row['owner_id']:
+                owners.setdefault(row['owner_id'], []).append(row['id'])
+        for owner, deleted in owners.items():
+            conn.execute('INSERT INTO progress_outbox(job_id,owner_id,revision,payload) VALUES (NULL,%s,0,%s::jsonb)',
+                         (owner, json.dumps({'event': 'records.deleted', 'ids': deleted})))
         conn.execute("DELETE FROM admissions WHERE result->>'id'=ANY(%s)",(ids,))
         for ident in ids:
             conn.execute("INSERT INTO deleted_jobs(id) VALUES (%s) ON CONFLICT DO NOTHING", (ident,))

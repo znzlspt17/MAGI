@@ -104,4 +104,8 @@ class HistoryRepository:
                         store._json(node),
                     ),
                 )
+            from backend.infrastructure.progress_store import ProgressStore
+            job = conn.execute('SELECT data,owner_id FROM jobs WHERE id=%s', (self.documents.job_id,)).fetchone()
+            if job:
+                ProgressStore(store).capture(conn, {**job['data'], 'owner_id': job['owner_id']})
 

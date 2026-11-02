@@ -22,6 +22,8 @@ def test_smoke_checks_and_records_built_caddy_image(tmp_path, monkeypatch):
         commands.append(args)
         if args[:3] == ("git", "rev-parse", "HEAD"):
             return "test-commit"
+        if args[:4] == ('docker', 'buildx', 'imagetools', 'inspect'):
+            return json.dumps({'manifests': [{'platform': {'os': 'linux', 'architecture': 'arm64'}}]})
         if args[:3] == ("docker", "image", "inspect"):
             if args[3] == "magi-caddy:test-release":
                 assert any(command[:3] == ("docker", "buildx", "build") for command in commands)
@@ -32,6 +34,7 @@ def test_smoke_checks_and_records_built_caddy_image(tmp_path, monkeypatch):
     artifacts.smoke(output, "test-release")
     manifest = json.loads((output / "release.json").read_text(encoding="utf-8"))
     assert manifest["images"]["caddy"]["id"] == "sha256:built"
+    assert manifest['external_images']['rabbitmq'] == {'reference': artifacts.RABBITMQ, 'id': 'sha256:built', 'platform': 'linux/arm64'}
     build = next(command for command in commands if command[:3] == ("docker", "buildx", "build"))
     assert "--load" in build
     assert build[build.index("--platform") + 1] == "linux/arm64"
@@ -47,13 +50,20 @@ def test_failed_security_scan_prevents_publish(tmp_path, monkeypatch):
     run.assert_not_called()
 
 
-def test_scan_summary_still_rejects_fixable_critical(tmp_path):
-    for role in artifacts.ROLES:
-        (tmp_path / f"{role}.vulnerabilities.json").write_text(json.dumps({"SchemaVersion": 2, "Results": []}), encoding="utf-8")
+@pytest.mark.parametrize('role', ['backend', 'rabbitmq'])
+def test_scan_summary_still_rejects_fixable_critical(tmp_path, role):
+    for scanned in artifacts.SCAN_ROLES:
+        (tmp_path / f"{scanned}.vulnerabilities.json").write_text(json.dumps({"SchemaVersion": 2, "Results": []}), encoding="utf-8")
     assert artifacts.summarize_scans(tmp_path)
-    (tmp_path / "backend.vulnerabilities.json").write_text(json.dumps({
+    (tmp_path / f"{role}.vulnerabilities.json").write_text(json.dumps({
         "SchemaVersion": 2, "Results": [{"Vulnerabilities": [{"Severity": "CRITICAL", "FixedVersion": "2.0"}]}],
     }), encoding="utf-8")
+    assert not artifacts.summarize_scans(tmp_path)
+
+
+def test_missing_rabbitmq_scan_prevents_publication(tmp_path):
+    for role in artifacts.ROLES:
+        (tmp_path / f'{role}.vulnerabilities.json').write_text(json.dumps({'SchemaVersion': 2, 'Results': []}), encoding='utf-8')
     assert not artifacts.summarize_scans(tmp_path)
 
 

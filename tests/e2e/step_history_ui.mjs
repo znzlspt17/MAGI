@@ -12,7 +12,7 @@ try {
     const page = await browser.newPage({ viewport: { width, height } }), errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
-      window.WebSocket = class { constructor() { queueMicrotask(() => this.onopen?.({})); } close() {} };
+      window.WebSocket = class { static OPEN = 1; readyState = 1; constructor() { queueMicrotask(() => this.onopen?.({})); } send() {} close() {} };
     });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto(`${process.argv[3]}/jobs/${process.argv[4]}`);

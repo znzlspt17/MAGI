@@ -22,7 +22,7 @@ const state = object({ status: text, allowed_actions: strings, blocking_question
 const event = requiredObject({ id: text, action: text, retry_of: optional(text), status: optional(text), started_at: optional(text),
   summary: optional(text), questions: optional(strings), document_step_id: optional(text),
   input: optional(object({ request: text, feedback: text, answers: array(object({ question_id: text, question: text, answer: text })) })) });
-const fields = object({ title: text, message: text, created_at: text, updated_at: text, request: text, execution_id: text,
+const fields = object({ title: text, message: text, created_at: text, updated_at: text, queued_at: text, request: text, execution_id: text,
   action: text, retry_status: text, retry_action: text, error_code: text, read_only: boolean, can_continue: boolean, continuation_error: text,
   reused_decision_count: number, usage: record, can_retry: boolean, retry_requires_replay: boolean, retry_unavailable_reason: text,
   latest_completed: optional(object({ id: text, step_id: text })), completed_documents: array(step), state,

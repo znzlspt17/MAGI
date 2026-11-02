@@ -10,7 +10,7 @@ try {
   const page=await browser.newPage({viewport:{width,height}}),errors=[],mutations=[];
   page.on('pageerror',e=>errors.push(e.message));
   await page.emulateMedia({reducedMotion:'reduce'});
-  await page.addInitScript(()=>{window.WebSocket=class {static OPEN=1;readyState=0;constructor(){setTimeout(()=>{this.readyState=1;this.onopen?.({});},0);}close(){this.readyState=3;}};});
+  await page.addInitScript(()=>{window.WebSocket=class {static OPEN=1;readyState=0;constructor(){setTimeout(()=>{this.readyState=1;this.onopen?.({});},0);}send(){}close(){this.readyState=3;}};});
   const id='a'.repeat(32);
   const job={id,request:'오프라인 메모 앱의 명세를 함께 작성해주세요.',status:'NEEDS_USER_INPUT',execution_id:'current',read_only:false,
    message:'보관 기간에 대한 결정이 필요합니다.',state:{status:'NEEDS_USER_INPUT',revision:1,

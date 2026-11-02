@@ -10,7 +10,7 @@ try {
  page.on('pageerror',error=>errors.push(error.message));
  await page.addInitScript(()=>{
   window.__sockets=[];
-  window.WebSocket=class{static OPEN=1;readyState=0;constructor(){window.__sockets.push(this);setTimeout(()=>{if(this.readyState===3)return;this.readyState=1;this.onopen?.({});},0);}close(){this.readyState=3;}emit(value){this.onmessage?.({data:JSON.stringify(value)});}};
+  window.WebSocket=class{static OPEN=1;readyState=0;constructor(){window.__sockets.push(this);setTimeout(()=>{if(this.readyState===3)return;this.readyState=1;this.onopen?.({});},0);}send(){}close(){this.readyState=3;}emit(value){this.onmessage?.({data:JSON.stringify(value)});}};
  });
  const id='a'.repeat(32),otherId='b'.repeat(32);
  const events=Array.from({length:8},(_,index)=>({id:'event-'+index,action:index?'revise':'generate',input:index?{feedback:`${index}번째 검토 의견입니다.\n메모를 저장하고 다시 찾는 흐름과 백업 정책을 구체화해주세요.`}:{request:'오프라인 메모 앱의 명세를 함께 만들어주세요.'},summary:`${index+1}번째 검토 내용을 반영했습니다.\n저장 방식과 검색, 보관 기간에 대한 요구사항을 정리했습니다.\n서로 다른 사용자 환경에서도 이해할 수 있도록 검토본에 명확히 기록했습니다.`,document_step_id:index===0?'old-doc':index===7?'current-doc':undefined,started_at:`2026-10-21T00:0${index}:00Z`}));
@@ -40,7 +40,8 @@ try {
   else throw new Error('unexpected request '+path);
   return route.fulfill({json:structuredClone(body)});
  });
- const refresh=()=>page.evaluate(()=>window.__sockets.find(socket=>socket.readyState===1).emit({event:'job.changed'}));
+ let revision=0;
+ const refresh=()=>page.evaluate(({job,revision})=>window.__sockets.find(socket=>socket.readyState===1).emit({event:'job.snapshot',job_id:job.id,revision,server_time:new Date().toISOString(),job}),{job:structuredClone(job),revision:++revision});
  await page.goto(process.argv[3]+'/jobs/'+id);
  await page.getByRole('button',{name:'이어서 요청하기',exact:true}).waitFor();
  assert.equal(await page.getByRole('tab',{name:'대화',exact:true}).getAttribute('aria-selected'),'true');

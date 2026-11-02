@@ -16,7 +16,7 @@ def validate_container(role):
     if os.environ.get('PUBLIC_MODE') != '1' or os.environ.get('LOCAL_LOGIN', '0') != '0':
         raise ValueError('컨테이너 배포는 공개 HTTPS 모드가 필요합니다.')
     login_origin(os.environ.get('PUBLIC_ORIGIN', ''), False)
-    required = ['INTERNAL_KEY']
+    required = ['INTERNAL_KEY', 'RABBITMQ_HOST', 'RABBITMQ_PORT', 'RABBITMQ_VHOST', 'RABBITMQ_USER', 'RABBITMQ_PASSWORD']
     if role == 'backend':
         required += ['OPENAI_API_KEY', 'GOOGLE_OAUTH_ID', 'GOOGLE_OAUTH_SECRET',
                      'SUBJECT_PEPPER', 'DB_HOST', 'DB_NAME',
@@ -29,6 +29,8 @@ def validate_container(role):
     missing = [name for name in required if not os.environ.get(name)]
     if missing:
         raise ValueError('필수 컨테이너 설정이 누락되었습니다: ' + ', '.join(missing))
+    from protocol.amqp import BrokerSettings
+    BrokerSettings.from_mapping(os.environ)
     if role == 'backend' and not Path(os.environ['EMBEDDING_MODEL_PATH']).is_dir():
         raise ValueError('읽기 전용 모델 폴더를 마운트하세요.')
 

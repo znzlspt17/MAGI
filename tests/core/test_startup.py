@@ -62,7 +62,10 @@ def test_startup_prepares_database_before_accepting_requests(monkeypatch, failur
         def set(self):
             pass
 
-    monkeypatch.setattr(app, "os", SimpleNamespace(environ={}))
+    monkeypatch.setattr(app, "os", SimpleNamespace(environ={
+        'RABBITMQ_HOST': 'fixture', 'RABBITMQ_PORT': '5672', 'RABBITMQ_VHOST': '/',
+        'RABBITMQ_USER': 'fixture', 'RABBITMQ_PASSWORD': 'fake-password',
+    }))
     monkeypatch.setattr(app, "configure_logging", lambda: None)
     monkeypatch.setattr(app, "_log_exception", lambda *args: None)
     monkeypatch.setattr(deployment, "validate_container", lambda role: None)
@@ -74,6 +77,7 @@ def test_startup_prepares_database_before_accepting_requests(monkeypatch, failur
     monkeypatch.setattr(app, "Server", lambda *args, **kwargs: SimpleNamespace(
         handler=None, manager=SimpleNamespace(close=lambda: events.append("close")),
     ))
+    monkeypatch.setattr('backend.infrastructure.progress_publisher.ProgressPublisher', lambda *args: SimpleNamespace())
     monkeypatch.setattr(app, "serve", serve)
     monkeypatch.setattr(app.asyncio, "Event", Event)
     if failure:

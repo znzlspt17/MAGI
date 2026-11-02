@@ -13,6 +13,19 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     services:
+      rabbitmq:
+        image: rabbitmq:4@sha256:485319d42170eab53d8a030e1cc49d95e41f5d325479fa504736db8091981eb7
+        env:
+          RABBITMQ_DEFAULT_USER: ci-magi
+          RABBITMQ_DEFAULT_PASS: ci-only-rabbit
+        ports:
+          - 5672:5672
+        options: >-
+          --memory 512m --memory-swap 512m
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
       postgres:
         image: pgvector/pgvector:0.8.7-pg17-trixie
         env:
@@ -54,6 +67,13 @@ jobs:
       - name: Product boundary tests with real PostgreSQL and checkpointer
         env:
           CI_POSTGRES: '1'
+          CI_RABBITMQ: '1'
+          RABBITMQ_HOST: 127.0.0.1
+          RABBITMQ_PORT: '5672'
+          RABBITMQ_VHOST: '/'
+          RABBITMQ_USER: ci-magi
+          RABBITMQ_PASSWORD: ci-only-rabbit
+          CI_RABBITMQ_CONTAINER: ${{ job.services.rabbitmq.id }}
         run: .venv/bin/python -m pytest -q
       - name: Check deployment inputs
         run: |

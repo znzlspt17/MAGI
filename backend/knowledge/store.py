@@ -134,6 +134,8 @@ class KnowledgeStore:
         conn.execute("INSERT INTO jobs(id,project_id,data,owner_id) VALUES (%s,%s,%s,%s) "
                      "ON CONFLICT(id) DO UPDATE SET project_id=EXCLUDED.project_id,data=EXCLUDED.data",
                      (job["id"], job["project_id"], self._json(job), job.get('owner_id')))
+        from backend.infrastructure.progress_store import ProgressStore
+        ProgressStore(self).capture(conn, job)
 
     def jobs(self):
         with self.transaction(mode='read') as conn:

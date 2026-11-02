@@ -97,8 +97,9 @@ Thumbs.db
 desktop.ini
 
 # 로컬 전용 검증·배포 문서
+/deploy/events.md
 /docs/BGE_M3_VALIDATION.md
 /docs/RASPBERRY_PI.ko.md
-
+/sites
 docs/UI_UX_AUDIT.ko.md
 docs/LOGGING.ko.md

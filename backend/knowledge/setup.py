@@ -15,6 +15,7 @@ ACCOUNT_TABLES = (
     "cost_calls", "admissions", "admin_audit", "service_settings", "request_windows",
 )
 CORE_TABLES = (
+    "execution_progress", "progress_outbox",
     "projects", "jobs", "executions", "document_bodies", "document_versions",
     "execution_events", "model_usage", "projection_commits", "nodes", "edges",
     "models", "embedding_queue", "chunks", "chunk_sets", "chunk_vectors",

@@ -96,6 +96,15 @@ class PublicService:
             subject = self.google.subject(params.get('code'), state['nonce'], state['verifier'])
             return {'session': self.access.login(subject, self.pepper, sid)}
         actor = self.access.session(sid)
+        if method == 'progress.authorize':
+            # 게이트웨이의 세션 철회 검사는 사용자 API 요청 한도를 소비하지 않는다.
+            token = ACTOR.set(actor)
+            try:
+                if 'id' in params:
+                    self.manager.get(params['id'])
+                return {'id': actor['id']}
+            finally:
+                ACTOR.reset(token)
         self.access.throttle(actor['id'])
         if request.get('csrf') is not None and not hmac.compare_digest(str(request['csrf']), actor['csrf']):
             raise AccessError('요청 확인 값이 올바르지 않습니다.')
@@ -118,6 +127,26 @@ class PublicService:
             return self.admin(actor, method, params)
         token = ACTOR.set(actor)
         try:
+            if method == 'progress.list':
+                with self.store.transaction(mode='read') as conn:
+                    revisions = {r['job_id']: r['revision'] for r in conn.execute('SELECT job_id,revision FROM execution_progress').fetchall()}
+                    return {'jobs': user_payload([self.manager.workspace.summary(i) for i in self.manager.ids()]),
+                            'revisions': revisions}
+            if method == 'progress.snapshot':
+                from backend.infrastructure.progress_store import ProgressStore
+                ident = params.get('id')
+                self.manager.get(ident)
+                with self.manager.lock:
+                    result = ProgressStore(self.store).snapshot(ident)
+                    # 기존 공개 DTO를 사용하되 문서 본문·모델 출력은 보내지 않는다.
+                    job = user_payload(self.manager.workspace.public(ident))
+                    for key in ('candidate', 'final', 'critical', 'progress'):
+                        job.pop(key, None)
+                    job.update(result['job'])
+                    if job['status'] in {'queued', 'running'}:
+                        job['state'] = {**job.get('state', {}), 'status': job['status'], 'allowed_actions': []}
+                    result['job'] = job
+                    return result
             if method in {'knowledge.impact','knowledge.impact.analyse'}:
                 self.manager.get(params.get('job_id'))
                 if method == 'knowledge.impact':

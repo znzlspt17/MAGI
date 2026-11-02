@@ -7,7 +7,9 @@ import subprocess
 
 
 CADDY = 'caddy:2-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f'
+RABBITMQ = 'rabbitmq:4@sha256:485319d42170eab53d8a030e1cc49d95e41f5d325479fa504736db8091981eb7'
 ROLES = ('gateway', 'backend', 'caddy')
+SCAN_ROLES = (*ROLES, 'rabbitmq')
 INPUT_FILES = ('compose.portainer.yaml', 'Caddyfile')
 
 
@@ -43,6 +45,14 @@ def smoke(output, release):
         if info['Architecture'] != 'arm64' or info['Os'] != 'linux':
             raise ValueError('ARM64 Linux 이미지가 아닙니다: ' + role)
         metadata[role] = {'tag': tag, 'id': info['Id'], 'platform': 'linux/arm64'}
+    index = json.loads(run('docker', 'buildx', 'imagetools', 'inspect', RABBITMQ, '--raw', capture=True))
+    if not any(m.get('platform', {}).get('os') == 'linux' and m.get('platform', {}).get('architecture') == 'arm64'
+               for m in index.get('manifests', [])):
+        raise ValueError('RabbitMQ 공식 이미지에 ARM64 manifest가 없습니다.')
+    run('docker', 'pull', '--platform', 'linux/arm64', RABBITMQ)
+    rabbit = json.loads(run('docker', 'image', 'inspect', RABBITMQ, capture=True))[0]
+    if rabbit['Architecture'] != 'arm64' or rabbit['Os'] != 'linux':
+        raise ValueError('RabbitMQ 이미지가 ARM64 Linux가 아닙니다.')
     # QEMU smoke 검증은 실제 Pi의 메모리·지연 검증을 대체하지 않는다.
     run('docker', 'run', '--rm', '--init', '--network', 'none', '--read-only',
         '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--user', '10001:10001',
@@ -65,9 +75,10 @@ def smoke(output, release):
         '--adapter', 'caddyfile')
     manifest = {
         'source_commit': commit, 'release': release, 'images': metadata,
+        'external_images': {'rabbitmq': {'reference': RABBITMQ, 'id': rabbit['Id'], 'platform': 'linux/arm64'}},
         'caddy_source': CADDY, 'model': {'name': 'BAAI/bge-m3',
         'dtype': 'float32', 'dimensions': 1024, 'max_tokens': 512, 'external_read_only': True},
-        'verified': ['source-ci-syntax-and-frontend', 'arm64-qemu-import-smoke'],
+        'verified': ['source-ci-syntax-and-frontend', 'arm64-qemu-import-smoke', 'rabbitmq-arm64-manifest'],
         'pending': ['local-python-regression', 'pi-model-load', 'pi-6GB-memory', 'database-auto-migration-backup-restore',
                     'public-https-google-login-and-user-isolation'],
     }
@@ -77,7 +88,7 @@ def smoke(output, release):
 def summarize_scans(output):
     """JSON 전용 출력으로 숨겨진 차단 원인을 로그에 표시하고 실패 정책을 유지한다."""
     safe = True
-    for role in ROLES:
+    for role in SCAN_ROLES:
         path = output / f'{role}.vulnerabilities.json'
         try:
             report = json.loads(path.read_text(encoding='utf-8'))
@@ -123,6 +134,12 @@ def verify_images(manifest):
         info = json.loads(run('docker', 'image', 'inspect', image['tag'], capture=True))[0]
         if info['Id'] != image['id'] or info['Architecture'] != 'arm64' or info['Os'] != 'linux':
             raise ValueError('로드된 이미지가 릴리스와 일치하지 않습니다: ' + role)
+    rabbit = manifest.get('external_images', {}).get('rabbitmq', {})
+    if rabbit.get('reference') != RABBITMQ or rabbit.get('platform') != 'linux/arm64':
+        raise ValueError('RabbitMQ 이미지 참조가 릴리스와 일치하지 않습니다.')
+    info = json.loads(run('docker', 'image', 'inspect', RABBITMQ, capture=True))[0]
+    if info['Id'] != rabbit.get('id') or info['Architecture'] != 'arm64' or info['Os'] != 'linux':
+        raise ValueError('검사한 RabbitMQ 이미지와 일치하지 않습니다.')
 
 
 def publish(output, repository, images_file):

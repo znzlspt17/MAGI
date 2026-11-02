@@ -165,6 +165,7 @@ def test_final_job_log_preserves_stage_diagnostic(json_log, monkeypatch):
     monkeypatch.setattr("backend.server.job_manager.ExecutionHistory", Mock(return_value=history))
     job = {"execution_id": "a" * 32, "request": "PRIVATE_REQUEST"}
     manager = SimpleNamespace(lock=RLock(), _get_locked=lambda ident: job,
+        knowledge=SimpleNamespace(store=SimpleNamespace(transaction=__import__('contextlib').nullcontext)),
         _save_locked=Mock(return_value=True), _notify=Mock(), _set_error_metadata=Mock(),
         workspace=SimpleNamespace(documents=Mock(), engine=Mock(return_value=engine), state=lambda ident: {}))
     JobManager._run_logged(manager, "b" * 32, "retry", {})

@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 // shadcn/ui Radix AI Elements Chat / Task compositions (MIT), revision ba1503c64472b82256d9de95e2e62c5901a38e8b.
-import { ScalesIcon, FileTextIcon, CheckCircleIcon, WarningCircleIcon, CircleNotchIcon, ClockIcon, QuestionIcon, CaretDownIcon } from "@phosphor-icons/react";
+import { ScalesIcon, FileTextIcon, CaretDownIcon } from "@phosphor-icons/react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "../../shared/ui/collapsible";
 import { Message, MessageContent, MessageHeader, MessageFooter } from "../../shared/ui/message";
 import { Bubble, BubbleContent } from "../../shared/ui/bubble";
 import { MessageScrollerProvider, MessageScroller, MessageScrollerViewport, MessageScrollerContent, MessageScrollerItem, MessageScrollerButton } from "../../shared/ui/message-scroller";
-import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceLine, TraceIcon, TraceTitle } from "../../shared/ui/trace";
 import { conversationTurns } from "./conversation-data";
 import { QuestionActions, questionDetails } from "./QuestionActions";
-import { Button, Notice, formatTime, statusLabel } from "../../shared/ui/UI";
+import { Button, Notice, formatTime } from "../../shared/ui/UI";
 import type { Job } from "../../shared/types";
 import { AgentPlan, AgentComposer } from "../workspace/AgentPlan";
+import { ExecutionMonitor } from "../execution/ExecutionMonitor";
 
 export function Conversation({ job, select, onAction, busy }: { job: Job; select: (stepId: string, requirements?: boolean) => void; onAction: (action: string, payload: unknown) => Promise<void>; busy: boolean }) {
   const [controlsTarget, setControlsTarget] = useState<HTMLDivElement | null>(null);
@@ -28,9 +28,6 @@ export function Conversation({ job, select, onAction, busy }: { job: Job; select
   const { turns, incomplete } = conversationTurns(job);
   const latestEventId = job.session_events?.at(-1)?.id;
   const waiting = !["error", "interrupted"].includes(job.status) && ["NEEDS_USER_INPUT", "waiting"].includes(job.state?.status || job.status);
-  const running = ["queued", "running"].includes(job.status);
-  const failed = ["error", "failed", "interrupted", "CRITICAL_BLOCKED", "blocked"].includes(job.status);
-  const StatusIcon = running ? CircleNotchIcon : failed ? WarningCircleIcon : ["FINALIZED", "completed"].includes(job.status) ? CheckCircleIcon : waiting || ["PASS_PENDING_USER_APPROVAL", "waiting_approval"].includes(job.status) ? QuestionIcon : ClockIcon;
   const reviewStep = [...(job.execution_graph?.nodes || [])].reverse().find((node) => node.has_document && (!job.execution_id || !node.execution_id || node.execution_id === job.execution_id))?.id;
   return <section ref={root} className="chat-workspace" aria-label="MAGI 대화">
     <MessageScrollerProvider autoScroll defaultScrollPosition="end" scrollEdgeThreshold={48}>
@@ -59,10 +56,7 @@ export function Conversation({ job, select, onAction, busy }: { job: Job; select
               </Message>
             </MessageScrollerItem>)}
             <MessageScrollerItem messageId="current-plan"><AgentPlan job={job} onDocument={select} /></MessageScrollerItem>
-            <MessageScrollerItem messageId="current-state"><Trace className="chat-task"><TraceCollapsible defaultOpen={running || failed}>
-              <TraceCollapsibleTrigger><TraceLine status={running ? "running" : failed ? "error" : undefined}><TraceIcon><StatusIcon size={17} aria-hidden /></TraceIcon><TraceTitle>{statusLabel(job.status)}</TraceTitle></TraceLine></TraceCollapsibleTrigger>
-              <TraceCollapsibleContent><p>{job.message || (waiting ? "아래에서 답변할 항목을 선택하고 작성해주세요." : "저장된 현재 작업 상태입니다.")}</p></TraceCollapsibleContent>
-            </TraceCollapsible></Trace></MessageScrollerItem>
+            <MessageScrollerItem messageId="current-state"><ExecutionMonitor job={job} select={select} /></MessageScrollerItem>
             <MessageScrollerItem messageId="current-actions"><Message align="start" className="chat-turn magi"><MessageContent><QuestionActions key={job.id} job={job} onAction={onAction} busy={busy} conversational controlsTarget={controlsTarget} onReview={reviewStep ? () => select(reviewStep) : undefined} onRequirementReview={reviewStep ? () => select(reviewStep, true) : undefined} /></MessageContent></Message></MessageScrollerItem>
           </MessageScrollerContent>
         </MessageScrollerViewport>

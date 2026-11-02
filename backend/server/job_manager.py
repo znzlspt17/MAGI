@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from backend.access.service import PublicService
+    from backend.infrastructure.progress_publisher import ProgressPublisher
 
 import copy
 from protocol.logging import get_logger
@@ -39,6 +40,7 @@ class JobManager:
         self._futures = {}
         self._activities: dict[str, int] = {}
         self.closed = False
+        self.progress_publisher: ProgressPublisher | None = None
         from backend.server.workspace import Workspace
 
         self.workspace = Workspace(
@@ -64,6 +66,8 @@ class JobManager:
     def close(self):
         self.closed = True
         self.executor.shutdown(wait=True, cancel_futures=True)
+        if self.progress_publisher:
+            self.progress_publisher.close()
         if getattr(self, "public_service", None):
             self.public_service.recovery.close()
         self.knowledge.close()
@@ -221,7 +225,7 @@ class JobManager:
                 validation_index=diagnostic["validation_index"],
                 validation_field=diagnostic["validation_field"],
             )
-        with self.lock:
+        with self.lock, self.knowledge.store.transaction():
             job.update(status=status, message=message, updated_at=_utc_now())
             if diagnostic:
                 self._set_error_metadata(job, diagnostic)
@@ -229,34 +233,24 @@ class JobManager:
                 self._clear_error_metadata(job)
             if not self._save_locked(job, meter=meter):
                 raise RuntimeError("작업 결과를 저장하지 못했습니다.")
-        state = self.workspace.state(ident)
-        if action == "approve" and status == "FINALIZED":
-            history.capture(job["execution_id"], "approve", state=state)
-        history.terminal(job["execution_id"], status, message,
-                         result={**state, **({"diagnostic": diagnostic} if diagnostic else {})})
+            state = self.workspace.state(ident)
+            if action == "approve" and status == "FINALIZED":
+                history.capture(job["execution_id"], "approve", state=state)
+            history.terminal(job["execution_id"], status, message,
+                             result={**state, **({"diagnostic": diagnostic} if diagnostic else {})})
         self._notify(job)
 
     def _engine_progress(self, ident, event, *, meter=None):
-        with self.lock:
+        # 세대 검증·작업 상태·단계 이력·outbox를 하나의 커밋으로 묶는다.
+        with self.lock, self.knowledge.store.transaction():
             job = self._get_locked(ident)
-            job["progress"] = {
-                k: event[k] for k in ("stage", "state", "result") if k in event
-            }
+            job["progress"] = {k: event[k] for k in ("stage", "state", "result") if k in event}
             job["updated_at"] = _utc_now()
-            self.knowledge.store.save_job(
-                job, expected_generation=meter.generation if meter else None
-            )
-        history = ExecutionHistory(self.workspace.documents(ident))
-        history.stage(
-            job["execution_id"],
-            event["stage"],
-            event["state"],
-            result=event.get("result"),
-        )
-        if event["state"] == "completed":
-            history.capture(
-                job["execution_id"], event["stage"], state=self.workspace.state(ident)
-            )
+            self.knowledge.store.save_job(job, expected_generation=meter.generation if meter else None)
+            history = ExecutionHistory(self.workspace.documents(ident))
+            history.stage(job["execution_id"], event["stage"], event["state"], result=event.get("result"))
+            if event["state"] == "completed":
+                history.capture(job["execution_id"], event["stage"], state=self.workspace.state(ident))
         self._notify(job)
 
     def _save_locked(self, job, *, meter=None):
@@ -269,6 +263,8 @@ class JobManager:
             return False
 
     def _notify(self, job):
+        if self.progress_publisher:
+            self.progress_publisher.wake.set()
         if self.on_change:
             self.on_change(
                 {

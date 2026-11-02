@@ -11,6 +11,9 @@ from typing import NotRequired, TypedDict
 MAX_MESSAGE_BYTES = 128 * 1024
 # None 항목은 인증 서비스 또는 구독·상태 경계에서 처리한다.
 RPC_METHODS = {
+    "progress.authorize": None,
+    "progress.list": None,
+    "progress.snapshot": None,
     "list": "_list_jobs",
     "get": "_get_job",
     "document": "_document",

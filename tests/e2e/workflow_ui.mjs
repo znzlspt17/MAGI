@@ -108,7 +108,7 @@ try{
  assert.equal(await page.evaluate(()=>window.__sockets.filter(s=>s.readyState===1).length),1,'StrictMode 재마운트 뒤 활성 소켓은 하나여야 합니다.');
  assert.equal(calls.find(c=>c.path==='/api/me').headers['x-csrf-token'],undefined);
  for(const call of calls.filter(c=>c.data)){assert.equal(call.headers['x-csrf-token'],'fixture-csrf');assert(call.headers['idempotency-key']);}
- expired=true;await page.evaluate(()=>window.__sockets.find(s=>s.readyState===1).emit({event:'job.changed'}));
+ expired=true;await page.evaluate(()=>window.__sockets.find(s=>s.readyState===1).emit({event:'session.expired'}));
  await page.getByRole('link',{name:'Google로 로그인',exact:true}).waitFor();
  assert.equal(await page.getByRole('navigation',{name:'작업 기록'}).count(),0);
  assert.equal(await page.evaluate(()=>window.__sockets.filter(s=>s.readyState===1).length),0,'세션 만료시 Workspace 소켓을 정리해야 합니다.');

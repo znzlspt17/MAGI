@@ -72,6 +72,8 @@ export interface Step {
   execution_id?: string;
 }
 export interface Job {
+  server_time?: string;
+  queued_at?: string;
   reused_decision_count?: number; usage?: Usage;
   title?: string; message?: string; created_at?: string; updated_at?: string;
   action?: string; retry_status?: string; retry_action?: string; error_code?: string;

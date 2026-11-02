@@ -11,6 +11,7 @@ from importlib.resources import files
 
 from flask import Flask, abort, jsonify, request, send_file, g, current_app
 from flask_sock import Sock
+from simple_websocket.errors import ConnectionClosed
 from werkzeug.exceptions import HTTPException
 
 from gateway.client import Client, ClientError
@@ -50,6 +51,13 @@ def create_app(config: dict | None = None) -> Flask:
         from werkzeug.middleware.proxy_fix import ProxyFix
         app.wsgi_app=ProxyFix(app.wsgi_app,x_for=hops,x_proto=hops,x_host=0)  # type: ignore[method-assign]  # Flask의 WSGI 미들웨어 확장 지점
     sock = Sock(app)
+    if not app.testing or app.config.get('BROKER_SETTINGS') is not None:
+        from protocol.amqp import BrokerSettings
+        from gateway.progress import ProgressHub
+        import atexit
+        settings = app.config.get('BROKER_SETTINGS') or BrokerSettings.from_mapping(os.environ)
+        app.extensions['progress_hub'] = ProgressHub(settings)
+        atexit.register(app.extensions['progress_hub'].close)
 
     def client() -> Client:
         instance=app.config["CLIENT_FACTORY"](app.config["SERVER_URL"])
@@ -325,14 +333,22 @@ def create_app(config: dict | None = None) -> Flask:
             ws.close()
             return
         try:
-            for event in client().events():
-                ws.send(json.dumps(event, ensure_ascii=False))
-        except ClientError:
-            try:
-                ws.send(json.dumps({"event": "server_error"}, ensure_ascii=False))
-            except Exception:
-                return
-
+            from gateway.progress import serve_progress
+            hub = app.extensions.get('progress_hub')
+            if hub is None:
+                raise ClientError('실시간 상태 서버가 준비되지 않았습니다.')
+            serve_progress(ws, client(), hub)
+            return
+        except ConnectionClosed:
+            return
+        except ClientError as exc:
+            if exc.status == 401:
+                try:
+                    ws.send(json.dumps({'event': 'session.expired'}))
+                except Exception:
+                    pass
+            ws.close()
+            return
     return app
 
 
