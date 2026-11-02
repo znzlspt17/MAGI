@@ -1,6 +1,6 @@
 import { decodeOverview } from "./admin-response";
 type AdminUser = { id: string; role?: string; daily_runs?: number; daily_usd?: string; suspended?: boolean };
-type Overview = { embedding_status?: string; users?: AdminUser[]; executions?: { execution_id: string; job_id: string; kind: string; phase: string; stopping?: boolean }[] };
+type Overview = { embedding_status?: string | null; users?: AdminUser[]; executions?: { execution_id: string; job_id: string; kind: string; phase: string; stopping?: boolean }[] };
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { api, post } from "../../shared/api/api";

@@ -2,7 +2,7 @@ import { array, boolean, dictionary, literal, nullable, number, object, optional
 
 const strings = array(text);
 const adminUser = requiredObject({ id: text, role: optional(text), daily_runs: optional(number), daily_usd: optional(text), suspended: optional(boolean) });
-export const decodeOverview = object({ embedding_status: text, users: array(adminUser),
+export const decodeOverview = object({ embedding_status: nullable(text), users: array(adminUser),
   executions: array(requiredObject({ execution_id: text, job_id: text, kind: text, phase: text, stopping: optional(boolean) })) });
 
 const jobFields = { id: text, request: optional(text), status: optional(text), owner_id: optional(text), created_at: optional(text) };

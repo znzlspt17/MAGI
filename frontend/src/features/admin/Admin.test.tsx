@@ -9,6 +9,32 @@ vi.mock("../auth/Auth", () => ({ useAuth: () => ({ user: { id: "admin", role: "a
 vi.mock("../knowledge/Knowledge", () => ({ default: () => null }));
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
+it("임베딩 오류가 없는 null 응답으로 운영 현황을 표시한다", async () => {
+  vi.mocked(api).mockResolvedValue({ embedding_status: null, executions: [] });
+  render(<MemoryRouter initialEntries={["/admin"]}><Admin /></MemoryRouter>);
+  expect(await screen.findByText("현재 실행 0개")).toBeTruthy();
+  expect(screen.getByText("임베딩 오류 없음")).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toBe("");
+});
+
+it("문자열 임베딩 상태 메시지를 표시한다", async () => {
+  vi.mocked(api).mockResolvedValue({ embedding_status: "임베딩 색인 확인 필요", executions: [] });
+  render(<MemoryRouter initialEntries={["/admin"]}><Admin /></MemoryRouter>);
+  expect(await screen.findByText("임베딩 색인 확인 필요")).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toBe("");
+});
+
+it.each([123, {}])("잘못된 임베딩 상태 %j를 거부하고 다시 조회로 복구한다", async (embedding_status) => {
+  vi.mocked(api).mockResolvedValueOnce({ embedding_status })
+    .mockResolvedValue({ embedding_status: null, executions: [] });
+  render(<MemoryRouter initialEntries={["/admin"]}><Admin /></MemoryRouter>);
+  await screen.findByText("문자열 응답이 필요합니다.");
+  fireEvent.click(screen.getByRole("button", { name: "다시 조회" }));
+  expect(await screen.findByText("현재 실행 0개")).toBeTruthy();
+  expect(screen.getByText("임베딩 오류 없음")).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toBe("");
+});
+
 it("사용자 목록의 빈 결과를 명시한다", async () => {
   vi.mocked(api).mockResolvedValue({ users: [] });
   render(<MemoryRouter initialEntries={["/admin/users"]}><Admin /></MemoryRouter>);
