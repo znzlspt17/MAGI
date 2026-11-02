@@ -56,6 +56,10 @@ def test_generate_approve_and_explicit_revision(store, monkeypatch):
         ident = manager.create("메모를 저장해주세요")["id"]
         manager._run(ident, "generate", None)
         assert manager.get(ident)["status"] == "PASS_PENDING_USER_APPROVAL"
+        saved = manager.workspace.state(ident)
+        assert "remaining_steps" not in saved
+        assert "segment_steps" not in saved
+        assert "decision_only" not in saved["execution_constraints"]
         job = manager.get(ident)
         with pytest.raises(CleanupConflict):
             manager.action(ident, "approve", None, expected_execution_id="stale")

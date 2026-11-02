@@ -15,9 +15,6 @@ Action = Literal["project_context", "knowledge_search", "web_research", "intervi
                  "requirement_lock_stage", "spec_compile", "checklist_critic",
                  "review_resolution", "compose_candidate", "ask_user", "blocked"]
 
-EXECUTION_STEP_LIMIT = 20
-DECISION_STEP_RESERVE = 2
-
 
 def task_signature(state, action):
     versions = state.get("document_versions", [])
@@ -36,11 +33,7 @@ def execution_constraints(state, config):
     repeated = sorted({item["action"] for item in recent if item.get("action")
                        and sum(other.get("signature") == task_signature(state, item["action"])
                                for other in recent) >= 2})
-    steps = state.get("segment_steps", 0)
-    return {"decision_only": steps >= EXECUTION_STEP_LIMIT,
-            "remaining_steps": max(0, EXECUTION_STEP_LIMIT - steps),
-            "remaining_decision_steps": max(0, EXECUTION_STEP_LIMIT + DECISION_STEP_RESERVE - max(steps, EXECUTION_STEP_LIMIT)),
-            "remaining_review_passes": max(0, config.max_critic_passes - state.get("critic_pass_count", 0)),
+    return {"remaining_review_passes": max(0, config.max_critic_passes - state.get("critic_pass_count", 0)),
             "repair_limit_reached": state.get("critic_pass_count", 0) >= config.max_critic_passes,
             "no_progress": bool(state.get("resolution_stop", False)),
             "repeated_actions": repeated}
@@ -91,9 +84,7 @@ def allowed_tasks(state, config):
         return ["ask_user", "blocked"]
     if repair_stop_reason(state, config):
         return ["blocked"]
-    constraints = state.get("execution_constraints") or execution_constraints(state, config)
-    if constraints["decision_only"]:
-        return [item for item in ("ask_user", "blocked") if item not in constraints["repeated_actions"]]
+    constraints = execution_constraints(state, config)
     actions = ["ask_user", "blocked", "knowledge_search"]
     if "interview" not in done:
         actions.append("interview")
@@ -129,7 +120,7 @@ In target and reason, explain what is missing and what answer would let work pro
 Repair exhaustion is an execution constraint, not evidence of a missing product decision. Never ask users to fix system errors.
 Reuse answered decisions; ask again only for a validated conflict with new user input.
 When repairs are exhausted and only auto fixes remain, wait for explicit additional execution; never reset the budget automatically.
-When execution_constraints.decision_only is true, use the reserved steps to ask a useful question or explain why work must stop.
+When review_resolution is complete and no required defects remain, choose compose_candidate to prepare the specification for approval.
 If question generation returned no unanswered questions, reconsider its recorded result; do not repeat the same request unchanged.
 Use blocked only when no useful permitted work can resolve the obstacle, and explain the obstacle.
 Prefer reuse of valid results. Reconsider the plan after each result. Do not output hidden reasoning.
@@ -152,7 +143,7 @@ def plan_next(state, context):
         "resolution_history", "review_questions", "diagnosed_keys", "critic_pass_count", "execution_constraints",
     )}
     payload.update(allowed_actions=allowed, task_results=state.get("task_results", [])[-12:],
-                   execution_constraints=state.get("execution_constraints") or execution_constraints(state, context.config))
+                   execution_constraints=execution_constraints(state, context.config))
     errors: list[str] = []
     for attempt in range(2):
         messages = [{"role": "system", "content": POLICY},

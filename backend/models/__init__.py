@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Any, Literal, TypedDict
 from uuid import uuid4
 
+from langgraph.managed import RemainingSteps
 from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
 from backend.knowledge.trace import DecisionTrace, SpecLink
 
@@ -382,7 +383,6 @@ class State:
     task_messages: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     knowledge_context: dict[str, Any] = field(default_factory=dict)
     completed_tasks: list[str] = field(default_factory=list)
-    segment_steps: int = 0
     execution_segment: int = 0
     execution_constraints: dict[str, Any] = field(default_factory=dict)
     wait_reason: str = ""
@@ -917,7 +917,7 @@ class WorkflowState(TypedDict, total=False):
     task_messages: dict[str, list[dict[str, Any]]]
     knowledge_context: dict[str, Any]
     completed_tasks: list[str]
-    segment_steps: int
+    remaining_steps: RemainingSteps
     execution_segment: int
     execution_constraints: dict[str, Any]
     wait_reason: str

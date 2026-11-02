@@ -36,4 +36,4 @@ def test_graph_state_preserves_persisted_state_field_types():
     state = get_type_hints(State)
     graph = get_type_hints(WorkflowState)
     assert {key: graph.get(key) for key in state} == state
-    assert set(graph) - set(state) == {"_interview_direction_changing"}
+    assert set(graph) - set(state) == {"_interview_direction_changing", "remaining_steps"}

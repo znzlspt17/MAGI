@@ -26,7 +26,7 @@ def prepare_segment(state: WorkflowState) -> WorkflowState:
             preserved.add("interview")
         done = [name for name in done if name in preserved]
     result: WorkflowState = {"workflow_schema": 1, "revision": revision, "completed_tasks": done,
-              "segment_steps": 0, "allowed_actions": [], "pending_input": {},
+              "allowed_actions": [], "pending_input": {},
               "execution_constraints": {},
               "execution_segment": state.get("execution_segment", 0) + 1,
               "wait_reason": "", "stop_reason": ""}

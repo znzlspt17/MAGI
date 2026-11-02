@@ -34,7 +34,7 @@ def planner_result(messages):
     )
     if action is None:
         action = "spec_compile" if "spec_compile" in allowed else "blocked"
-    if "ask_user" in allowed and (payload.get("blocking_questions") or payload.get("execution_constraints", {}).get("decision_only")):
+    if "ask_user" in allowed and payload.get("blocking_questions"):
         action = "ask_user"
     if "compose_candidate" in allowed:
         action = "compose_candidate"
