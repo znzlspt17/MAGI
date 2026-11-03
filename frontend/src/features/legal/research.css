@@ -1,0 +1,15 @@
+.research-page { max-width: 960px; margin: 0 auto; padding: 28px 24px 40px; overflow-wrap: anywhere; line-height: 1.8; }
+.research-page > header { padding: 16px 0; }
+.research-page h1 { display: flex; align-items: center; gap: 10px; font-size: 26px; letter-spacing: -.7px; line-height: 1.5; }
+.research-page h1 svg { flex-shrink: 0; }
+.research-page h2 { font-size: 19px; margin: 0 0 12px; }
+.research-page p { margin: 10px 0; color: #51495d; }
+.research-page section { margin: 16px 0; padding: 24px; background: #fff; border: 1px solid #e7e4ec; border-radius: 12px; }
+.research-page li { margin: 12px 0; }
+.research-page li p { margin: 4px 0; }
+.research-page ol, .research-page ul { padding-left: 24px; }
+@media (max-width: 767px) {
+  .research-page { padding: 30px 18px; }
+  .research-page h1 { font-size: 24px; }
+  .research-page section { padding: 20px 16px; }
+}

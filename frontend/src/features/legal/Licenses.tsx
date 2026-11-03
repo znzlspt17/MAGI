@@ -26,6 +26,6 @@ export function Licenses() {
     </header>
     {error ? <Notice>{error}</Notice> : entries.length === 0 ? <p role="status">라이선스 고지를 불러오는 중입니다.</p> : <p className="subtle">배포 코드·에셋 {entries.length}개 · 라이선스 원문은 원문 언어로 제공합니다.</p>}
     {entries.map((entry) => <details className="license-entry" key={`${entry.name}:${entry.version}`}><summary>{entry.name}<small>{entry.license}</small></summary><div><p className="subtle">버전 / 출처 리비전: {entry.version}</p>{entry.url.startsWith("https://") && <a href={entry.url} target="_blank" rel="noreferrer">공식 소스</a>}<pre>{entry.text}</pre></div></details>)}
-    <footer className="public-links"><WorkspaceReturnLink /><a href="/privacy">정보 처리 안내</a></footer>
+    <footer className="public-links"><WorkspaceReturnLink /><a href="/privacy">정보 처리 안내</a><a href="/research">연구 출처 및 적용 방식</a></footer>
   </main>;
 }

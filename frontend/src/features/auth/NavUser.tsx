@@ -1,5 +1,5 @@
 // shadcn/ui sidebar-07/nav-user layout, adapted for MAGI's identifier-only accounts.
-import { UserCircleIcon, CaretUpDownIcon, SignOutIcon, CopyIcon, GearIcon, ShieldCheckIcon, CopyrightIcon } from "@phosphor-icons/react";
+import { UserCircleIcon, CaretUpDownIcon, SignOutIcon, CopyIcon, GearIcon, ShieldCheckIcon, CopyrightIcon, BookOpenIcon } from "@phosphor-icons/react";
 import { useAuth } from "./Auth";
 import { formatTime } from "../../shared/ui/UI";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu";
@@ -8,7 +8,7 @@ import { SidebarMenu, SidebarMenuItem, SidebarMenuButton, useSidebar } from "../
 export function NavUser() {
   const auth = useAuth();
   const { isMobile } = useSidebar();
-  if (!auth.user) return <><div className="sidebar-local-account"><UserCircleIcon weight="duotone" size={20} aria-hidden /><span>로컬 작업 공간</span></div><a href="/privacy">정보 처리 안내</a><a href="/licenses">오픈소스 라이선스</a></>;
+  if (!auth.user) return <><div className="sidebar-local-account"><UserCircleIcon weight="duotone" size={20} aria-hidden /><span>로컬 작업 공간</span></div><a href="/privacy">정보 처리 안내</a><a href="/licenses">오픈소스 라이선스</a><a href="/research">연구 출처 및 적용 방식</a></>;
   return <SidebarMenu><SidebarMenuItem><DropdownMenu>
     <DropdownMenuTrigger asChild><SidebarMenuButton size="lg" className="sidebar-account-trigger" aria-label="내 계정">
       <UserCircleIcon weight="duotone" size={20} aria-hidden /><span className="sidebar-account-name"><strong>내 계정</strong></span><CaretUpDownIcon size={16} aria-hidden />
@@ -22,6 +22,7 @@ export function NavUser() {
       {auth.user.role === "admin" && <DropdownMenuItem asChild><a href="/admin"><GearIcon size={18} aria-hidden />관리자 페이지</a></DropdownMenuItem>}
       <DropdownMenuItem asChild><a href="/privacy"><ShieldCheckIcon size={18} aria-hidden />정보 처리 안내</a></DropdownMenuItem>
       <DropdownMenuItem asChild><a href="/licenses"><CopyrightIcon size={18} aria-hidden />오픈소스 라이선스</a></DropdownMenuItem>
+      <DropdownMenuItem asChild><a href="/research"><BookOpenIcon size={18} aria-hidden />연구 출처 및 적용 방식</a></DropdownMenuItem>
       <DropdownMenuItem onSelect={() => void auth.logout()}><SignOutIcon size={18} aria-hidden />로그아웃</DropdownMenuItem>
     </DropdownMenuContent>
   </DropdownMenu></SidebarMenuItem></SidebarMenu>;

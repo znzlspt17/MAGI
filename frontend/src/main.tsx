@@ -10,6 +10,7 @@ import "./features/workspace/workspace-design.css";
 import "./features/conversation/chat-design.css";
 import "./app/compact.css";
 import "./app/scrollbars.css";
+import { Research } from "./features/legal/Research";
 import { Licenses } from "./features/legal/Licenses";
 import { WorkspaceReturnLink } from "./features/workspace/WorkspaceReturnLink";
 
@@ -44,7 +45,7 @@ export function Privacy() {
       <p>
         연락처 znzlsit@naver.com
       </p>
-      <div className="public-links"><WorkspaceReturnLink /><a href="/licenses">오픈소스 라이선스</a></div>
+      <div className="public-links"><WorkspaceReturnLink /><a href="/licenses">오픈소스 라이선스</a><a href="/research">연구 출처 및 적용 방식</a></div>
     </main>
   );
 }
@@ -54,6 +55,7 @@ function App() {
       <Routes>
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/licenses" element={<Licenses />} />
+        <Route path="/research" element={<Research />} />
         <Route
           path="/admin/*"
           element={

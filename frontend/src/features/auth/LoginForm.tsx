@@ -32,7 +32,7 @@ export function LoginForm({ available, notice }: { available: boolean; notice: s
           </aside>
         </CardContent>
       </Card>
-      <footer className="public-links"><a href="/privacy">정보 처리 안내</a><span>·</span><a href="/licenses">오픈소스 라이선스</a></footer>
+      <footer className="public-links"><a href="/privacy">정보 처리 안내</a><span>·</span><a href="/licenses">오픈소스 라이선스</a><a href="/research">연구 출처 및 적용 방식</a></footer>
     </main>
   );
 }
