@@ -13,7 +13,7 @@ from backend.infrastructure.progress_store import ProgressStore
 from backend.infrastructure.progress_publisher import ProgressPublisher
 
 
-pytestmark = pytest.mark.skipif(os.environ.get('CI_RABBITMQ') != '1', reason='실제 RabbitMQ 검증은 전용 CI 브로커에서 수행합니다.')
+requires_broker = pytest.mark.skipif(os.environ.get('CI_RABBITMQ') != '1', reason='실제 RabbitMQ 검증은 전용 CI 브로커에서 수행합니다.')
 # 운영 설정은 읽지 않고 workflow가 생성한 테스트 전용 계정만 사용한다.
 SETTINGS = BrokerSettings('127.0.0.1', 5672, '/', 'ci-magi', 'ci-only-rabbit')
 
@@ -36,11 +36,31 @@ def queue_exists(name):
     except pika.exceptions.ChannelClosedByBroker as exc:
         if exc.reply_code == 404:
             return False
+        # 다른 연결이 소유한 exclusive 큐는 존재해도 passive 조회가 거부된다.
+        if exc.reply_code == 405:
+            return True
         raise
     finally:
         connection.close()
 
 
+@pytest.mark.parametrize(('code', 'expected'), [(404, False), (405, True), (403, None)])
+def test_queue_exists_handles_exclusive_queue(monkeypatch, code, expected):
+    import pika
+    from unittest.mock import Mock
+    connection = Mock()
+    connection.channel.return_value.queue_declare.side_effect = pika.exceptions.ChannelClosedByBroker(code, 'test')
+    monkeypatch.setattr(pika, 'BlockingConnection', lambda _: connection)
+    if expected is None:
+        with pytest.raises(pika.exceptions.ChannelClosedByBroker):
+            queue_exists('test-queue')
+    else:
+        assert queue_exists('test-queue') is expected
+    connection.channel.return_value.queue_declare.assert_called_once_with(queue='test-queue', passive=True)
+    connection.close.assert_called_once_with()
+
+
+@requires_broker
 def test_live_broker_confirms_routing_and_unsubscribe():
     broker = Broker(SETTINGS)
     messages = Queue()
@@ -57,6 +77,7 @@ def test_live_broker_confirms_routing_and_unsubscribe():
         broker.close()
 
 
+@requires_broker
 def test_real_user_job_queues_share_devices_and_isolate_other_jobs():
     hub = ProgressHub(SETTINGS)
     a1, a2, other, b = [Listener(None, owner) for owner in ('A', 'A', 'A', 'B')]
@@ -81,6 +102,7 @@ def test_real_user_job_queues_share_devices_and_isolate_other_jobs():
         hub.close()
 
 
+@requires_broker
 def test_broker_restart_recovers_subscription_snapshot_and_outbox(store):
     container = os.environ.get('CI_RABBITMQ_CONTAINER', '')
     assert re.fullmatch(r'[a-f0-9]{12,64}', container), 'CI 전용 RabbitMQ container ID가 필요합니다.'
