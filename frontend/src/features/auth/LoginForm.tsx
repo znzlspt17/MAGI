@@ -16,6 +16,7 @@ export function LoginForm({ available, notice }: { available: boolean; notice: s
             <div className="login-action">
               <p role="status">{notice || (available ? "Google 계정으로 작업 공간을 시작하세요." : "Google 로그인 설정이 준비되지 않았습니다. 운영자에게 문의하세요.")}</p>
               {available && <Button asChild size="lg"><a href="/auth/google/start">Google로 로그인<ArrowRightIcon size={18} aria-hidden /></a></Button>}
+              <p>MAGI는 개인 비용으로 운영되는 서비스입니다. 무분별한 사용으로 인한 AI 토큰 고갈을 방지하기 위해 Google 계정 로그인만 지원합니다.</p>
             </div>
             <p className="login-privacy">이름·이메일·사진은 요청하지 않습니다.<br />계정 구분용 식별 정보만 사용합니다.</p>
           </section>
