@@ -162,6 +162,19 @@ jobs:
             echo '### Release identities (rollback)'
             python -c "import json; m=json.load(open('output/release/release.json')); print('Release: ' + m['release']); [print(r + ': ' + i['tag'] + ' (' + i['reference'] + ')') for r,i in m['published'].items()]"
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Delete previous GHCR image versions after successful publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY_OWNER_TYPE: ${{ github.event.repository.owner.type }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from deploy.cleanup_images import cleanup
+          manifest = json.loads(Path('output/release/release.json').read_text(encoding='utf-8'))
+          cleanup(os.environ['GITHUB_REPOSITORY'], os.environ['REPOSITORY_OWNER_TYPE'], manifest)
+          PY
       - name: Preserve image identities and scan diagnostics
         if: ${{ !cancelled() && steps.images.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
