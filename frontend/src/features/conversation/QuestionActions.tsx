@@ -234,7 +234,7 @@ export function QuestionActions({
     return (
       <section className={actionClass} id="job-actions" onKeyDown={(event) => {
         if (event.target instanceof HTMLTextAreaElement && isSubmitShortcut(event)) {
-          event.preventDefault(); if (!disabled) void submit().catch(() => {});
+          event.preventDefault(); if (!disabled && answeredCount > 0) void submit().catch(() => {});
         }
       }}>
         <span className="eyebrow">NEXT STEP</span>
@@ -343,7 +343,7 @@ export function QuestionActions({
         {error && <FieldError>{error}</FieldError>}
         {controls(<div className="chat-answer-controls"><span role="status">답변 {answeredCount}/{questions.length}개 작성</span><Button
           className="primary"
-          disabled={disabled}
+          disabled={disabled || answeredCount === 0}
           onClick={() => void submit().catch(() => {})}
         >
           답변 제출

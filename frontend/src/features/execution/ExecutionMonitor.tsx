@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CheckCircleIcon, CircleNotchIcon, ClockIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { StatusIcon } from "../../shared/ui/StatusIcon";
 import { Trace, TraceCollapsible, TraceCollapsibleTrigger, TraceCollapsibleContent, TraceLine, TraceIcon, TraceTitle } from "../../shared/ui/trace";
 import { statusLabel } from "../../shared/ui/UI";
 import { stageLabel } from "./step-view";
@@ -13,7 +13,6 @@ export function elapsedLabel(start?: string, end?: string, now = Date.now()) {
   return seconds < 60 ? `${seconds}초` : `${Math.floor(seconds / 60)}분 ${seconds % 60}초`;
 }
 
-const icon = (status?: string) => status === "running" ? CircleNotchIcon : ["completed", "FINALIZED"].includes(status || "") ? CheckCircleIcon : ["error", "failed", "interrupted", "blocked"].includes(status || "") ? WarningCircleIcon : ClockIcon;
 
 export function ExecutionMonitor({ job, select }: { job: Job; select: (id: string) => void }) {
   const [now, setNow] = useState(Date.now);
@@ -33,21 +32,19 @@ export function ExecutionMonitor({ job, select }: { job: Job; select: (id: strin
   const current = running.at(-1);
   const title = job.status === "queued" ? "실행 순서 대기" : current ? `${stageLabel(current)} 중` : job.status === "running" ? "실행 준비 중" : statusLabel(job.status);
   const start = job.status === "queued" ? job.queued_at : current?.started_at || nodes.find(node => node.started_at)?.started_at;
-  const Icon = icon(job.status);
   const clock = now + offset;
   const duration = elapsedLabel(start, active ? undefined : job.updated_at, clock);
   return <Trace className="execution-monitor"><TraceCollapsible defaultOpen={false}>
-    <TraceCollapsibleTrigger aria-label={`${title}${running.length > 1 ? ` 외 ${running.length - 1}개` : ""} · ${duration}`}><TraceLine status={job.status === "running" ? "running" : undefined}>
-      <TraceIcon><Icon className={job.status === "running" ? "execution-monitor-spin" : ""} size={18} /></TraceIcon>
-      <TraceTitle><span role="status">{title}{running.length > 1 ? ` 외 ${running.length - 1}개` : ""}</span></TraceTitle>
+    <TraceCollapsibleTrigger title={title} aria-label={`${title}${running.length > 1 ? ` 외 ${running.length - 1}개` : ""} · ${duration}`}><TraceLine>
+      <TraceIcon><StatusIcon status={job.status} size={18} /></TraceIcon>
+      <TraceTitle className="sr-only"><span role="status">{title}{running.length > 1 ? ` 외 ${running.length - 1}개` : ""}</span></TraceTitle>
       <span className="execution-monitor-time" aria-label={`경과 시간 ${duration}`}>{duration}</span>
     </TraceLine></TraceCollapsibleTrigger>
     <TraceCollapsibleContent>
       <ol className="execution-monitor-steps" aria-label="현재 실행 단계">{nodes.map(node => {
         const status = !active && node.status === "running" ? job.status : node.status;
-        const NodeIcon = icon(status);
         return <li key={node.id} data-status={status}><button type="button" onClick={() => select(node.id)}>
-          <NodeIcon size={17} aria-hidden /><span>{stageLabel(node)}</span><span className="execution-monitor-step-status">{statusLabel(status)}</span>
+          <StatusIcon status={status} size={17} /><span>{stageLabel(node)}</span><span className="execution-monitor-step-status sr-only">{statusLabel(status)}</span>
           <span className="execution-monitor-time">{elapsedLabel(node.started_at, node.completed_at || (active ? undefined : job.updated_at), clock)}</span>
         </button></li>;
       })}</ol>

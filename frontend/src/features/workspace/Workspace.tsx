@@ -4,14 +4,15 @@ import { Issues } from "../execution/Issues";
 export { StepResult } from "../execution/StepResult";
 export { StopDiagnostic } from "../execution/StopDiagnostic";
 import { ChatCircleDotsIcon, ClockCounterClockwiseIcon, FileTextIcon, GraphIcon, PlusIcon, SparkleIcon, SquaresFourIcon } from "@phosphor-icons/react";
-import { useEffect, useRef, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { post } from "../../shared/api/api";
 import { useAuth } from "../auth/Auth";
 import { ChangeReview } from "../requirements/ChangeReview";
 import { AppSidebar } from "./AppSidebar";
 import { PromptInput } from "../../shared/ui/PromptInput";
-import { Badge } from "../../shared/ui/badge";
+import { StatusIcon } from "../../shared/ui/StatusIcon";
+import { SessionLink } from "./SessionLink";
 import { Input } from "../../shared/ui/input";
 import { SidebarGroup, SidebarGroupLabel, SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from "../../shared/ui/sidebar";
 import { Tabs, TabsList, TabsTrigger } from "../../shared/ui/tabs";
@@ -24,7 +25,7 @@ import { ProjectDecisionPicker, ReusedDecisions, type DecisionSelection } from "
 import { questionDetails } from "../conversation/QuestionActions";
 import { ServiceStatusNotice, serviceState } from "./ServiceStatus";
 import type { Job, Step } from "../../shared/types";
-import { Button, Notice, formatTime, statusLabel, usageLabel } from "../../shared/ui/UI";
+import { Button, Notice, usageLabel } from "../../shared/ui/UI";
 import { useJobSession } from "./useJobSession";
 export function graphNodes(job: Job): Step[] {
   return job.execution_graph?.nodes || [];
@@ -110,8 +111,19 @@ export default function Workspace() {
   );
   const actualJob = job?.id === id ? job : null;
   const result = detail?.result || {};
-  const currentDocument = actualJob && [...graphNodes(actualJob)].reverse().find((node) => node.has_document && (!actualJob.execution_id || !node.execution_id || node.execution_id === actualJob.execution_id));
   const showConversation = () => setTab("conversation");
+  const mainRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    // 실시간 갱신에는 반응하지 않고 화면 전환에만 위치를 초기화한다.
+    mainRef.current?.scrollTo?.({ top: 0, behavior: "instant" });
+    window.scrollTo?.({ top: 0, behavior: "instant" });
+  }, [id, surface, tab]);
+  const workspaceTabs = actualJob && surface === "workspace" ? <Tabs value={tab} onValueChange={setTab}><TabsList className="workspace-tabs" aria-label="작업 보기">
+    {[["conversation", "대화"], ["document", "명세"], ...(isAdmin ? [["history", "실행 이력"]] : [])].map(([key, label]) =>
+      <TabsTrigger key={key} value={key} id={`workspace-tab-${key}`} aria-controls={`workspace-panel-${key}`} className="button">
+        {key === "document" ? <FileTextIcon size={16} aria-hidden /> : key === "conversation" ? <ChatCircleDotsIcon size={16} aria-hidden /> : <ClockCounterClockwiseIcon size={16} aria-hidden />}{label}
+      </TabsTrigger>)}
+  </TabsList></Tabs> : null;
   const selectedDetail = () => actualJob ? <>
     {tab !== "history" && detail?.document?.content && <StopDiagnostic value={result.stop_diagnostic} />}
     {tab === "history" && detail && !detail.unavailable && <StepResult node={node} detail={detail} />}
@@ -148,7 +160,7 @@ export default function Workspace() {
 
   </> : null;
   return (
-    <SidebarProvider className="shell">
+    <SidebarProvider className="shell" style={{ "--sidebar-width": "200px" } as CSSProperties}>
       <AppSidebar>
         <Button
           className="primary new-job"
@@ -201,36 +213,18 @@ export default function Workspace() {
           </h2></SidebarGroupLabel>
           <nav aria-label="작업 기록"><SidebarMenu>
             {!filtered.length && (query || filter) && <li className="history-empty" role="status">조건에 맞는 작업이 없습니다.</li>}
-            {filtered.map((item) => (
-              <SidebarMenuItem key={item.id}><SidebarMenuButton asChild isActive={id === item.id} className="session-menu-link"><Link
-                to={`/jobs/${item.id}`}
-                aria-current={id === item.id ? "page" : undefined}
-                onClick={() => {
-                  setSurface("workspace");
-                }}
-              >
-                <strong>{item.request?.slice(0, 70) || "저장된 작업"}</strong>
-                <small>
-                  {statusLabel(item.status)} ·{" "}
-                  {formatTime(item.updated_at || item.created_at)}
-                </small>
-              </Link></SidebarMenuButton></SidebarMenuItem>
-            ))}
+            {filtered.map((item) => <SidebarMenuItem key={item.id}><SessionLink job={item} active={id === item.id} onSelect={() => setSurface("workspace")} /></SidebarMenuItem>)}
           </SidebarMenu></nav>
         </SidebarGroup>
       </AppSidebar>
       <SidebarInset className="workspace-content">
         <div className="workspace-topbar">
-          <div className="mobile-workspace-bar"><SidebarTrigger  /><span>MAGI 작업 공간</span></div>
-          <Account />
+          <SidebarTrigger aria-label="작업 메뉴 접기 또는 펼치기" />
+          <h1 title={actualJob?.request}>{surface === "knowledge" ? "지식 검색" : id ? actualJob?.request || "작업 불러오는 중…" : "새 명세 만들기"}</h1>
+          {workspaceTabs}
+          <div className="workspace-topbar-status">{actualJob && surface === "workspace" && <StatusIcon status={actualJob.status} />}<ServiceStatusNotice compact /></div>
         </div>
-        <main>
-          <header className={`workspace-header ${id && surface === "workspace" ? "chat-header" : ""}`}>
-            <div><span className="eyebrow">MAGI / {surface === "knowledge" ? "KNOWLEDGE" : "WORKSPACE"}</span>
-              <h1>{surface === "knowledge" ? "지식 검색" : id ? actualJob?.request?.slice(0, 70) || "작업 불러오는 중…" : "새 명세 만들기"}</h1>
-            </div>
-            {actualJob && surface === "workspace" && <div className="chat-header-actions"><Badge variant="secondary">{statusLabel(actualJob.status)}</Badge>{currentDocument && <Button onClick={() => selectStep(currentDocument.id)}><FileTextIcon size={17} aria-hidden />명세 열기</Button>}</div>}
-          </header>
+        <main ref={mainRef}>
           <Notice>{auth.notice || connection}</Notice>
           {surface === "knowledge" ? (
             <Knowledge selectedJobId={id} />
@@ -252,17 +246,6 @@ export default function Workspace() {
               ) : actualJob ? (
                 <>
                   <ReusedDecisions key={actualJob.id} jobId={actualJob.id} count={actualJob.reused_decision_count || 0} />
-                  <Tabs value={tab} onValueChange={setTab}><TabsList className="workspace-tabs" aria-label="작업 보기">
-                    {[
-                      ["conversation", "대화"],
-                      ["document", "명세"],
-                      ...(isAdmin ? [["history", "실행 이력"]] : []),
-                    ].map(([key, label]) => (
-                      <TabsTrigger key={key} value={key} id={`workspace-tab-${key}`} aria-controls={`workspace-panel-${key}`} className="button">
-                        {key === "document" ? <FileTextIcon size={18} aria-hidden /> : key === "conversation" ? <ChatCircleDotsIcon size={18} aria-hidden /> : <ClockCounterClockwiseIcon size={18} aria-hidden />}{label}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList></Tabs>
                   {tab !== "conversation" && <CompletedDocuments job={actualJob} select={selectStep} />}
                   <div role="tabpanel" id={`workspace-panel-${tab}`} aria-labelledby={`workspace-tab-${tab}`} tabIndex={0}>
                   {tab === "conversation" ? (
@@ -281,7 +264,10 @@ export default function Workspace() {
                             {actualJob.execution_graph?.recording_incomplete && <Notice>일부 이력 기록 누락</Notice>}
                           </>
                         )}
-                        {tab !== "history" && selectedDetail()}
+                        {tab !== "history" && <>
+                          {detail && !detail.unavailable && !detail.document?.content && <p className="document-empty" role="status">이 단계에는 명세 문서가 없습니다. 아래는 단계 결과입니다.</p>}
+                          {selectedDetail()}
+                        </>}
                       </section>
                       <aside className="action-panel">
                         <section className="action-card document-chat-cta"><p>답변·수정·승인은 대화에서 진행합니다.</p><Button className="primary" onClick={showConversation}><ChatCircleDotsIcon size={18} aria-hidden />대화에서 답변하기</Button></section>
@@ -306,9 +292,6 @@ export default function Workspace() {
   );
 }
 
-function Account() {
-  return <header className="account-header"><SidebarTrigger className="desktop-sidebar-trigger" /><ServiceStatusNotice /></header>;
-}
 function CompletedDocuments({
   job,
   select,

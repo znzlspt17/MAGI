@@ -12,6 +12,14 @@ beforeEach(()=>vi.stubGlobal('ResizeObserver',class {
 }));
 afterEach(()=>{cleanup();vi.unstubAllGlobals();});
 function Editor({send=()=>{}}:{send?:()=>void}){const [value,setValue]=useState('');return <PromptInput label="답변" buttonLabel="제출" value={value} onChange={e=>setValue(e.target.value)} onSend={send}/>;}
+it('공백 요청은 버튼과 단축키로 전송하지 않고 입력 후 전송한다',()=>{
+ const send=vi.fn();render(<Editor send={send}/>);
+ const input=screen.getByRole('textbox',{name:'답변'}),button=screen.getByRole('button',{name:'제출'});
+ expect(button).toBeDisabled();fireEvent.change(input,{target:{value:'  '}});
+ fireEvent.keyDown(input,{key:'Enter',ctrlKey:true});expect(send).not.toHaveBeenCalled();
+ fireEvent.change(input,{target:{value:'새 요청'}});expect(button).toBeEnabled();
+ fireEvent.keyDown(input,{key:'Enter',ctrlKey:true});expect(send).toHaveBeenCalledOnce();
+});
 it('크게 쓰기 초안을 동기화하고 닫으면 포커스를 돌려준다',async()=>{
  const user=userEvent.setup(),send=vi.fn();render(<Editor send={send}/>);
  const input=screen.getByRole('textbox',{name:'답변'});

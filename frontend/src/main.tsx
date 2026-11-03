@@ -8,6 +8,8 @@ import "./app/theme.css";
 import "./app/styles.css";
 import "./features/workspace/workspace-design.css";
 import "./features/conversation/chat-design.css";
+import "./app/compact.css";
+import "./app/scrollbars.css";
 import { Licenses } from "./features/legal/Licenses";
 import { WorkspaceReturnLink } from "./features/workspace/WorkspaceReturnLink";
 

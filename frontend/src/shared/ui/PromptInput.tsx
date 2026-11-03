@@ -49,11 +49,12 @@ export function PromptInput({ onSend, disabled, label, buttonLabel, maxLength = 
   label: string;
   buttonLabel: string;
 }) {
+  const canSend = !disabled && !!String(props.value ?? "").trim();
   return <InputGroup className="chat-prompt" data-disabled={disabled || undefined}>
     <ExpandableTextarea {...props} label={label} maxLength={maxLength} onKeyDown={(event) => {
       props.onKeyDown?.(event);
-      if (!event.defaultPrevented && isSubmitShortcut(event)) { event.preventDefault(); if (!disabled) onSend(); }
+      if (!event.defaultPrevented && isSubmitShortcut(event)) { event.preventDefault(); if (canSend) onSend(); }
     }} />
-    <InputGroupAddon align="block-end" className="chat-prompt-footer"><span>Enter로 줄바꿈 · Ctrl/⌘ + Enter로 전송</span><InputGroupButton variant="default" size="sm" disabled={disabled} onClick={onSend} aria-label={buttonLabel}>{buttonLabel}<ArrowUpIcon size={17} aria-hidden /></InputGroupButton></InputGroupAddon>
+    <InputGroupAddon align="block-end" className="chat-prompt-footer"><span>Enter로 줄바꿈 · Ctrl/⌘ + Enter로 전송</span><InputGroupButton variant="default" size="sm" disabled={!canSend} onClick={() => { if (canSend) onSend(); }} aria-label={buttonLabel}>{buttonLabel}<ArrowUpIcon size={17} aria-hidden /></InputGroupButton></InputGroupAddon>
   </InputGroup>;
 }

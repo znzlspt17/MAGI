@@ -21,7 +21,8 @@ it("영향과 추천 전제를 기본 표시하고 자동 선택·제출하지 �
   expect(screen.getByText("추천", { exact: true })).toBeTruthy();
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "답변 제출" })));
   expect(action).not.toHaveBeenCalled();
-  expect(screen.getByRole("alert").textContent).toContain("하나 이상");
+  expect((screen.getByRole("button", { name: "답변 제출" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByRole("alert")).toBeNull();
 });
 
 it("다른 선택을 명시적으로 제출하며 영향·추천·전제를 답변에 붙이지 않는다", async () => {

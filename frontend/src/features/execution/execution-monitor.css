@@ -11,10 +11,6 @@
 .execution-monitor-steps button:hover { background: var(--primary-light); }
 .execution-monitor-steps button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .execution-monitor-steps [data-status="running"] button { background: color-mix(in srgb, var(--primary) 7%, transparent); }
-.execution-monitor-steps [data-status="running"] button > svg { animation: execution-pulse 1.8s ease-in-out infinite; }
 .execution-monitor-step-status { margin-left: auto; color: var(--muted); font-size: .8rem; }
-.execution-monitor-spin { animation: execution-spin 1.8s linear infinite; }
-@keyframes execution-pulse { 50% { opacity: .35; } }
-@keyframes execution-spin { to { transform: rotate(360deg); } }
 @media (max-width: 540px) { .execution-monitor-steps button { flex-wrap: wrap; } .execution-monitor-step-status { margin-left: 0; } }
 @media (prefers-reduced-motion: reduce) { .execution-monitor *, .execution-monitor *::before { animation: none !important; transition: none !important; } }

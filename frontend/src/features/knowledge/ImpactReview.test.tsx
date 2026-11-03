@@ -89,7 +89,7 @@ describe("변경 영향 검토", () => {
     await waitFor(() => expect(mocks.api.mock.calls[1][0]).toContain("offset=20"));
     await screen.findByText("기록된 연결 조회 완료");
     fireEvent.click(screen.getByRole("button", { name: "추가 영향 분석" }));
-    expect(await screen.findByText("변경 가정을 1~4000자로 입력하세요.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "추가 영향 분석" }) as HTMLButtonElement).disabled).toBe(true);
     expect(mocks.post).not.toHaveBeenCalled();
   });
 

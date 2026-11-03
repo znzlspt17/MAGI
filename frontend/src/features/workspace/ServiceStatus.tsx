@@ -9,11 +9,12 @@ export function serviceState(publicMode: boolean, status: ServiceStatus) {
   return { kind: "available", title: "MAGI를 사용할 수 있습니다", description: `실행 ${status.active_count || 0}/${status.max_parallel || 2} · 대기 ${status.queued_count || 0}`, blocked: false };
 }
 
-export function ServiceStatusNotice({ inline = false }: { inline?: boolean }) {
+export function ServiceStatusNotice({ inline = false, compact = false }: { inline?: boolean; compact?: boolean }) {
   const auth = useAuth();
   const state = serviceState(auth.publicMode, auth.status);
   if (inline && !state.blocked) return null;
   const Icon = state.kind === "available" ? CheckCircleIcon : state.kind === "unknown" ? WarningCircleIcon : ClockIcon;
+  if (compact && !state.blocked) return <span className="service-status-compact" role="status" aria-label={`${state.title} ${state.description}`} title={`${state.title} ${state.description}`}><Icon size={16} aria-hidden /></span>;
   return <div className={`service-status-banner ${state.kind} ${inline ? "inline" : ""}`} role={inline ? undefined : "status"} aria-live={inline ? undefined : "polite"} aria-atomic={inline ? undefined : true}>
     <Icon size={22} aria-hidden /><div><strong>{state.title}</strong>{state.description && <p>{state.description}</p>}</div>
   </div>;

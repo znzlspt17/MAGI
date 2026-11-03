@@ -5,6 +5,7 @@ const scenario = params.get("qa") || "normal", role = params.get("role") || "adm
 const target = params.get("target");
 const nativeFetch = window.fetch.bind(window);
 const job = makeJob(params.get("status") || "NEEDS_USER_INPUT", scenario === "long");
+const jobs = scenario === "empty" ? [] : Array.from({ length: scenario === "long" ? 32 : 1 }, (_, i) => ({ ...job, id: i ? `sample-${i}` : jobId }));
 const users = [{ id: "qa-user", role: "admin", daily_limit: 10 }, { id: "qa-team-member-with-a-long-identifier-for-layout", role: "user", daily_limit: 5 }];
 const packet = { rows: [decision], total: 1, next_offset: null, project_id: "project" };
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
@@ -42,7 +43,7 @@ window.fetch = async (input, init) => {
   if (path.includes("package") && !path.endsWith(".zip")) return json({ completed_id: completedId, bundle_id: "b".repeat(64), filename: "approved.zip", available: !empty, completeness: "complete", korean_included: true, task_count: 3, total_size: 1200, source_hash: sourceHash, files: [{ name: "SPEC.en.md", size: 700, sha256: sourceHash }, { name: "SPEC.ko.md", size: 500, sha256: sourceHash }], limitations: [] });
   if (path.endsWith("/document") && init?.method === "POST") return json({ content: document, filename: "spec.ko.md", language: "ko", source_hash: sourceHash });
   if (path === "/api/commands") return json(job);
-  if (path === "/api/jobs" || path === "/api/admin/jobs") return json(empty ? [] : [job]);
+  if (path === "/api/jobs" || path === "/api/admin/jobs") return json(jobs);
   if (path === `/api/jobs/${jobId}`) return json(job);
   if (path.endsWith("/steps/research")) return json({ research: { mode: "auto", performed: true, outcome: "links_found", reason: "search_results", query: "PostgreSQL row security", retrieved_at: job.created_at, result_count: 1, sources: [{ title: "PostgreSQL documentation", url: "https://www.postgresql.org/docs/" }] } });
   if (path.includes("/steps/") || path.includes("/completed/")) return json({ document: { content: document, filename: "spec.en.md", source_hash: sourceHash, kind: path.includes("approved") ? "final" : "candidate", completed_id: completedId }, result: { research: { mode: "auto", performed: true, outcome: "links_found", reason: "search_results", query: "PostgreSQL row security", retrieved_at: job.created_at, result_count: 1, sources: [{ title: "PostgreSQL documentation", url: "https://www.postgresql.org/docs/" }] } }, change_review: { status: "complete", after_hash: sourceHash, analysed: 1, remaining: 0, sources: [], changes: [{ id: "change", change: "added", before: null, after: { item_id: "REQ-002", section: "요구사항", text: "보고서 30일 보관", line: 6, start: 0, end: 10, requirement_ids: ["REQ-002"], decision_ids: [] }, status: "analysed", meaning: "semantic", relation: "direct", summary: "보관 정책 추가", rationale: "사용자 답변을 반영했습니다." }] } });
@@ -61,9 +62,20 @@ window.fetch = async (input, init) => {
 
 // 실제 서버 연결 없이 기존 세션 훅의 연결 상태만 재현한다.
 class PreviewSocket extends EventTarget {
-  onopen: (() => void) | null = null; onclose: (() => void) | null = null; onerror = null; onmessage = null;
-  constructor() { super(); queueMicrotask(() => this.onopen?.()); }
-  close() {} send() {}
+  static readonly OPEN = 1;
+  readyState = 1;
+  onopen: (() => void) | null = null; onclose: (() => void) | null = null; onerror = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
+  constructor() { super(); queueMicrotask(() => { if (this.readyState !== PreviewSocket.OPEN) return; this.onopen?.(); this.send(JSON.stringify({ event: "jobs.subscribe" })); }); }
+  close() { this.readyState = 3; }
+  send(data: string) {
+    const message = JSON.parse(data);
+    queueMicrotask(() => {
+      if (this.readyState !== PreviewSocket.OPEN) return;
+      this.onmessage?.({ data: JSON.stringify({ event: "jobs.snapshot", jobs, revisions: Object.fromEntries(jobs.map(item => [item.id, 1])) }) });
+      if (["job.subscribe", "job.resync"].includes(message.event)) this.onmessage?.({ data: JSON.stringify({ event: "job.snapshot", job_id: jobId, revision: 1, server_time: new Date().toISOString(), job }) });
+    });
+  }
 }
 window.WebSocket = PreviewSocket as unknown as typeof WebSocket;
 await import("../src/main");
