@@ -319,15 +319,9 @@ def test_planned_review_question_recovers_uncertain_call_and_resumes_with_answer
                 payload = json.loads(next(item["content"] for item in messages if item["role"] == "user"))
                 self.planner_payloads.append(payload)
                 result = planner_result(messages)
-                answered = any(ref.startswith("user_answer:REVIEW-") for ref in payload.get("confirmed_user_sources", {}))
-                # 보관 기간은 실제 미결정 사항이므로 자동 수정 확정 전에 질문 판단을 요청한다.
-                if "checklist_critic" in payload.get("completed_tasks", []) and payload["execution_constraints"]["repair_limit_reached"] and not answered:
-                    result.parsed.action = "ask_user"
-                    result.parsed.target = "메모 보관 기간"
-                    result.parsed.reason = "보완 이력만으로 보관 기간을 확정할 수 없습니다."
                 return result
             canonical = model_context(messages)
-            asking = schema is ReviewResolutionResponse and canonical.get("planner_intent", {}).get("action") == "ask_user"
+            asking = schema is ReviewResolutionResponse and canonical.get("planner_intent", {}).get("action") in {"ask_user", "review_resolution"}
             if asking and self.fail_question:
                 raise Error("test uncertain question call")
             result = super().complete_result(messages, **kwargs)
@@ -359,7 +353,7 @@ def test_planned_review_question_recovers_uncertain_call_and_resumes_with_answer
         assert state["awaiting_input_reason"] == "review"
         qid = state["review_questions"][-1]["question_id"]
         assert qid in state["question_forms"]
-        assert provider.contexts[ReviewResolutionResponse]["final_assessment"] is True
+        assert provider.contexts[ReviewResolutionResponse]["final_assessment"] is False
         answers = [{"question_id": qid, "question": state["blocking_questions"][0], "answer": "30일"}]
         manager.action(ident, "answer", answers, expected_execution_id=manager.get(ident)["execution_id"])
         manager._run(ident, "answer", answers)
@@ -382,7 +376,7 @@ def test_blocked_checkpoint_can_retry_through_new_planner_without_final_assessme
             if kwargs["text_format"] is PlannerDecision:
                 self.plans += 1
                 result = planner_result(messages)
-                result.parsed.action = "blocked" if self.plans == 1 else "ask_user"
+                result.parsed.action = "blocked" if self.plans <= 2 else "ask_user"
                 return result
             result = super().complete_result(messages, **kwargs)
             if kwargs["text_format"] is InterviewResponse:
@@ -398,7 +392,7 @@ def test_blocked_checkpoint_can_retry_through_new_planner_without_final_assessme
         manager.retry(ident, manager.get(ident)["execution_id"])
         manager._run(ident, "retry", None)
         assert manager.get(ident)["status"] == "NEEDS_USER_INPUT"
-        assert provider.plans == 2
+        assert provider.plans == 3
         assert provider.calls.count(InterviewResponse) == 1
     finally:
         manager.close()

@@ -88,7 +88,7 @@ def test_repeated_empty_question_generation_is_not_available_again():
     state = {"execution_segment": 1,
              "plan": {"action": "ask_user"}}
     signature = task_signature(state, "ask_user")
-    state["task_results"] = [{"action": "ask_user", "signature": signature, "segment": 1}] * 2
+    state["task_results"] = [{"action": "ask_user", "signature": signature, "segment": 1, "status": "completed"}] * 2
     assert "ask_user" not in allowed_tasks(state, flow.engine.config)
     assert flow.ask(state)["allowed_actions"] == []
     flow.nodes.interview.assert_not_called()

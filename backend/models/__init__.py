@@ -384,6 +384,7 @@ class State:
     knowledge_context: dict[str, Any] = field(default_factory=dict)
     completed_tasks: list[str] = field(default_factory=list)
     execution_segment: int = 0
+    execution_diagnostic: dict[str, Any] = field(default_factory=dict)
     execution_constraints: dict[str, Any] = field(default_factory=dict)
     wait_reason: str = ""
     stop_reason: str = ""
@@ -919,6 +920,7 @@ class WorkflowState(TypedDict, total=False):
     completed_tasks: list[str]
     remaining_steps: RemainingSteps
     execution_segment: int
+    execution_diagnostic: dict[str, Any]
     execution_constraints: dict[str, Any]
     wait_reason: str
     stop_reason: str

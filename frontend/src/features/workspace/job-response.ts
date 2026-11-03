@@ -11,7 +11,8 @@ const form = requiredObject({ question_id: text, question: text, input_type: lit
   recommendation: optional(requiredObject({ option_ids: strings, reason: text, assumptions: strings })), form_version: text });
 const answer = requiredObject({ question_id: text, answer: text,
   selection: optional(requiredObject({ form_version: text, selected_option_ids: strings, custom_text: optional(text) })) });
-const state = object({ status: text, allowed_actions: strings, blocking_questions: strings, question_forms: dictionary(form),
+const state = object({ execution_diagnostic: optional(requiredObject({ stop_code: text, target_action: text,
+  block_reasons: strings, review_pass_count: number, review_pass_limit: number })), status: text, allowed_actions: strings, blocking_questions: strings, question_forms: dictionary(form),
   saved_answers: array(answer), review_questions: array(requiredObject({ question_id: text, requirement_ids: optional(strings),
     missing_information: optional(strings), resolution_reasons: optional(strings), problems: optional(strings), required_changes: optional(strings),
     evidence: optional(array(requiredObject({ source: text, quote: text }))) })),

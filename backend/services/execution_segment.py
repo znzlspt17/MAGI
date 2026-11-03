@@ -27,7 +27,7 @@ def prepare_segment(state: WorkflowState) -> WorkflowState:
         done = [name for name in done if name in preserved]
     result: WorkflowState = {"workflow_schema": 1, "revision": revision, "completed_tasks": done,
               "allowed_actions": [], "pending_input": {},
-              "execution_constraints": {},
+              "execution_constraints": {}, "execution_diagnostic": {},
               "execution_segment": state.get("execution_segment", 0) + 1,
               "wait_reason": "", "stop_reason": ""}
     if action in {"answer", "revise", "message", "retry"}:

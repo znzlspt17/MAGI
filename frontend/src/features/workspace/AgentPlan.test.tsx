@@ -60,5 +60,22 @@ it("시스템 중단 시 추가 실행의 한계와 요구사항 확인 완료�
   expect(screen.getByText("진전 없는 반복")).toBeVisible();
   await user.click(screen.getByText("수행한 작업과 근거"));
   expect(screen.getByText(/확인 작업 완료 · 결정 해결 여부/)).toBeVisible();
-  expect(screen.getByText(/입력 변경 없이 추가 실행하면 같은 문제가/)).toBeVisible();
+  expect(screen.getByText(/저장된 결과로 추가 실행할 수 있습니다/)).toBeVisible();
+});
+
+
+it("서버가 확정한 중단 조건과 검토 횟수를 표시한다", async () => {
+  render(<AgentPlan job={{ ...job, state: { ...job.state, stop_reason: "repair_limit",
+    execution_diagnostic: { stop_code: "repair_limit", target_action: "spec_compile",
+      block_reasons: ["review_budget_exhausted"], review_pass_count: 3, review_pass_limit: 3 } } }} />);
+  await userEvent.click(screen.getByText("현재 계획 · 메모 명세 보완"));
+  expect(screen.getByText("중단 대상: 명세 작성·보완")).toBeVisible();
+  expect(screen.getByText("이번 검토·보완 횟수를 모두 사용했습니다.")).toBeVisible();
+  expect(screen.getByText("검토 횟수: 3 / 3")).toBeVisible();
+});
+
+it("구형 중단 상태는 진단을 추측하지 않는다", async () => {
+  render(<AgentPlan job={{ ...job, state: { ...job.state, stop_reason: "model_blocked" } }} />);
+  await userEvent.click(screen.getByText("현재 계획 · 메모 명세 보완"));
+  expect(screen.getByText("저장된 상세 중단 진단이 없습니다.")).toBeVisible();
 });

@@ -83,7 +83,7 @@ def test_model_plan_wording_cannot_bypass_repeat_detection():
     flow.persist = lambda name, current: captured.append(current)
     first = flow.execute(state)
     signature = first["task_results"][-1]["signature"]
-    state.update(task_results=[{"action": "knowledge_search", "signature": signature, "segment": 1}] * 2,
+    state.update(task_results=[{"action": "knowledge_search", "signature": signature, "segment": 1, "status": "completed"}] * 2,
                  plan={"action": "knowledge_search", "reason": "다른 표현", "target": "second", "input_refs": ["new"]})
     flow.blocked = Mock(return_value={"status": "CRITICAL_BLOCKED"})
     result = flow.execute(state)

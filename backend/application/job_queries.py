@@ -75,13 +75,14 @@ class JobQueries:
             "plan",
             "wait_reason",
             "stop_reason",
+            "execution_diagnostic",
             "revision",
             "candidate_hash",
             "document_versions",
             "task_results",
         )
         job["state"] = {
-            **{k: state[k] for k in keys if k in state},
+            **{k: state[k] for k in keys if k in state and (k != "execution_diagnostic" or state[k])},
             "allowed_actions": self.allowed(ident),
             "saved_answers": saved_answer_dicts(state),
         }

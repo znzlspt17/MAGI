@@ -26,6 +26,15 @@ export function AgentPlan({ job, onDocument }: { job: Job; onDocument?: (stepId:
         {task.title} <span>{({ pending: "예정", completed: "완료", blocked: "확인 필요" } as Record<string, string>)[task.status] || ""}</span>
       </li>)}</ol>}
       {state.stop_reason && <p>{({ repair_limit: "자동 보완 한계", no_progress: "진전 없는 반복", execution_limit: "자동 실행 한도", invalid_plan: "유효한 계획 생성 실패" } as Record<string, string>)[state.stop_reason] || "진행 중단"}</p>}
+      {state.stop_reason && (state.execution_diagnostic?.stop_code ? <div aria-label="실행 중단 진단">
+        {state.execution_diagnostic.target_action && <p>중단 대상: {actionLabels[state.execution_diagnostic.target_action] || "작업 확인"}</p>}
+        {state.execution_diagnostic.block_reasons.map((code) => <p key={code}>{({
+          prerequisite_missing: "선행 단계가 완료되지 않았습니다.",
+          review_budget_exhausted: "이번 검토·보완 횟수를 모두 사용했습니다.",
+          repeated_without_progress: "같은 상태에서 작업이 반복되거나 진전이 멈췄습니다.",
+        } as Record<string, string>)[code] || "상세 조건을 확인할 수 없습니다."}</p>)}
+        <p>검토 횟수: {state.execution_diagnostic.review_pass_count} / {state.execution_diagnostic.review_pass_limit}</p>
+      </div> : <p>저장된 상세 중단 진단이 없습니다.</p>)}
       {state.wait_reason && <p role="status">{state.wait_reason}</p>}
       {!!results.length && <details><summary>수행한 작업과 근거</summary><ol>{results.map((result, index) => <li key={index}>
         {actionLabels[result.action] || result.action} · 변경 {result.revision + 1} · {result.status === "reused" ? "이전 결과 재사용" : result.action === "interview" ? "확인 작업 완료 · 결정 해결 여부는 질문 상태 참조" : "작업 완료"}<p>{result.reason}</p>
@@ -67,7 +76,7 @@ export function AgentComposer({ job, onAction, busy }: {
     {job.state?.allowed_actions?.includes("retry") && <Button disabled={disabled} onClick={() => void send("retry")}>저장된 결과로 추가 실행</Button>}
     {job.status === "CRITICAL_BLOCKED" && <p>{job.state?.stop_reason === "repair_limit"
       ? "이번 보완 횟수를 모두 사용했습니다. 추가 의견 없이 저장된 결과로 추가 실행할 수 있습니다. 초안 수정과 재검토를 진행하며 같은 문제가 남을 수 있습니다."
-      : "남은 문제와 보완 내역을 확인하고 수정 의견을 보내거나 추가 실행을 선택해주세요. 입력 변경 없이 추가 실행하면 같은 문제가 남을 수 있습니다."}</p>}
+      : "저장된 결과로 추가 실행할 수 있습니다. 같은 문제가 남을 수 있습니다."}</p>}
     <Notice>{error}</Notice>
   </section>;
 }

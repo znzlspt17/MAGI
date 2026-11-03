@@ -45,7 +45,12 @@ export interface ReviewQuestion {
   question_id: string; requirement_ids?: string[]; missing_information?: string[]; resolution_reasons?: string[];
   problems?: string[]; required_changes?: string[]; evidence?: { source: string; quote: string }[];
 }
+export interface ExecutionDiagnostic {
+  stop_code: string; target_action: string; block_reasons: string[];
+  review_pass_count: number; review_pass_limit: number;
+}
 export interface JobState {
+  execution_diagnostic?: ExecutionDiagnostic;
   status?: string; allowed_actions?: string[]; blocking_questions?: string[];
   question_forms?: Record<string, QuestionForm>; saved_answers?: SavedAnswer[]; review_questions?: ReviewQuestion[];
   awaiting_input_reason?: string; candidate_hash?: string; stop_reason?: string; wait_reason?: string; revision?: number;

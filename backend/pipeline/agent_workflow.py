@@ -12,8 +12,10 @@ from backend.errors import InvalidStateError
 from backend.infrastructure.workflow_store import workflow_store
 from backend.models import State, WorkflowState
 from backend.pipeline.builder import _stage
+from backend.pipeline.execution_policy import (
+    StopReason, evaluate_execution, required_plan, stop_policy, stop_message, execution_diagnostic,
+)
 from backend.pipeline.planner import (
-    allowed_tasks,
     execution_constraints, plan_next, task_signature,
 )
 
@@ -101,16 +103,16 @@ class AgentWorkflow:
         return result
 
     def planner(self, state):
-        if state.get("remaining_steps", 128) <= 3:
-            return {"plan": {**state.get("plan", {}), "action": "blocked", "stop_reason": "execution_limit"},
-                    "allowed_actions": []}
-        if state.get("blocking_questions"):
-            return {"plan": {**state.get("plan", {}), "action": "ask_user"}, "allowed_actions": []}
+        safety_limit = state.get("remaining_steps", 128) <= 3
+        forced = None if safety_limit else required_plan(state, evaluate_execution(state, self.engine.config))
+        if safety_limit:
+            forced = {**state.get("plan", {}), "goal": "실행 안전 한도",
+                      "action": "blocked", "stop_reason": StopReason.EXECUTION_LIMIT.value}
         state = {**state, "execution_constraints": execution_constraints(state, self.engine.config)}
         from backend.pipeline.builder import _progress
         _progress(self.progress, "planner", "started")
         try:
-            plan = self.durable("planner", state, lambda current: {"plan": plan_next(current, self.nodes)})["plan"]
+            plan = forced or self.durable("planner", state, lambda current: {"plan": plan_next(current, self.nodes)})["plan"]
         except Exception as exc:
             from backend.server.diagnostics import diagnose_exception
             _progress(self.progress, "planner", "failed", {"diagnostic": diagnose_exception(exc)})
@@ -123,25 +125,17 @@ class AgentWorkflow:
         return result
 
     def blocked(self, state, reason=None, stop_reason=None):
-        stop_reason = stop_reason or state.get("plan", {}).get("stop_reason") or "model_blocked"
-        if state.get("blocking_questions") and stop_reason != "execution_limit":
+        stop_reason = stop_reason or state.get("plan", {}).get("stop_reason") or StopReason.MODEL_BLOCKED.value
+        policy = stop_policy(stop_reason)
+        if state.get("blocking_questions") and policy.allow_questions:
             return self.ask(state)
-        reason = reason or state.get("plan", {}).get("reason") or "추가 확인이 필요합니다."
-        label = {"repair_limit": "자동 보완 한계", "no_progress": "진전 없는 반복",
-                 "execution_limit": "자동 실행 한도", "invalid_plan": "유효한 계획 생성 실패"}.get(stop_reason, "진행 중단")
-        if not reason.startswith(label + " · "):
-            reason = label + " · " + reason
-        if stop_reason == "execution_limit":
-            reason = "실행 안전 한도에 도달해 중단했습니다. 저장된 결과에서 추가 실행할 수 있습니다."
-        elif stop_reason == "repair_limit":
-            reason += " 저장된 결과로 추가 실행을 선택하면 남은 결함의 초안 수정과 재검토를 진행합니다. 추가 의견 없이도 실행할 수 있으며, 같은 문제가 남을 수 있습니다."
-        else:
-            reason += " 저장된 진행 결과를 확인하고 수정 의견을 보내거나 추가 실행을 선택해주세요. 같은 문제가 남을 수 있습니다."
+        reason = stop_message(policy, reason or state.get("plan", {}).get("reason") or "추가 확인이 필요합니다.")
         result = {"status": "CRITICAL_BLOCKED", "wait_reason": reason,
-                  "stop_reason": stop_reason,
+                  "stop_reason": str(stop_reason),
+                  "execution_diagnostic": execution_diagnostic(state, self.engine.config, stop_reason),
                   "allowed_actions": ["message", "revise", "retry"],
                   "plan": {**state.get("plan", {}), "action": "blocked", "reason": reason}}
-        if stop_reason != "execution_limit" and state.get("requirement_lock_sheet") and state.get("structured_issues"):
+        if policy.create_report and state.get("requirement_lock_sheet") and state.get("structured_issues"):
             report = self.durable("critical_report", {**state, **result}, self.nodes.critical_report)
             result.update(report)
         self.persist("blocked", {**state, **result})
@@ -150,12 +144,13 @@ class AgentWorkflow:
     def execute(self, state):
         action = state["plan"]["action"]
         constraints = execution_constraints(state, self.engine.config)
-        if action in constraints["repeated_actions"]:
+        decision = evaluate_execution(state, self.engine.config)
+        if action in constraints["repeated_actions"] and action != decision.required_action:
             # 오래된 계획 재개에서도 같은 작업을 반복하지 않고 모델에 재계획을 맡긴다.
             result = {"execution_constraints": constraints, "allowed_actions": []}
             self.persist("replan", {**state, **result})
             return result
-        if action not in allowed_tasks(state, self.engine.config):
+        if action not in decision.allowed_actions:
             raise InvalidStateError("현재 상태에서 실행할 수 없는 계획입니다.")
         signature = task_signature(state, action)
         recent = state.get("task_results", [])
