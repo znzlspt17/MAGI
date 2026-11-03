@@ -57,7 +57,7 @@ try {
   await page.reload();
   await page.getByRole('button',{name:'저장된 결과로 추가 실행',exact:true}).waitFor({state:'visible'});
   assert(await page.getByRole('button',{name:'저장된 결과로 추가 실행',exact:true}).isVisible());
-  assert(await page.getByText(/입력 변경 없이 추가 실행하면 같은 문제가/).isVisible());
+  await page.getByText('저장된 결과로 추가 실행할 수 있습니다. 같은 문제가 남을 수 있습니다.',{exact:true}).waitFor();
   assert.equal(await page.getByRole('textbox',{name:'메모를 며칠 동안 보관할까요?'}).count(),0);
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await page.screenshot({path:'.cache/agent-workflow-preview/'+name+'-blocked.png',fullPage:true});

@@ -57,7 +57,7 @@ try{
  await page.getByRole('textbox',{name:'개발 요청',exact:true}).fill('오프라인 메모 앱을 만들어주세요.');
  status={...status,active_count:2};
  await page.evaluate(()=>window.dispatchEvent(new Event('service-status')));
- await page.getByText('실행 2/2 · 대기 0',{exact:true}).waitFor();
+ await page.getByRole('status',{name:'MAGI를 사용할 수 있습니다 실행 2/2 · 대기 0',exact:true}).waitFor();
  assert.equal(await page.getByRole('button',{name:'명세 생성 시작',exact:true}).isDisabled(),false);
  const draft=page.getByRole('textbox',{name:'개발 요청',exact:true});
  await draft.fill('점유 중에도 보존할 요청');
@@ -70,7 +70,7 @@ try{
  assert.equal(await page.getByRole('button',{name:'지식 검색',exact:true}).isDisabled(),false);
  status={...status,active_count:0};
  await page.evaluate(()=>window.dispatchEvent(new Event('service-status')));
- await page.getByText('MAGI를 사용할 수 있습니다',{exact:true}).waitFor();
+ await page.getByRole('status',{name:'MAGI를 사용할 수 있습니다 실행 0/2 · 대기 0',exact:true}).waitFor();
  assert.equal(await draft.inputValue(),'점유 중에도 보존할 요청');
  await draft.fill('오프라인 메모 앱을 만들어주세요.');
  await page.getByRole('button',{name:'명세 생성 시작',exact:true}).click();

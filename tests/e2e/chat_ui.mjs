@@ -54,7 +54,11 @@ try {
  assert(await page.locator('.workspace-content').evaluate(e=>e.getBoundingClientRect().width)>expandedWidth);
  assert.equal(await page.locator('[data-slot="sidebar-container"]').getAttribute('inert'),'');
  await page.getByRole('button',{name:'메뉴 열기',exact:true}).click();
- await page.waitForFunction(()=>document.querySelector('[data-slot="sidebar-gap"]').getBoundingClientRect().width>200);
+ await page.waitForFunction(()=>{
+  const gap=document.querySelector('[data-slot="sidebar-gap"]');
+  const expected=parseFloat(getComputedStyle(gap).getPropertyValue('--sidebar-width'));
+  return expected>0&&Math.abs(gap.getBoundingClientRect().width-expected)<1;
+ });
  assert.equal(await page.locator('#job-actions').count(),1);
  for(const width of [1440,768,390]){
   const height=width===390?844:1000;
