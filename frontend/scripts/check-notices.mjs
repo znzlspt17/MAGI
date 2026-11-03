@@ -11,15 +11,19 @@ test("npm 저장소 shorthand와 Git URL을 공식 소스 링크로 정규화한
   assert.equal(sourceUrl("git@github.com:org/repo.git"), "https://github.com/org/repo");
 });
 
-test("원문 또는 라이선스 종류를 알 수 없는 패키지는 배포 고지 생성을 중단한다", async () => {
+test("원문 또는 라이선스 종류 누락은 확인 대상으로 남기고 고지 생성을 계속한다", async () => {
   const directory = await mkdtemp(join(tmpdir(), "notices-"));
   try {
     await writeFile(join(directory, "package.json"), JSON.stringify({ name: "fixture", version: "1", license: "UNKNOWN" }));
-    await assert.rejects(packageNotice(directory), /종류 누락/);
+    assert.match((await packageNotice(directory)).text, /종류 확인 필요/);
     await writeFile(join(directory, "package.json"), JSON.stringify({ name: "fixture", version: "1", license: "MIT" }));
-    await assert.rejects(packageNotice(directory), /원문 누락/);
+    assert.match((await packageNotice(directory)).text, /원문 확인 필요/);
     await writeFile(join(directory, "NOTICE"), "Copyright fixture — notice only");
-    await assert.rejects(packageNotice(directory), /원문 누락/);
+    const incomplete = await packageNotice(directory);
+    assert.match(incomplete.text, /원문 확인 필요/);
+    assert.match(incomplete.text, /notice only/);
+    await writeFile(join(directory, "LICENSE"), " ");
+    assert.match((await packageNotice(directory)).text, /빈 고지 원문 확인 필요/);
     await writeFile(join(directory, "LICENSE"), "Copyright fixture\nMIT permission text");
     const result = await packageNotice(directory);
     assert.match(result.text, /MIT permission text/);

@@ -21,7 +21,7 @@ export function Licenses() {
   return <main className="licenses-page">
     <a className="brand" href="/">MAGI</a>
     <header><span className="eyebrow">OPEN SOURCE ACKNOWLEDGEMENTS</span><h1><CopyrightIcon weight="duotone" size={32} aria-hidden /> 오픈소스 라이선스</h1>
-      <p>MAGI의 화면을 구성하는 오픈소스 코드와 에셋의 저작권 고지입니다. 각 항목을 펼치면 배포에 포함된 라이선스 원문을 확인할 수 있습니다.</p>
+      <p>MAGI의 화면·서버를 구성하는 오픈소스 코드와 에셋의 저작권 고지입니다. 각 항목을 펼치면 배포에 포함된 라이선스 원문을 확인할 수 있습니다.</p>
       <Button asChild variant="outline"><a href="/static/vendor/THIRD_PARTY_NOTICES.txt" download><DownloadSimpleIcon size={18} aria-hidden />전체 고지 다운로드</a></Button>
     </header>
     {error ? <Notice>{error}</Notice> : entries.length === 0 ? <p role="status">라이선스 고지를 불러오는 중입니다.</p> : <p className="subtle">배포 코드·에셋 {entries.length}개 · 라이선스 원문은 원문 언어로 제공합니다.</p>}
