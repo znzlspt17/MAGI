@@ -10,6 +10,20 @@ const job: Job = { id: "job", status: "completed", session_events: [
   { id: "last", action: "answer", input: { answers: [{ question_id: "Q1", question: "엔진은?", answer: "알맞게 선택" }] }, summary: "답변을 반영했습니다" },
 ] };
 const nodes: Step[] = [{ id: "interview", execution_id: "first", stage: "interview", title: "요구사항 확인", status: "completed" }, { id: "waiting", execution_id: "first", stage: "await_user", title: "요구사항 확인 필요", status: "waiting" }];
+it("사용자 작업 노드가 없어도 실행 입력의 최초 요구사항과 질문 답변을 표시한다", async () => {
+  const user = userEvent.setup();
+  render(<ExecutionTimeline job={{ ...job, session_events: [
+    { ...job.session_events![0], input: { request: "오프라인 메모 앱" }, started_at: "2026-11-03T00:00:00Z" },
+    job.session_events![1],
+  ] }} nodes={nodes} selected="" select={vi.fn()} />);
+  expect(screen.getByText("엔진은?", { exact: true })).toBeVisible();
+  expect(screen.getByText("알맞게 선택")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: /1. 최초 요청/ }));
+  expect(screen.getByText("오프라인 메모 앱")).toBeVisible();
+  expect(screen.queryByText("저장된 사용자 입력이 없습니다.")).toBeNull();
+  expect(screen.getAllByText("시각 기록 없음")).toHaveLength(1);
+  expect(screen.getByText(/\(KST\)/)).toBeVisible();
+});
 it("실행별 펼침과 원본 단계 선택을 유지하고 질문·답변을 구분한다", async () => {
   const user = userEvent.setup(), select = vi.fn();
   const view = render(<ExecutionTimeline job={job} nodes={nodes} selected="waiting" select={select} />);

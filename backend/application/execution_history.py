@@ -93,7 +93,9 @@ class ExecutionHistory:
                 ),
                 {},
             )
-            payload = user.get("result", {})
+            payload = _user_action_result(
+                execution["action"], execution.get("input")
+            ) or user.get("result", {})
             document: dict = next((n for n in reversed(nodes) if n.get("has_document")), {})
             questions: list = next(
                 (
@@ -131,7 +133,14 @@ class ExecutionHistory:
     ) -> str:
         execution_id = execution_id or uuid4().hex
         data = self._load()
-        if any(item.get("id") == execution_id for item in data["executions"]):
+        execution = next(
+            (item for item in data["executions"] if item.get("id") == execution_id),
+            None,
+        )
+        if any(
+            item.get("execution_id") == execution_id and item.get("stage") == action
+            for item in data["nodes"]
+        ):
             return execution_id
         node = _node(
             action, execution_id, "completed", summary="사용자 작업을 접수했습니다."
@@ -140,15 +149,17 @@ class ExecutionHistory:
         if user_result:
             node["result"] = user_result
         data["nodes"].append(node)
-        data["executions"].append(
-            {"id": execution_id, "action": action, "started_at": _now()}
-        )
+        if execution is None:
+            execution = {"id": execution_id, "action": action}
+            data["executions"].append(execution)
+        if not execution.get("started_at"):
+            execution["started_at"] = node["started_at"]
         if (
             action == "retry"
             and isinstance(input_data, dict)
             and isinstance(input_data.get("retry_of"), str)
         ):
-            data["executions"][-1]["retry_of"] = input_data["retry_of"]
+            execution["retry_of"] = input_data["retry_of"]
             node["summary"] = "저장된 작업을 다시 시도합니다."
         self._save(data)
         return execution_id

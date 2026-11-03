@@ -175,6 +175,14 @@ def test_partial_answers_resume_official_interrupt_without_reinterview(
         assert manager.workspace.state(ident)["status"] == "PASS_PENDING_USER_APPROVAL"
         answers = manager.workspace.public(ident)["state"]["saved_answers"]
         assert {"오프라인 저장", "30일"} <= {a["answer"] for a in answers}
+        # DB에 저장한 실행 입력을 공개 응답에서도 빠짐없이 제공한다.
+        events = manager.workspace.public(ident)["session_events"]
+        assert [event["input"] for event in events] == [
+            {"request": "메모를 저장해주세요"},
+            {"answers": first},
+            {"answers": second},
+        ]
+        assert all(event["started_at"] for event in events)
     finally:
         manager.close()
 

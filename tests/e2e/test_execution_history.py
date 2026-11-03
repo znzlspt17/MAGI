@@ -61,6 +61,11 @@ def test_31_snapshots_survive_service_restart_and_step_api(store, monkeypatch):
 
         app = create_app({"TESTING": True, "PUBLIC_MODE": False, "CLIENT_FACTORY": SavedStepClient})
         client = app.test_client()
+        response = client.get(f"/api/jobs/{ident}")
+        assert response.status_code == 200
+        event = response.json["session_events"][0]
+        assert event["input"] == {"request": "보스 격파 후 무기 유지 명세"}
+        assert event["started_at"]
         assert len(snapshots) == 31
         for index, (step_id, expected) in enumerate(snapshots):
             response = client.get(f"/api/jobs/{ident}/steps/{step_id}")
