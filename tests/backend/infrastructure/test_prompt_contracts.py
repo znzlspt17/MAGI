@@ -255,3 +255,56 @@ def test_compiler_preserves_resolved_issues_and_projects_verifier_feedback():
     initial = compiler._build_messages(sheet, {}, [], user_request="메모 저장", previous_spec="",
         revision_feedback="", revision_history=[], rubric={"items": []})
     assert not any(item["content"].startswith("Latest verifier feedback:") for item in initial)
+
+
+def test_review_retry_guidance_distinguishes_safe_failed_checks():
+    from backend.infrastructure.stage_retry import retry_messages
+    from backend.services.rubric import invalid
+
+    def payload(error):
+        message = retry_messages([], stage="checklist_critic", attempt=1, error=error)[-1]
+        return json.loads(message["content"].split("\n", 1)[1])
+
+    evidence = payload(invalid("rubric_evidence", stage="checklist_critic"))
+    score = payload(invalid("rubric_score", stage="checklist_critic"))
+    assert evidence["failed_checks"] == ["rubric_evidence"]
+    assert score["failed_checks"] == ["rubric_score"]
+    assert evidence["validation_failures"] and score["validation_failures"]
+    assert evidence["validation_failures"] != score["validation_failures"]
+    guidance = " ".join(score["validation_failures"])
+    assert all(field in guidance for field in ("score_reason", "critical_failures", "revision_directives"))
+
+
+def test_review_retry_does_not_forward_untrusted_failed_check_or_details():
+    from backend.errors import ReviewValidationError
+    from backend.infrastructure.stage_retry import retry_messages
+
+    error = ReviewValidationError(["PRIVATE_MODEL_RESPONSE"], check="rubric_evidence")
+    error.failed_checks = ["rubric_evidence", "PRIVATE_MODEL_CHECK"]
+    result = retry_messages([], stage="checklist_critic", attempt=1, error=error)
+    payload = json.loads(result[-1]["content"].split("\n", 1)[1])
+    assert payload["failed_checks"] == ["rubric_evidence"]
+    assert "PRIVATE_MODEL_CHECK" not in str(payload)
+    assert "PRIVATE_MODEL_RESPONSE" not in str(payload)
+
+
+def test_all_review_checks_have_specific_safe_correction_guidance():
+    from backend.errors import ReviewValidationError
+    from backend.infrastructure.stage_retry import retry_messages
+
+    guidance = {}
+    for check in ReviewValidationError.checks:
+        error = ReviewValidationError(["PRIVATE_MODEL_RESPONSE"], check=check)
+        payload = json.loads(retry_messages([], stage="review_resolution", attempt=1, error=error)
+                             [-1]["content"].split("\n", 1)[1])
+        assert payload["failed_checks"] == [check]
+        assert len(payload["validation_failures"]) == 1
+        assert "PRIVATE_MODEL_RESPONSE" not in str(payload)
+        guidance[check] = payload["validation_failures"][0]
+    unknown = ReviewValidationError()
+    unknown.failed_checks = ["PRIVATE_MODEL_CHECK"]
+    fallback = json.loads(retry_messages([], stage="review_resolution", attempt=1, error=unknown)
+                          [-1]["content"].split("\n", 1)[1])["validation_failures"][0]
+    assert all(value != fallback for value in guidance.values())
+    assert "korean" in guidance["resolution_language"].lower()
+    assert "basis" in guidance["resolution_basis"].lower()

@@ -314,3 +314,107 @@ def test_malformed_structured_response_is_retryable_without_echoing_output(schem
     assert "UNTRUSTED_MODEL_TEXT" not in str(error.value)
     assert "UNTRUSTED_MODEL_TEXT" not in str(error.value.validation_details)
     assert error.value.stage == ("rubric_generate" if schema is RubricResponse else "checklist_critic")
+
+
+@pytest.mark.parametrize(("failure", "check", "expected"), [
+    ("coverage", "rubric_evaluation_coverage", "exactly once"),
+    ("evidence", "rubric_evidence", "quote"),
+])
+def test_workflow_recovers_when_review_retry_receives_specific_feedback(store, monkeypatch, failure, check, expected):
+    import json
+    from tests.support.workflow_helpers import manager_for
+    from tests.support.fakes import DecisionProvider
+
+    class Provider(DecisionProvider):
+        def __init__(self):
+            super().__init__([[], []])
+            self.review_inputs = []
+
+        def complete_result(self, messages, **kwargs):
+            result = super().complete_result(messages, **kwargs)
+            if isinstance(result.parsed, ReviewResponse):
+                self.review_inputs.append(messages)
+                if len(self.review_inputs) == 1:
+                    if failure == "coverage":
+                        result.parsed.rubric_verdicts.clear()
+                    else:
+                        result.parsed.rubric_verdicts[0].quote = "FABRICATED_QUOTE"
+                else:
+                    payload = next(json.loads(item["content"].split("\n", 1)[1]) for item in messages
+                                   if item["content"].startswith("Stage retry context:\n"))
+                    assert payload["failed_checks"] == [check]
+                    assert expected in " ".join(payload["validation_failures"])
+            return result
+
+    manager, provider = manager_for(store, monkeypatch, Provider())
+    try:
+        ident = manager.create("메모를 저장해주세요")["id"]
+        manager._run(ident, "generate", None)
+        assert manager.get(ident)["status"] == "PASS_PENDING_USER_APPROVAL"
+        assert len(provider.review_inputs) == 2
+        assert manager.workspace.state(ident)["critic_pass_count"] == 1
+    finally:
+        manager.close()
+
+
+@pytest.mark.parametrize(("severity", "cap"), [("blocking", 7), ("major", 7), ("minor", 9)])
+def test_deterministic_issues_are_visible_and_enforce_score_cap(case, monkeypatch, severity, cap):
+    import json
+    import backend.services.checklist_critic as critic_module
+
+    deterministic = IssuePacket("DETERMINISTIC-1", "structure", severity, severity == "blocking",
+                                "SEC-REQUIRED-001", "missing", "repair")
+    monkeypatch.setattr(critic_module, "run_deterministic_checks", lambda *_: [deterministic])
+    seen = []
+
+    def respond(messages, score):
+        seen.append(messages)
+        value = review(case)
+        value.score = score
+        return value
+
+    with pytest.raises(ReviewValidationError) as error:
+        ChecklistCritic().critique(case.spec, case.sheet, rubric=case.record,
+            provider_messages_fn=lambda messages: respond(messages, cap + 1))
+    assert error.value.failed_checks == ["rubric_score"]
+    payload = next(json.loads(item["content"].split("\n", 1)[1]) for item in seen[0]
+                   if item["content"].startswith("Deterministic checks:\n"))
+    assert payload["score_cap"] == cap
+    assert any(item["checklist_id"] == "SEC-REQUIRED-001" and item["section"] == "structure"
+               and item["severity"] == severity for item in payload["issues"])
+    issues = ChecklistCritic().critique(case.spec, case.sheet, rubric=case.record,
+        provider_messages_fn=lambda messages: respond(messages, cap))
+    assert any(issue.checklist_id == "SEC-REQUIRED-001" for issue in issues)
+
+
+def test_no_deterministic_issue_has_unrestricted_score_cap(case):
+    import json
+    seen = []
+    def respond(messages):
+        seen.extend(messages)
+        return review(case)
+    assert ChecklistCritic().critique(case.spec, case.sheet, rubric=case.record, provider_messages_fn=respond) == []
+    payload = next(json.loads(item["content"].split("\n", 1)[1]) for item in seen
+                   if item["content"].startswith("Deterministic checks:\n"))
+    assert payload["issues"] == [] and payload["score_cap"] == 10
+
+
+def test_deterministic_summary_keeps_source_data_out_of_safe_issue_metadata(case, monkeypatch):
+    import json
+    import backend.services.checklist_critic as critic_module
+
+    deterministic = IssuePacket("LOCK-COVER-PRIVATE", "requirements", "major", False,
+        "LOCK-COVER-PRIVATE", "PRIVATE_SOURCE_TEXT", "PRIVATE_REPAIR_TEXT")
+    monkeypatch.setattr(critic_module, "run_deterministic_checks", lambda *_: [deterministic])
+    seen = []
+    def respond(messages):
+        seen.extend(messages)
+        value = review(case)
+        value.score = 7
+        return value
+    issues = ChecklistCritic().critique(case.spec, case.sheet, rubric=case.record, provider_messages_fn=respond)
+    payload = next(json.loads(item["content"].split("\n", 1)[1]) for item in seen
+                   if item["content"].startswith("Deterministic checks:\n"))
+    assert payload["issues"][0]["checklist_id"] == "LOCK-COVER-001"
+    assert "PRIVATE" not in json.dumps(payload)
+    assert issues[0].checklist_id == "LOCK-COVER-PRIVATE"

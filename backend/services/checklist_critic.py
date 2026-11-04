@@ -19,6 +19,20 @@ from backend.models import (
 from backend.models import RequirementLockSheet
 from backend.services.checklist import run_deterministic_checks
 
+# 2026-11-04: 검사 식별자를 설명하되 입력에서 추출한 원문이나 실패 위치는 전달하지 않는다.
+_DETERMINISTIC_DESCRIPTIONS = {
+    "SEC-REQUIRED-001": "A required specification heading is missing.",
+    "SEC-REQUIRED-ORDER-001": "Required specification headings are out of order.",
+    "SCOPE-NONSCOPE-001": "The Out of Scope section is empty.",
+    "FORBIDDEN-001": "The Forbidden Behaviors section is empty.",
+    "AC-001": "The Acceptance Criteria section is empty.",
+    "AC-QUALITY-001": "Acceptance criteria contain a generic placeholder.",
+    "TEST-001": "The Test Plan section is empty.",
+    "UNRESOLVED-Q-001": "A blocking question is unresolved.",
+    "AMBIG-001": "A locked requirement needs observable criteria and tests.",
+    "LOCK-COVER-001": "A locked requirement or product decision is missing, duplicated or changed in the specification.",
+}
+
 
 class ChecklistCritic:
     """Runs deterministic + LLM-assisted checklist review on the draft spec.
@@ -44,6 +58,13 @@ class ChecklistCritic:
         sheet.require_validated()
         # 1. Deterministic checks (always authoritative, no LLM needed)
         deterministic = run_deterministic_checks(spec_md, sheet)
+        # 2026-11-04: 결정적 결함은 별도 병합하므로 모델에는 안전한 요약과 점수 상한만 제공한다.
+        deterministic_cap = (7 if any(item.severity in {"blocking", "major"} for item in deterministic)
+                             else 9 if deterministic else 10)
+        checks = sorted({(
+            "LOCK-COVER-001" if item.checklist_id.startswith("LOCK-COVER-") else item.checklist_id,
+            item.section, item.severity,
+        ) for item in deterministic})
 
         # 2. LLM-assisted check (adds non-overlapping issues)
         payload = _build_messages(
@@ -54,6 +75,10 @@ class ChecklistCritic:
             revision_feedback=revision_feedback,
             revision_history=revision_history or [],
             rubric=rubric,
+            deterministic_checks={"issues": [{"checklist_id": check, "section": section, "severity": severity,
+                                               "description": _DETERMINISTIC_DESCRIPTIONS.get(check, "A deterministic specification check failed.")}
+                                              for check, section, severity in checks],
+                                  "score_cap": deterministic_cap},
         )
         raw = provider_messages_fn(payload)
         try:
@@ -90,7 +115,7 @@ class ChecklistCritic:
         merged = merge_issue_lists(deterministic, llm_issues)
         if evaluation is not None:
             # 결정적 검사 결함을 모델 점수로 숨길 수 없다.
-            if deterministic and raw.score > (7 if any(item.severity in {"blocking", "major"} for item in deterministic) else 9):
+            if raw.score > deterministic_cap:
                 raise ReviewValidationError(stage="checklist_critic", check="rubric_score")
             if evaluation_sink is not None:
                 evaluation_sink(evaluation)
@@ -106,6 +131,7 @@ def _build_messages(
     revision_feedback: str,
     revision_history: list[str],
     rubric: dict[str, Any] | None = None,
+    deterministic_checks: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     history = "\n\n".join(item for item in revision_history if item.strip())
     product_sheet = sheet.to_dict()
@@ -120,6 +146,7 @@ def _build_messages(
         ("Issues from the previous critic pass", _serialize_previous_issues(previous_issues)),
         ("Draft specification", spec_md),
         ("Task-specific rubric", json.dumps({"items": rubric["items"]}, ensure_ascii=False) if rubric is not None else ""),
+        ("Deterministic checks", json.dumps(deterministic_checks, ensure_ascii=False) if deterministic_checks is not None else ""),
         workflow_constraints=workflow,
     )
 
