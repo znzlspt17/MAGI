@@ -130,4 +130,4 @@ pnpm --dir frontend test
 pnpm --dir frontend build
 ```
 
-핵심 제품 경계 검사는 `tests/core`에 있습니다. CI는 전용 PostgreSQL·pgvector와 공식 PostgreSQL checkpointer를 사용합니다. 로컬 SQL 대체 검사는 PostgreSQL 운영 복구 검증을 대신하지 않습니다. 브라우저 검사는 빌드한 화면과 가짜 모델 응답을 사용하며, 실제 모델 품질 평가는 별도입니다.
+모든 테스트와 검증 지원 파일은 `tests/`에 모으며, 대상 패키지와 목적에 따라 구분합니다. 폴더별 역할과 선택 실행 방법은 [테스트 안내](tests/README.md)를 참고하세요. CI는 전용 PostgreSQL·pgvector와 공식 PostgreSQL checkpointer를 사용합니다. 로컬 SQL 대체 검사는 PostgreSQL 운영 복구 검증을 대신하지 않습니다. 브라우저 검사는 빌드한 화면과 가짜 모델 응답을 사용하며, 실제 모델 품질 평가는 별도입니다.

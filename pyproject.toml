@@ -54,8 +54,8 @@ include = ["backend*", "gateway*", "protocol*", "frontend*"]
 "frontend" = ["templates/*.html", "static/dist/manifest.json", "static/dist/assets/*", "static/vendor/*.txt", "static/vendor/*.json"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests/core", "tests/e2e"]
-pythonpath = [".", "tests/core", "tests/e2e"]
+testpaths = ["tests"]
+pythonpath = ["."]
 
 [dependency-groups]
 logging = ["structlog>=26.1,<27", "orjson>=3.11,<4"]

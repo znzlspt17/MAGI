@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@/*": ["./src/*"], "react": ["./node_modules/@types/react/index.d.ts"], "react/*": ["./node_modules/@types/react/*"], "react-dom": ["./node_modules/@types/react-dom/index.d.ts"], "react-dom/*": ["./node_modules/@types/react-dom/*"], "d3-force": ["./node_modules/@types/d3-force/index.d.ts"], "*": ["./node_modules/*", "./node_modules/@types/*"] },
+    "typeRoots": ["./node_modules/@types"]
+  },
+  "include": ["../tests/frontend/src"]
+}

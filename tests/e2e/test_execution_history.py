@@ -6,7 +6,7 @@ def test_31_snapshots_survive_service_restart_and_step_api(store, monkeypatch):
     from backend.knowledge.core import Documents
     from backend.models import IssuePacket
     from gateway.app import create_app
-    from test_workflow import manager_for
+    from tests.support.workflow_helpers import manager_for
 
     manager, _ = manager_for(store, monkeypatch)
     job = manager.create("보스 격파 후 무기 유지 명세")
@@ -79,7 +79,7 @@ def test_31_snapshots_survive_service_restart_and_step_api(store, monkeypatch):
                 assert response.json["result"]["action"] == "repair"
                 assert response.json["document"]["content"] == f"# Draft {index}"
         assert ExecutionHistory(Documents(store, ident)).detail(snapshots[0][0])["result"]["plan"]["reason"] == "판단 근거 0"
-        from browser_runtime import gateway_server, run_browser
+        from tests.e2e.browser_runtime import gateway_server, run_browser
         import json
         with gateway_server(app) as url:
             run_browser("step_history_ui.mjs", url, ident, json.dumps([step_id for step_id, _ in snapshots]))

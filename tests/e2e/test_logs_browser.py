@@ -1,5 +1,5 @@
 """실제 React 화면을 검증한다. 로그 저장소·인증 응답은 브라우저 모형이다."""
-from browser_runtime import gateway_server, run_browser
+from tests.e2e.browser_runtime import gateway_server, run_browser
 from gateway.app import create_app
 from gateway.frontend import render_frontend
 

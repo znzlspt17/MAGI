@@ -2,7 +2,7 @@
 
 import time
 from gateway.app import create_app
-from browser_runtime import gateway_server, run_browser
+from tests.e2e.browser_runtime import gateway_server, run_browser
 
 
 class WorkspaceClient:
