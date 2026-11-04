@@ -28,7 +28,10 @@ def test_streamable_http_catalog_and_call_with_real_sdk(monkeypatch):
             result = {"tools": [tool]}
         elif method == "tools/call":
             assert message["params"] == {"name": "find", "arguments": {"query": "hello"}}
-            result = {"content": [{"type": "text", "text": "documentation"}], "isError": False}
+            result = {"content": [{"type": "text", "text": "documentation"},
+                                  {"type": "image", "data": "aW1hZ2U=", "mimeType": "image/png"},
+                                  {"type": "text", "text": "more"}],
+                      "structuredContent": {"source": "catalog"}, "isError": False}
         else:
             raise AssertionError(method)
         return httpx.Response(200, json={"jsonrpc": "2.0", "id": message["id"], "result": result}, request=request)
@@ -38,7 +41,7 @@ def test_streamable_http_catalog_and_call_with_real_sdk(monkeypatch):
     tools = remote.catalog("https://example.com/mcp", {})
     assert len(tools) == 1 and tools[0]["available"] is True
     result = remote.invoke("https://example.com/mcp", {}, tools[0], {"query": "hello"})
-    assert result == {"status": "ok", "text": "documentation"}
+    assert result == {"status": "ok", "text": 'documentation\nmore\n{"source": "catalog"}'}
     assert calls.count("initialize") == 2
     assert calls.count("tools/list") == 2
     assert calls.count("tools/call") == 1

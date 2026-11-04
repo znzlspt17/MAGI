@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from typing import Any
 
 
 def bounded_results(document, limit=8000):
@@ -9,7 +10,7 @@ def bounded_results(document, limit=8000):
     entries = document.get("results", []) if isinstance(document, dict) else []
     if not isinstance(entries, list):
         return None
-    selected = []
+    selected: list[dict[str, Any]] = []
     for item in reversed(entries):
         if not isinstance(item, dict) or item.get("status") != "ok":
             continue

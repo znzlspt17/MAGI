@@ -6,6 +6,7 @@ import asyncio
 from datetime import timedelta
 import hashlib
 import json
+from typing import Any
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
@@ -47,7 +48,8 @@ async def _catalog(url, headers):
         async with streamable_http_client(url, http_client=client) as (read, write, _):
             async with ClientSession(read, write, read_timeout_seconds=timedelta(seconds=30)) as session:
                 await session.initialize()
-                tools, cursor = [], None
+                tools: list[dict[str, Any]] = []
+                cursor = None
                 seen = set()
                 for _ in range(10):
                     result = await session.list_tools(cursor=cursor)
@@ -88,7 +90,7 @@ async def _invoke(url, headers, expected, arguments):
                 result = await session.call_tool(expected["name"], arguments, read_timeout_seconds=timedelta(seconds=30))
                 if result.isError:
                     return {"status": "error", "text": "도구 실행에 실패했습니다."}
-                parts = [item.text for item in result.content if getattr(item, "type", None) == "text"]
+                parts = [item.text for item in result.content if item.type == "text"]
                 if result.structuredContent is not None:
                     parts.append(json.dumps(result.structuredContent, ensure_ascii=False))
                 return {"status": "ok", "text": "\n".join(parts)[:8000]}

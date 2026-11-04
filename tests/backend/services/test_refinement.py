@@ -122,6 +122,15 @@ def test_segment_resume_and_explicit_extra_execution(case):
     assert prepare_segment(state)["refinement"] == {}
 
 
+@pytest.mark.parametrize("action", ["answer", "revise", "message"])
+def test_new_input_resets_refinement_and_approval(action):
+    state = {"pending_input": {"action": action}, "refinement": {"round": 2},
+             "approval_acceptance": {"accepted": True}}
+    result = prepare_segment(state)
+    assert result["refinement"] == {}
+    assert result["approval_acceptance"] == {}
+
+
 def test_approval_requires_acceptance_bound_to_current_candidate_and_evaluation(case):
     from backend.engine import Engine
     docs = MemoryDocuments()

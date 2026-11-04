@@ -32,7 +32,8 @@ def prepare_segment(state: WorkflowState) -> WorkflowState:
               "wait_reason": "", "stop_reason": ""}
     if action in {"answer", "revise", "message"}:
         result.update(fresh_review_budget())
-        result.update(refinement={}, approval_acceptance={})
+        result["refinement"] = {}
+        result["approval_acceptance"] = {}
     if action == "retry" and state.get("refinement", {}).get("termination") and state["refinement"].get("selected"):
         previous = state["refinement"]
         result.update(fresh_review_budget())
