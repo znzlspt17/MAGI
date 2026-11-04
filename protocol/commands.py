@@ -17,13 +17,17 @@ class JobCommand(BaseModel):
     job_id: str | None = None
     execution_id: str | None = None
     candidate_hash: str | None = None
+    evaluation_hash: str | None = None
     input: Any = None
     project_id: str | None = None
     decision_reuse: list[dict] | None = None
+    accept_remaining_issues: bool = Field(default=False, strict=True)
     replay_pending: bool = Field(default=False, strict=True)
 
     @model_validator(mode="after")
     def target(self):
+        if self.kind != "approve" and ({"accept_remaining_issues", "evaluation_hash"} & self.model_fields_set):
+            raise ValueError("남은 결함 수락은 승인에만 지정할 수 있습니다.")
         if self.kind != "retry" and "replay_pending" in self.model_fields_set:
             raise ValueError("미완료 단계 재실행 동의는 retry에만 지정할 수 있습니다.")
         if self.kind == "generate":
@@ -35,6 +39,8 @@ class JobCommand(BaseModel):
                 raise ValueError("새 작업에는 이전 실행을 지정할 수 없습니다.")
         elif not self.job_id or not self.execution_id:
             raise ValueError("현재 작업과 실행 식별값이 필요합니다.")
+        if self.kind == "approve" and self.accept_remaining_issues and not self.evaluation_hash:
+            raise ValueError("수락할 평가 버전이 필요합니다.")
         if self.kind == "approve" and not self.candidate_hash:
             raise ValueError("승인할 문서 버전이 필요합니다.")
         if self.kind != "generate" and (
@@ -70,5 +76,7 @@ class JobCommand(BaseModel):
             "execution_id": self.execution_id,
             "candidate_hash": self.candidate_hash,
             "payload": self.input,
+            **({"accept_remaining_issues": self.accept_remaining_issues,
+                **({"evaluation_hash": self.evaluation_hash} if self.evaluation_hash is not None else {})} if self.kind == "approve" else {}),
             **({"replay_pending": True} if self.kind == "retry" and self.replay_pending else {}),
         }

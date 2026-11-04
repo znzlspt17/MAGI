@@ -123,6 +123,7 @@ def test_legacy_constraints_do_not_block_candidate(monkeypatch):
     restored = State.from_dict(state).to_workflow_state()
     assert "segment_steps" not in restored
     assert "remaining_steps" not in restored
+    restored["refinement"] = {"termination": "max_score"}
     assert "compose_candidate" in allowed_tasks(restored, flow.engine.config)
     monkeypatch.setattr(agent_workflow, "plan_next", lambda state, nodes: decision("compose_candidate").model_dump())
     result = flow.planner(restored)

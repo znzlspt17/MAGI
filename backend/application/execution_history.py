@@ -443,6 +443,13 @@ class ExecutionHistory:
             node["status"] = "blocked"
             node["summary"] = "남은 결함과 자동 보완 실패 원인을 확인하세요."
         elif stage == "approve":
+            saved_state = state
+            evaluation = saved_state.get("rubric_evaluation", {})
+            if "score" in evaluation:
+                from backend.services.rubric import digest
+                detail["approval_review"] = {"score": evaluation["score"], "evaluation_hash": digest(evaluation),
+                    "accepted": saved_state.get("approval_acceptance", {}).get("accepted") is True,
+                    "remaining_issue_ids": [item["issue_id"] for item in saved_state.get("structured_issues", []) if item.get("status") != "resolved"]}
             self._copy_document("final/FINAL_AGENT_SPEC.md", detail, node, "final")
             saved = root.state
             completed = (

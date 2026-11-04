@@ -25,7 +25,10 @@ def digest(value):
 
 
 def task_id(state, name):
-    return digest([state['run_id'],state.get('revision',0),len(state.get('plan_history',[])),name])
+    identity = [state['run_id'],state.get('revision',0),len(state.get('plan_history',[])),name]
+    if name in {"mcp_decide", "mcp_execute"}:
+        identity.append(state.get("mcp", {}).get("round", 0))
+    return digest(identity)
 
 
 class AgentWorkflow:
@@ -120,9 +123,96 @@ class AgentWorkflow:
         history = [*state.get("plan_history", []), {**plan, "revision": state.get("revision", 0)}]
         result = {"plan": plan, "plan_history": history, "allowed_actions": [],
                   "execution_constraints": state["execution_constraints"]}
+        if plan.get("action") in {"interview", "ask_user"} and state.get("mcp", {}).get("snapshot"):
+            result["mcp"] = {"snapshot": state["mcp"]["snapshot"], "round": 0, "results": []}
         self.persist("planner", {**state, **result})
         _progress(self.progress, "planner", "completed", {"plan": plan})
         return result
+
+    def mcp_decide(self, state):
+        """2026-11-03: 판단과 외부 호출을 분리해 각각 독립 복구 경계를 둔다."""
+        from backend.mcp_client.service import MCPService
+        from backend.mcp_client.workflow import MCPDecision, interview_messages, model_messages
+        from backend.infrastructure.prompt_context import prepare_context
+        from backend.infrastructure.provider_call import _complete_once
+        from backend.infrastructure.output_language import language_issues, OutputLanguageError
+
+        def operation(current):
+            info = current.get("mcp", {})
+            owner = self.engine.runtime.job.get("owner_id")
+            available = MCPService(self.writer.store).available(owner, info.get("snapshot", [])) if owner else []
+            if not available and not info.get("results"):
+                return {"mcp": {**info, "bypass": True}}
+            messages = interview_messages(self.nodes, self.writer, current)
+            projected, references = prepare_context(self.writer, messages, "interview")
+            projected = model_messages(projected, available, info.get("results", []), allow_tools=info.get("round", 0) < 3)
+            choice = _complete_once(self.writer, self.nodes.provider, projected,
+                model=self.nodes.config.model_routing["interviewer"].model, stage="interview",
+                isolated_schema=MCPDecision)
+            if choice.action == "finish":
+                if choice.interview is None:
+                    raise InvalidStateError("인터뷰 결과를 확인할 수 없습니다.")
+                answer = references.restore(choice.interview)
+                issues = language_issues(answer)
+                if issues:
+                    raise OutputLanguageError(issues)
+                return {"mcp": {**info, "response": answer.model_dump(), "bypass": False}}
+            if (info.get("round", 0) >= 3 or choice.interview is not None or not choice.connection_id
+                    or not choice.tool_name or not isinstance(choice.arguments_json, str)):
+                raise InvalidStateError("도구 요청을 확인할 수 없습니다.")
+            return {"mcp": {**info, "request": {"connection_id": choice.connection_id,
+                    "tool_name": choice.tool_name, "arguments_json": choice.arguments_json}}}
+
+        return self.durable("mcp_decide", state, operation)
+
+    def mcp_execute(self, state):
+        from backend.infrastructure.workflow_store import provider_entered
+        from backend.mcp_client.service import MCPService
+        from backend.mcp_client.security import MCPValidationError, validate_arguments
+
+        def operation(current):
+            info = current.get("mcp", {})
+            request = info.get("request", {})
+            owner = self.engine.runtime.job.get("owner_id")
+            service = MCPService(self.writer.store)
+            available = service.available(owner, info.get("snapshot", [])) if owner else []
+            selected = next(((row, tool) for row, tool in available if row["id"] == request.get("connection_id")
+                             and tool["name"] == request.get("tool_name")), None)
+            try:
+                raw = request.get("arguments_json", "")
+                if not isinstance(raw, str) or len(raw.encode("utf-8")) > 16384 or selected is None:
+                    raise MCPValidationError("허용된 도구와 입력을 확인하세요.")
+                arguments = json.loads(raw)
+                validate_arguments(selected[1]["schema"], arguments)
+            except (ValueError, TypeError, RecursionError):
+                result = {"status": "invalid", "text": "도구 입력 또는 허용 상태를 확인할 수 없습니다."}
+            else:
+                argument_hash = digest(arguments)
+                previous = self.writer.read_json("research/mcp_results.json").get("results", []) if self.writer.exists("research/mcp_results.json") else []
+                cached = next((item for item in previous if item.get("connection_id") == request["connection_id"]
+                               and item.get("tool_name") == request["tool_name"] and item.get("arguments_hash") == argument_hash
+                               and item.get("schema_hash") == selected[1]["schema_hash"] and item.get("connection_version") == selected[0]["version"]
+                               and item.get("status") == "ok"), None)
+                if cached is None:
+                    # 네트워크 호출의 불확실성은 모델 호출과 별도 저널 경계로 기록한다.
+                    provider_entered()
+                    result = service.invoke(owner, info.get("snapshot", []), request["connection_id"], request["tool_name"], arguments)
+                else:
+                    result = {"status": cached["status"], "text": cached["text"]}
+            entry = {"connection_id": request.get("connection_id"), "tool_name": request.get("tool_name"), **result}
+            if selected is not None and result.get("status") != "invalid":
+                entry.update(arguments_hash=argument_hash, schema_hash=selected[1]["schema_hash"], connection_version=selected[0]["version"])
+            results = [*info.get("results", []), entry]
+            saved = self.writer.read_json("research/mcp_results.json").get("results", []) if self.writer.exists("research/mcp_results.json") else []
+            if entry not in saved:
+                saved.append(entry)
+            self.writer.write_json("research/mcp_results.json", {"results": saved})
+            if result.get("status") == "ok":
+                self.evidence.add("MCP_SOURCE", "외부 도구 결과", request.get("connection_id", ""),
+                                  metadata={"tool": request.get("tool_name", "")})
+            return {"mcp": {key: value for key, value in {**info, "results": results, "round": info.get("round", 0) + 1}.items() if key != "request"}}
+
+        return self.durable("mcp_execute", state, operation)
 
     def blocked(self, state, reason=None, stop_reason=None):
         stop_reason = stop_reason or state.get("plan", {}).get("stop_reason") or StopReason.MODEL_BLOCKED.value
@@ -200,8 +290,12 @@ class AgentWorkflow:
                           "signature": signature, "result_hash": digest(result),
                           "reason": state["plan"]["reason"], "status": "completed"}])
         if action == "compose_candidate":
+            # 최고점 복원 후 최신 버전 참조도 선택된 초안에 맞춘다.
+            chosen = self._candidate_hash()
+            self.writer.write_text(f"draft_versions/{chosen}.md", self.writer.read_text("draft/approval_candidate_spec.en.md"), overwrite=True)
+            result["document_versions"] = [*versions, {"revision": state.get("revision", 0), "hash": chosen}]
             result.update(candidate_hash=self._candidate_hash(), wait_reason="검토를 마친 명세를 승인하거나 수정해주세요.",
-                          allowed_actions=["approve", "message", "revise"])
+                          allowed_actions=["approve", "message", "revise", "retry"])
         self.persist("requirement_lock" if action == "requirement_lock_stage" else action, {**state, **result})
         return result
 
@@ -244,10 +338,14 @@ class AgentWorkflow:
                            "allowed_actions": state.get("allowed_actions", []),
                            "revision": state.get("revision", 0)})
         action = value.get("action") if isinstance(value, dict) else None
-        if action not in state.get("allowed_actions", []):
+        from backend.services.refinement import needs_upgrade
+        upgrade_retry = action == "retry" and needs_upgrade(state)
+        if action not in state.get("allowed_actions", []) and not upgrade_retry:
             raise InvalidStateError("현재 대기 상태에 맞지 않는 입력입니다.")
         if action == "approve":
-            return Command(update={"pending_input": {"action": action}}, goto="finalize")
+            incoming = value.get("state", {})
+            return Command(update={"pending_input": {"action": action},
+                "approval_acceptance": incoming.get("approval_acceptance", {})}, goto="finalize")
         incoming = value.get("state")
         if not isinstance(incoming, dict) or incoming.get("run_id") != state["run_id"]:
             raise InvalidStateError("재개 입력의 작업을 확인할 수 없습니다.")
@@ -268,13 +366,25 @@ class AgentWorkflow:
 
     def build(self, saver):
         graph = StateGraph(WorkflowState)
-        for name in ("prepare", "planner", "execute", "ask", "blocked", "wait", "finalize"):
+        for name in ("prepare", "planner", "execute", "ask", "blocked", "wait", "finalize", "mcp_decide", "mcp_execute"):
             graph.add_node(name, getattr(self, name))
         graph.add_edge(START, "prepare")
         graph.add_conditional_edges("prepare", lambda state: "ask" if state.get("blocking_questions") else "planner")
-        graph.add_conditional_edges("planner", lambda state: {
-            "ask_user": "ask", "blocked": "blocked",
-        }.get(state["plan"]["action"], "execute"))
+        def route_plan(state):
+            action = state["plan"]["action"]
+            review = bool(state.get("requirement_lock_sheet") and any(
+                item.get("status") != "resolved" and (item.get("severity") in {"blocking", "major"}
+                    or item.get("resolution_kind") == "user_decision" or item.get("decision_answer_id"))
+                for item in state.get("structured_issues", [])))
+            if (state.get("mcp", {}).get("snapshot") and not state.get("blocking_questions")
+                    and (action == "interview" or (action == "ask_user" and not review))):
+                return "mcp_decide"
+            return {"ask_user": "ask", "blocked": "blocked"}.get(action, "execute")
+        graph.add_conditional_edges("planner", route_plan)
+        graph.add_conditional_edges("mcp_decide", lambda state:
+            "mcp_execute" if state.get("mcp", {}).get("request") else
+            "ask" if state.get("plan", {}).get("action") == "ask_user" else "execute")
+        graph.add_edge("mcp_execute", "mcp_decide")
         graph.add_conditional_edges("execute", lambda state: "wait" if state.get("allowed_actions") else "planner")
         graph.add_conditional_edges("ask", lambda state: "wait" if state.get("allowed_actions") else "planner")
         graph.add_edge("blocked", "wait")
@@ -301,10 +411,20 @@ class AgentWorkflow:
             if not snapshot.values and action != "generate":
                 raise InvalidStateError("저장된 그래프 상태를 찾을 수 없습니다. 실행 DB와 checkpoint 백업을 확인해주세요.")
             incoming = state.to_workflow_state()
-            if snapshot.values and snapshot.next:
+            from backend.services.rubric import POLICY_VERSION
+            old_policy = incoming.get("rubric", {}).get("policy_version")
+            upgrade_recovery = (action == "retry" and old_policy is not None and old_policy != POLICY_VERSION
+                and not recovery["retry_requires_replay"]
+                and snapshot.next and not any(task.interrupts for task in snapshot.tasks))
+            if upgrade_recovery:
+                # 미확정 호출은 위의 원래 재실행 보호를 유지한다. 완료 여부가 확정된 구형 단계만 새 평가로 전환한다.
+                incoming.update(self.prepare({**incoming, "pending_input": {"action": "retry"}}))
+                graph.update_state(config, incoming, as_node="prepare")
+                inputs: Command | dict | None = None
+            elif snapshot.values and snapshot.next:
                 if any(task.interrupts for task in snapshot.tasks):
                     resume_action = "revise" if action == "revise" else action
-                    inputs: Command | dict | None = Command(resume={"action": resume_action, "state": incoming})
+                    inputs = Command(resume={"action": resume_action, "state": incoming})
                 elif action == "retry" or (action == "approve" and snapshot.next == ("finalize",)):
                     # 실패 복구에는 새 입력 대신 None으로 저장된 실행을 이어간다.
                     inputs = None

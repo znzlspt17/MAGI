@@ -15,7 +15,8 @@ class Config:
             key: ModelRoute(provider="openai", model=MODEL) for key in AGENT_KEYS
         }
     )
-    max_critic_passes: int = 3
+    max_critic_passes: int = 5
+    refinement_patience: int = 2
 
     def validate(self):
         if set(self.model_routing) != set(AGENT_KEYS):
@@ -24,5 +25,8 @@ class Config:
             if route.provider != "openai":
                 raise Error("지원하지 않는 모델 제공자입니다.")
             require_model(route.model)
-        if not 1 <= self.max_critic_passes <= 3:
-            raise Error("검토 한도는 1~3회여야 합니다.")
+        if not 1 <= self.max_critic_passes <= 5:
+            raise Error("검토 한도는 1~5회여야 합니다.")
+
+        if not 1 <= self.refinement_patience <= 5:
+            raise Error("개선 정체 한도는 1~5회여야 합니다.")

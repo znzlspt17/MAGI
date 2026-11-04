@@ -19,6 +19,7 @@ export class ApiError extends Error {
   }
 }
 async function responseData(response: Response): Promise<unknown> {
+  if (response.status === 204) return null;
   try { return await response.json(); }
   catch {
     if (response.ok) throw new ApiError("서버 응답 형식이 올바르지 않습니다.", response.status);
@@ -35,23 +36,30 @@ export async function api(
   path: string,
   options: RequestInit = {},
 ): Promise<unknown> {
+  return request(path, options);
+}
+
+async function request(path: string, options: RequestInit, sensitiveOperationId?: string): Promise<unknown> {
   const generation = authGeneration,
     method = (options.method || "GET").toUpperCase(),
     headers = new Headers(options.headers),
-    signature = `${method}:${path}:${options.body || ""}`;
+    // 2026-11-03: 인증정보 요청은 본문을 재시도 식별자나 Map에 남기지 않는다.
+    signature = sensitiveOperationId ? null : `${method}:${path}:${options.body || ""}`;
   if (publicMode && csrf) {
     headers.set("X-CSRF-Token", csrf);
   }
   if (publicMode && !["GET", "HEAD", "OPTIONS"].includes(method)) {
-    if (!pending.has(signature)) pending.set(signature, crypto.randomUUID());
-    headers.set("Idempotency-Key", pending.get(signature)!);
+    if (signature !== null) {
+      if (!pending.has(signature)) pending.set(signature, crypto.randomUUID());
+      headers.set("Idempotency-Key", pending.get(signature)!);
+    } else headers.set("Idempotency-Key", sensitiveOperationId!);
   }
   const response = await fetch(path, {
     credentials: "same-origin",
     ...options,
     headers,
   });
-  if (generation === authGeneration && (response.ok || response.status < 500))
+  if (signature !== null && generation === authGeneration && (response.ok || response.status < 500))
     pending.delete(signature);
   if (publicMode && generation === authGeneration && response.status === 401)
     window.dispatchEvent(new Event("signed-out"));
@@ -62,6 +70,12 @@ export async function api(
       response.status,
     );
   return data;
+}
+
+// 호출자는 같은 조작을 재시도할 때만 이 불투명 ID를 재사용한다.
+export function sensitiveMutation(path: string, method: "POST" | "PATCH", payload: unknown, operationId: string) {
+  if (!operationId) throw new Error("요청 식별자가 필요합니다.");
+  return request(path, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, operationId);
 }
 export function post(
   path: string,

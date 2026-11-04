@@ -13,6 +13,10 @@ from backend.knowledge.config import KnowledgeConfig
 from backend.knowledge.store import KnowledgeStore
 
 
+VERSION = len(setup.load_migrations())
+NEXT = f"{VERSION + 1:03d}.sql"
+
+
 def prepare(store):
     runtime = PublicRuntime(store)
     try:
@@ -33,7 +37,7 @@ def migration_files(tmp_path, monkeypatch):
 
 
 def test_fresh_database_and_restart_preserve_job_and_history(empty_store):
-    assert prepare(empty_store) == {"phase": "ready", "version": 4, "applied": 4}
+    assert prepare(empty_store) == {"phase": "ready", "version": VERSION, "applied": VERSION}
     project = empty_store.create_project("신규 설치")
     job = {"id": "j", "project_id": project["id"], "request": "보존할 입력"}
     empty_store.save_job(job)
@@ -48,17 +52,17 @@ def test_fresh_database_and_restart_preserve_job_and_history(empty_store):
 
 
 def test_next_migration_is_applied_once(store, migration_files):
-    (migration_files / "005.sql").write_text("CREATE TABLE core.second_change(id integer);", encoding="utf-8")
+    (migration_files / NEXT).write_text("CREATE TABLE core.second_change(id integer);", encoding="utf-8")
     with pytest.raises(setup.MigrationError, match="미적용"):
         store.require_ready()
-    assert prepare(store) == {"phase": "ready", "version": 5, "applied": 1}
+    assert prepare(store) == {"phase": "ready", "version": VERSION + 1, "applied": 1}
     assert prepare(store)["applied"] == 0
     with store.transaction(mode="read") as conn:
-        assert [row["version"] for row in conn.execute("SELECT version FROM public.schema_migrations ORDER BY version").fetchall()] == [1, 2, 3, 4, 5]
+        assert [row["version"] for row in conn.execute("SELECT version FROM public.schema_migrations ORDER BY version").fetchall()] == list(range(1, VERSION + 2))
 
 
 def test_missing_app_table_rolls_back_before_checkpoint_setup(store, migration_files, monkeypatch):
-    (migration_files / "005.sql").write_text("DROP TABLE workflow.workflow_task_results;", encoding="utf-8")
+    (migration_files / NEXT).write_text("DROP TABLE workflow.workflow_task_results;", encoding="utf-8")
     checkpoint_setup = Mock(side_effect=AssertionError("앱 준비 실패 뒤 SDK를 실행하면 안 된다."))
     monkeypatch.setattr("backend.knowledge.core.checkpoint_store", checkpoint_setup)
     with pytest.raises(setup.MigrationError, match="필수 저장소 테이블"):
@@ -66,25 +70,25 @@ def test_missing_app_table_rolls_back_before_checkpoint_setup(store, migration_f
     checkpoint_setup.assert_not_called()
     with store.transaction(mode="read") as conn:
         assert conn.execute("SELECT to_regclass('workflow.workflow_task_results') AS name").fetchone()["name"]
-        assert conn.execute("SELECT version FROM public.schema_migrations").fetchall() == [{"version": 1}, {"version": 2}, {"version": 3}, {"version": 4}]
+        assert conn.execute("SELECT version FROM public.schema_migrations ORDER BY version").fetchall() == [{"version": n} for n in range(1, VERSION + 1)]
 
 
 @pytest.mark.parametrize("already_installed", [False, True])
 def test_failure_rolls_back_all_pending_sql_and_history(empty_store, migration_files, capsys, already_installed):
     if already_installed:
         prepare(empty_store)
-    (migration_files / "005.sql").write_text("CREATE TABLE public.should_rollback(id integer); SELECT 'fake-sensitive-fixture'::integer;", encoding="utf-8")
-    with pytest.raises(setup.MigrationError, match="005.sql") as caught:
+    (migration_files / NEXT).write_text("CREATE TABLE public.should_rollback(id integer); SELECT 'fake-sensitive-fixture'::integer;", encoding="utf-8")
+    with pytest.raises(setup.MigrationError, match=NEXT) as caught:
         prepare(empty_store)
     assert "fake-sensitive-fixture" not in str(caught.value)
     output = capsys.readouterr()
     assert "fake-sensitive-fixture" not in output.err + output.out
-    assert "migration=005.sql" in output.err + output.out
+    assert f"migration={NEXT}" in output.err + output.out
     with empty_store.transaction(mode="read") as conn:
         for table in ("public.should_rollback",):
             assert conn.execute("SELECT to_regclass(%s) AS name", (table,)).fetchone()["name"] is None
         if already_installed:
-            assert conn.execute("SELECT version FROM public.schema_migrations").fetchall() == [{"version": 1}, {"version": 2}, {"version": 3}, {"version": 4}]
+            assert conn.execute("SELECT version FROM public.schema_migrations ORDER BY version").fetchall() == [{"version": n} for n in range(1, VERSION + 1)]
         else:
             for table in ("public.users", "public.schema_migrations", "core.jobs"):
                 assert conn.execute("SELECT to_regclass(%s) AS name", (table,)).fetchone()["name"] is None
@@ -96,9 +100,9 @@ def test_invalid_history_stops_before_checkpoint_setup(store, migration_files, m
         path = migration_files / "001.sql"
         path.write_bytes(path.read_bytes() + b"\n-- changed\n")
     elif change == "missing_middle":
-        (migration_files / "006.sql").write_text("SELECT 1;", encoding="utf-8")
+        (migration_files / "002.sql").unlink()
     elif change == "missing_latest":
-        path = migration_files / "005.sql"
+        path = migration_files / NEXT
         path.write_text("SELECT 1;", encoding="utf-8")
         prepare(store)
         path.unlink()
@@ -106,9 +110,9 @@ def test_invalid_history_stops_before_checkpoint_setup(store, migration_files, m
         with store.transaction() as conn:
             if change == "db_gap":
                 conn.execute("DELETE FROM public.schema_migrations WHERE version=1")
-                (migration_files / "005.sql").write_text("SELECT 1;", encoding="utf-8")
+                (migration_files / NEXT).write_text("SELECT 1;", encoding="utf-8")
             else:
-                conn.execute("INSERT INTO public.schema_migrations(version,checksum) VALUES (5,'test')")
+                conn.execute("INSERT INTO public.schema_migrations(version,checksum) VALUES (%s,'test')", (VERSION + 1,))
     checkpoint_setup = Mock(side_effect=AssertionError("이력 검사 전에 checkpoint를 변경하면 안 된다."))
     monkeypatch.setattr("backend.knowledge.core.checkpoint_store", checkpoint_setup)
     with pytest.raises(setup.MigrationError):
@@ -116,7 +120,7 @@ def test_invalid_history_stops_before_checkpoint_setup(store, migration_files, m
     checkpoint_setup.assert_not_called()
 
 
-@pytest.mark.parametrize("filename", ["000.sql", "1.sql", "006.sql"])
+@pytest.mark.parametrize("filename", ["000.sql", "1.sql", NEXT])
 def test_migration_files_must_start_at_001(migration_files, filename):
     (migration_files / "001.sql").rename(migration_files / filename)
     with pytest.raises(setup.MigrationError):
@@ -147,7 +151,7 @@ def test_checkpoint_failure_keeps_sql_history_and_retries(empty_store, monkeypat
             prepare(empty_store)
         assert "fake-private-driver-message" not in str(caught.value)
     with empty_store.transaction(mode="read") as conn:
-        assert len(conn.execute("SELECT version FROM public.schema_migrations").fetchall()) == 4
+        assert len(conn.execute("SELECT version FROM public.schema_migrations").fetchall()) == VERSION
     with pytest.raises(setup.MigrationError, match="필수 저장소 테이블"):
         empty_store.require_ready()
     assert prepare(empty_store)["applied"] == 0

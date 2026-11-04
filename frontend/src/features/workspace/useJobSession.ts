@@ -176,6 +176,7 @@ export function useJobSession() {
       const result = decodeJob(await post("/api/commands", kind === "generate" ? { kind, input, ...selections }
         : { kind, job_id: id, execution_id: job?.execution_id, input,
           ...(kind === "retry" && selections.replay_pending ? { replay_pending: true } : {}),
+          ...(kind === "approve" ? { accept_remaining_issues: selections.accept_remaining_issues === true, evaluation_hash: job?.state?.rubric_review?.evaluation_hash } : {}),
           candidate_hash: kind === "approve" ? job?.state?.candidate_hash : undefined }));
       if (result.id === selected.current) {
         const progress = { job: result, revision: 0, serverOffset: 0 };

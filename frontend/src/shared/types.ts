@@ -49,7 +49,17 @@ export interface ExecutionDiagnostic {
   stop_code: string; target_action: string; block_reasons: string[];
   review_pass_count: number; review_pass_limit: number;
 }
+export interface RubricReview {
+  score: number; score_reason: string; round: number; selected_round: number; selected_cycle: number;
+  termination: "" | "max_score" | "patience" | "round_budget"; requires_acceptance: boolean; evaluation_hash: string;
+  revision_directives: string[];
+  remaining_issues: { issue_id: string; severity: string; problem: string; required_change: string }[];
+  items: { rubric_id: string; requirement_id: string; condition: string; importance: "core" | "critical" | "secondary";
+    basis: { reference: string; quote: string }[]; verdict: "PASS" | "FAIL" | "UNDETERMINED";
+    section: string; quote: string; reason: string; evidence_kind: "quote" | "absence" }[];
+}
 export interface JobState {
+  rubric_review?: RubricReview;
   execution_diagnostic?: ExecutionDiagnostic;
   status?: string; allowed_actions?: string[]; blocking_questions?: string[];
   question_forms?: Record<string, QuestionForm>; saved_answers?: SavedAnswer[]; review_questions?: ReviewQuestion[];
@@ -58,7 +68,7 @@ export interface JobState {
   task_results?: { action: string; revision: number; status?: string; reason?: string }[];
   document_versions?: { step_id?: string; hash: string }[];
 }
-export interface CommandSelections { replay_pending?: boolean; project_id?: string | null; decision_reuse?: unknown[] }
+export interface CommandSelections { accept_remaining_issues?: boolean; replay_pending?: boolean; project_id?: string | null; decision_reuse?: unknown[] }
 
 export interface ResearchRecord {
   search_method?: string;
@@ -89,7 +99,8 @@ export interface Job {
   status: string;
   execution_id?: string;
   can_retry?: boolean;
-    retry_requires_replay?: boolean;
+  retry_requires_replay?: boolean;
+  retry_kind?: "mcp" | "model" | "none";
   retry_unavailable_reason?: string;
   state?: JobState;
   change_review?: ChangeReviewData;

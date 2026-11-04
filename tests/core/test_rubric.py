@@ -32,7 +32,7 @@ def case(monkeypatch):
     sheet = RequirementLockSheet("lock", "feature", "메모", [],
         mandatory_requirements=[RequirementItem("REQ-001", "Store notes locally.", original_text="메모 저장")])
     state = {"user_request": "메모 저장", "requirement_lock_sheet": sheet.to_dict()}
-    response = RubricResponse(items=[dict(rubric_id="RUB-001", requirement_id="REQ-001", category="requirement",
+    response = RubricResponse(items=[dict(rubric_id="RUB-001", requirement_id="REQ-001", category="requirement", importance="core",
         basis=[dict(reference="REQ-001", quote="Store notes locally.")],
         condition="Verify local note persistence is specified.", sections=["architecture", "test_plan"])])
     complete = Mock(return_value=response)
@@ -50,7 +50,7 @@ def case(monkeypatch):
 
 
 def review(case, **changes):
-    return ReviewResponse(issues=[], rubric_verdicts=[{**case.verdict, **changes}])
+    return ReviewResponse(score=10, score_reason="모든 기준을 충족합니다.", critical_failures=[], revision_directives=[], issues=[], rubric_verdicts=[{**case.verdict, **changes}])
 
 
 @pytest.mark.parametrize("change,check", [
@@ -125,7 +125,7 @@ def failed_review(case, verdict="FAIL"):
         missing_information="", decision_key="RUB-001", section="test_plan", severity="major", checklist_id="RUB-001",
         problem="저장 검증 절차가 없습니다.", required_change="확정된 저장 동작을 확인하는 테스트를 보완하세요.",
         requirement_id="REQ-001", evidence=[dict(source="test_plan", quote="")])
-    return ReviewResponse(issues=[issue], rubric_verdicts=[{**case.verdict, "verdict": verdict, "section": "test_plan",
+    return ReviewResponse(score=4, score_reason="필수 동작을 보완해야 합니다.", critical_failures=["RUB-001"], revision_directives=["저장 테스트를 보완하세요."], issues=[issue], rubric_verdicts=[{**case.verdict, "verdict": verdict, "section": "test_plan",
         "evidence_kind": "absence", "quote": "", "issue_checklist_id": "RUB-001"}])
 
 
@@ -142,14 +142,13 @@ def test_absence_becomes_existing_required_issue_without_fake_quote(case, verdic
     assert evaluations[0]["verdicts"][0]["verdict"] == verdict
     rubric.save_evaluation(case.docs, evaluations[0])
     state = {**case.state, "rubric_evaluation": evaluations[0]}
-    with pytest.raises(ReviewValidationError):
-        rubric.require_approval_evaluation(state, case.sheet, case.spec)
+    rubric.require_approval_evaluation(state, case.sheet, case.spec)
 
 
 def test_deterministic_failure_survives_all_pass(case):
     broken = case.spec.replace("## 1. Mission", "## Missing Mission")
-    issues = ChecklistCritic().critique(broken, case.sheet, provider_messages_fn=lambda _: review(case), rubric=case.record)
-    assert any(item.checklist_id == "SEC-REQUIRED-001" for item in issues)
+    with pytest.raises(ReviewValidationError):
+        ChecklistCritic().critique(broken, case.sheet, provider_messages_fn=lambda _: review(case), rubric=case.record, evaluation_sink=lambda _: None)
 
 
 def test_normal_spec_does_not_gain_required_issues(case):
@@ -326,6 +325,9 @@ def test_failed_check_uses_existing_repair_loop_and_reuses_rubric(store, monkeyp
                 issue.evidence[0].source = "architecture"
                 result.parsed.issues = response.issues
                 result.parsed.rubric_verdicts = response.rubric_verdicts
+                result.parsed.score = 4
+                result.parsed.critical_failures = [rubric_id]
+                result.parsed.revision_directives = response.revision_directives
                 self.last_issues = response.issues
             return result
 

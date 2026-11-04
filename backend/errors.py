@@ -49,7 +49,7 @@ class ReviewValidationError(Error):
                         "resolution_language", "resolution_basis", "resolution_question", "resolution_auto_fix",
                         "resolution_reconfirmation", "question_text", "question_form", "question_pending",
                         "rubric_schema", "rubric_identity", "rubric_basis", "rubric_boundary", "rubric_coverage",
-                        "rubric_evaluation_coverage", "rubric_evidence", "rubric_issue", "rubric_stale"})
+                        "rubric_evaluation_coverage", "rubric_evidence", "rubric_issue", "rubric_stale", "rubric_score"})
 
     def __init__(self, details=None, *, stage="checklist_critic", check="review_response"):
         super().__init__("Checklist review response could not be validated.")

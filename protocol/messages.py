@@ -11,6 +11,14 @@ from typing import NotRequired, TypedDict
 MAX_MESSAGE_BYTES = 128 * 1024
 # None 항목은 인증 서비스 또는 구독·상태 경계에서 처리한다.
 RPC_METHODS = {
+    "mcp.list": None,
+    "mcp.get": None,
+    "mcp.create": None,
+    "mcp.update": None,
+    "mcp.delete": None,
+    "mcp.test": None,
+    "mcp.oauth.start": None,
+    "mcp.oauth.callback": None,
     "progress.authorize": None,
     "progress.list": None,
     "progress.snapshot": None,

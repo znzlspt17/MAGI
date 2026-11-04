@@ -20,6 +20,7 @@ export function NavUser() {
       <DropdownMenuSeparator />
       <DropdownMenuItem onSelect={() => void navigator.clipboard.writeText(auth.user!.id).then(() => auth.setNotice("사용자 ID를 복사했습니다.")).catch(() => auth.setNotice("표시된 ID를 직접 복사하세요."))}><CopyIcon size={18} aria-hidden />사용자 ID 복사</DropdownMenuItem>
       {auth.user.role === "admin" && <DropdownMenuItem asChild><a href="/admin"><GearIcon size={18} aria-hidden />관리자 페이지</a></DropdownMenuItem>}
+      <DropdownMenuItem asChild><a href="/settings/mcp"><GearIcon size={18} aria-hidden />MCP 연결</a></DropdownMenuItem>
       <DropdownMenuItem asChild><a href="/privacy"><ShieldCheckIcon size={18} aria-hidden />정보 처리 안내</a></DropdownMenuItem>
       <DropdownMenuItem asChild><a href="/licenses"><CopyrightIcon size={18} aria-hidden />오픈소스 라이선스</a></DropdownMenuItem>
       <DropdownMenuItem asChild><a href="/research"><BookOpenIcon size={18} aria-hidden />연구 출처 및 적용 방식</a></DropdownMenuItem>

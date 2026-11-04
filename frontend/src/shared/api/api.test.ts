@@ -1,5 +1,5 @@
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
-import {api,clearRequests,configureAuth,post} from './api';
+import {api,clearRequests,configureAuth,post,sensitiveMutation} from './api';
 const reply=(value:unknown,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json'}});
 it('성공 상태의 잘못된 JSON을 빈 성공 결과로 바꾸지 않는다',async()=>{
  vi.spyOn(globalThis,'fetch').mockResolvedValue(new Response('invalid',{status:200}));
@@ -38,6 +38,15 @@ it('5xx 응답은 문의 번호를 안내하고 재시도 키를 보존한다',a
  const fetcher=vi.spyOn(globalThis,'fetch').mockResolvedValueOnce(reply({error:'작업 확인 필요',request_id:'fake-request-id'},503)).mockResolvedValueOnce(reply({ok:true}));
  await expect(post('/api/jobs',{request:'test'})).rejects.toThrow('문의 번호 fake-request-id');expect(fetcher).toHaveBeenCalledTimes(1);
  await post('/api/jobs',{request:'test'});expect(new Headers(fetcher.mock.calls[0][1]?.headers).get('Idempotency-Key')).toBe(new Headers(fetcher.mock.calls[1][1]?.headers).get('Idempotency-Key'));
+});
+it('민감한 변경은 본문과 무관한 불투명 멱등성 키로 재시도한다',async()=>{
+ const fetcher=vi.spyOn(globalThis,'fetch').mockResolvedValueOnce(reply({error:'temporary'},503)).mockResolvedValueOnce(reply({ok:true}));
+ const operationId='fake-operation-id';
+ await expect(sensitiveMutation('/api/mcp/connections','POST',{credential:'fake-sensitive-value'},operationId)).rejects.toThrow();
+ await sensitiveMutation('/api/mcp/connections','POST',{credential:'different-fake-value'},operationId);
+ const first=new Headers(fetcher.mock.calls[0][1]?.headers),second=new Headers(fetcher.mock.calls[1][1]?.headers);
+ expect(first.get('X-CSRF-Token')).toBe('test-csrf');expect(first.get('Idempotency-Key')).toBe(operationId);
+ expect(second.get('Idempotency-Key')).toBe(operationId);
 });
 it('이전 인증의 늦은 401은 현재 인증을 해제하지 않는다',async()=>{
  let finish!:(value:Response)=>void;vi.spyOn(globalThis,'fetch').mockImplementation(()=>new Promise(resolve=>finish=resolve));

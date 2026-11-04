@@ -130,7 +130,7 @@ def test_exhausted_review_is_reclassified_but_confirmed_answer_is_not_asked(monk
         state["review_questions"] = [{"decision_key": decision_identity(issue), "question_id": "Q1"}]
     result = node.review_resolution(state, final=True)
     assert complete.call_count == 1
-    assert result["resolution_stop"] is (passes > 1)
+    assert result["resolution_stop"] is False
     assert bool(result["blocking_questions"]) is not answered
     assert result["structured_issues"][0]["resolution_kind"] == ("auto_fix" if answered else "user_decision")
     assert result["structured_issues"][1]["resolution_kind"] == "auto_fix"

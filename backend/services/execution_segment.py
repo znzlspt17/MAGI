@@ -30,8 +30,17 @@ def prepare_segment(state: WorkflowState) -> WorkflowState:
               "execution_constraints": {}, "execution_diagnostic": {},
               "execution_segment": state.get("execution_segment", 0) + 1,
               "wait_reason": "", "stop_reason": ""}
-    if action in {"answer", "revise", "message", "retry"}:
+    if action in {"answer", "revise", "message"}:
         result.update(fresh_review_budget())
+        result.update(refinement={}, approval_acceptance={})
+    if action == "retry" and state.get("refinement", {}).get("termination") and state["refinement"].get("selected"):
+        previous = state["refinement"]
+        result.update(fresh_review_budget())
+        result["refinement"] = {**previous, "round": 0, "stale": 0,
+            "cycle": previous["cycle"] + 1, "termination": "", "selected": False, "last_token": ""}
+        result["approval_acceptance"] = {}
+        result["completed_tasks"] = [name for name in done if name not in {
+            "spec_compile", "checklist_critic", "review_resolution", "compose_candidate"}]
     if action in {"generate", "answer", "revise", "message", "retry"} and state.get("requirement_lock_sheet"):
         from backend.models import RequirementLockSheet
         from backend.services.rubric import current_record
@@ -42,6 +51,8 @@ def prepare_segment(state: WorkflowState) -> WorkflowState:
                 "spec_compile", "checklist_critic", "review_resolution", "compose_candidate"}]
             result["rubric_evaluation"] = {}
             result["rubric_summary"] = {}
+            result["refinement"] = {}
+            result.update(fresh_review_budget())
     if action in {"answer", "revise", "message"}:
         result.update({"candidate_hash": "", "user_approval_status": "PENDING", "critical_report": None})
         reused = [{"action": name, "revision": revision, "status": "reused",

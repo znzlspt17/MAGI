@@ -87,6 +87,7 @@ def detail_payload(nodes: list[dict[str, Any]], step_id: str, *,
     incomplete = node.incomplete
     for source, key, expected in (
         (node.captured, "change_review", dict), (node.captured, "review_snapshot_id", str),
+        (node.captured, "approval_review", dict),
         (result, "research", dict), (raw, "usage", dict),
     ):
         if key not in source:

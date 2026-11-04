@@ -14,7 +14,7 @@ def exhausted():
                         "보스 격파 후 무기 처리가 초안에 누락됐습니다.", "확정된 무기 유지 정책을 반영하세요.",
                         decision_key="boss_weapon", resolution_kind="auto_fix")
     return State(run_id="repair", status="CRITIQUING", user_request="게임",
-                 critic_pass_count=3, completed_tasks=["requirement_lock_stage", "spec_compile", "checklist_critic", "review_resolution"],
+                 critic_pass_count=3, refinement={"termination": "round_budget", "cycle": 1, "round": 3, "stale": 0, "best_score": 7, "selected": True}, completed_tasks=["requirement_lock_stage", "spec_compile", "checklist_critic", "review_resolution"],
                  structured_issues=[issue.to_dict()], resolution_history=[{"issues": [issue.to_dict()]}],
                  confirmed_user_sources={"user_answer:Q1": "보스 격파 후 무기를 유지합니다."}).to_dict()
 
@@ -44,12 +44,9 @@ def test_answered_weapon_policy_waits_without_model_call(monkeypatch):
     complete = Mock(side_effect=AssertionError("한도 대기에는 모델 호출이 필요하지 않습니다."))
     monkeypatch.setattr(planner, "_complete_once", complete)
     state = exhausted()
-    assert allowed_tasks(state, flow.engine.config) == ["blocked"]
     plan = plan_next(state, flow.nodes)
-    result = flow.blocked({**state, "plan": plan})
-    assert result["stop_reason"] == "repair_limit"
-    assert result["allowed_actions"] == ["message", "revise", "retry"]
-    assert "추가 의견 없이" in result["wait_reason"]
+    assert plan["action"] == "compose_candidate"
+    assert "compose_candidate" in allowed_tasks(state, flow.engine.config)
     flow.nodes.interview.assert_not_called()
     flow.nodes.review_resolution.assert_not_called()
     complete.assert_not_called()
@@ -60,7 +57,7 @@ def test_limit_and_repeated_defect_are_separate_and_pending_questions_win():
     state = exhausted()
     constraints = execution_constraints(state, flow.engine.config)
     assert constraints["repair_limit_reached"] and not constraints["no_progress"]
-    assert plan_next({**state, "resolution_stop": True}, flow.engine)["stop_reason"] == "no_progress"
+    assert plan_next({**state, "resolution_stop": True}, flow.engine)["action"] == "compose_candidate"
     pending = {**state, "blocking_questions": ["[Q2] 새 정책을 정해주세요."]}
     assert "ask_user" in allowed_tasks(pending, flow.engine.config)
     assert flow.blocked(pending)["status"] == "NEEDS_USER_INPUT"
@@ -127,12 +124,10 @@ def test_graph_wait_retry_repair_and_review(monkeypatch):
 
     flow = workflow()
     state = exhausted()
-    state["requirement_lock_sheet"] = RequirementLockSheet("lock", "feature", "게임", [],
-        mandatory_requirements=[RequirementItem("REQ-001", "Retain boss weapons.")]).to_dict()
     flow.nodes.spec_compile = Mock(return_value={})
     flow.nodes.checklist_critic = Mock(return_value={"critic_pass_count": 1})
     repaired = {**state["structured_issues"][0], "status": "resolved"}
-    flow.nodes.review_resolution.return_value = {"structured_issues": [repaired]}
+    flow.nodes.review_resolution.return_value = {"structured_issues": [repaired], "refinement": {"termination": "max_score"}}
     flow.nodes.compose_candidate = Mock(return_value={})
     flow.writer = Mock()
     flow.writer.read_text.return_value = "draft"
@@ -160,14 +155,15 @@ def test_graph_wait_retry_repair_and_review(monkeypatch):
     graph.invoke(state, config)
     saved = graph.get_state(config)
     assert saved.tasks[0].interrupts
-    assert saved.values["stop_reason"] == "repair_limit"
+    assert saved.values["stop_reason"] == ""
+    assert "approve" in saved.values["allowed_actions"]
     flow.nodes.spec_compile.assert_not_called()
     graph.invoke(Command(resume={"action": "retry", "state": saved.values}), config)
     final = graph.get_state(config).values
     flow.nodes.spec_compile.assert_called_once()
     flow.nodes.checklist_critic.assert_called_once()
     flow.nodes.review_resolution.assert_called_once()
-    assert final["allowed_actions"] == ["approve", "message", "revise"]
+    assert final["allowed_actions"] == ["approve", "message", "revise", "retry"]
     assert final["confirmed_user_sources"] == state["confirmed_user_sources"]
 
 

@@ -16,6 +16,7 @@ ACCOUNT_TABLES = (
 )
 CORE_TABLES = (
     "execution_progress", "progress_outbox",
+    "mcp_connections", "mcp_oauth_states", "mcp_oauth_refreshes",
     "projects", "jobs", "executions", "document_bodies", "document_versions",
     "execution_events", "model_usage", "projection_commits", "nodes", "edges",
     "models", "embedding_queue", "chunks", "chunk_sets", "chunk_vectors",

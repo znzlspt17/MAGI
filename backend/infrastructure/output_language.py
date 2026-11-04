@@ -19,7 +19,7 @@ LANGUAGE_RULES = {
     "requirement_lock": "request_summary and unresolved_questions: Korean. Requirement text, workflow_constraints text, assumption text and acceptance_criteria_seed: English. Preserve original_text and user answers verbatim; do not translate source markers or IDs.",
     "spec_compile": "All section prose: English. Preserve code, paths, product names and necessary original quotations. Put original-language quotations in <original_quote>...</original_quote> blocks or Markdown blockquotes; code belongs in code spans or fenced blocks.",
     "review_resolution": "resolution_reason, missing_information, required_change: Korean. Quote proposed English specification wording verbatim. Keep IDs and basis_refs unchanged." + _QUESTION_LANGUAGE,
-    "checklist_critic": "problem, required_change, resolution_reason, missing_information and rubric_verdicts.reason: Korean. Proposed specification sentences: English, quoted or in code blocks. Preserve evidence.quote and identifiers verbatim." + _QUESTION_LANGUAGE,
+    "checklist_critic": "problem, required_change, resolution_reason, missing_information, score_reason, revision_directives and rubric_verdicts.reason: Korean. Proposed specification sentences: English, quoted or in code blocks. Preserve evidence.quote and identifiers verbatim." + _QUESTION_LANGUAGE,
 }
 
 
@@ -109,6 +109,9 @@ def language_issues(value):
                 if getattr(item, name):
                     field(f"resolutions[{index}].{name}", getattr(item, name), "ko")
     elif isinstance(value, ReviewResponse):
+        field("score_reason", value.score_reason, "ko")
+        for index, directive in enumerate(value.revision_directives):
+            field(f"revision_directives[{index}]", directive, "ko")
         for index, verdict in enumerate(value.rubric_verdicts):
             field(f"rubric_verdicts[{index}].reason", verdict.reason, "ko")
         for index, item in enumerate(value.issues):

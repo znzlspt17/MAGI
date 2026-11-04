@@ -88,8 +88,12 @@ class ChecklistCritic:
 
         # 3. Merge (deterministic wins on checklist_id collision)
         merged = merge_issue_lists(deterministic, llm_issues)
-        if evaluation is not None and evaluation_sink is not None:
-            evaluation_sink(evaluation)
+        if evaluation is not None:
+            # 결정적 검사 결함을 모델 점수로 숨길 수 없다.
+            if deterministic and raw.score > (7 if any(item.severity in {"blocking", "major"} for item in deterministic) else 9):
+                raise ReviewValidationError(stage="checklist_critic", check="rubric_score")
+            if evaluation_sink is not None:
+                evaluation_sink(evaluation)
         return merged
 
 

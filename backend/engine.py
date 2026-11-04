@@ -55,6 +55,7 @@ class Engine:
                 ),
                 max_critic_passes=self.config.max_critic_passes,
                 web_search_mode="off",
+                mcp={"snapshot": copy.deepcopy(self.runtime.job.get("mcp_snapshot", []))},
             )
             evidence = EvidenceRegistry()
             evidence.add(
@@ -64,10 +65,12 @@ class Engine:
         else:
             state = self.load()
             if action == "retry":
+                from backend.services.refinement import needs_upgrade
                 saved = writer.workflow_snapshot()
                 if (not saved.next and state.status == STATUS_FINALIZED) or (
                     any(t.interrupts for t in saved.tasks)
                     and "retry" not in state.allowed_actions
+                    and not needs_upgrade(state.to_dict())
                 ):
                     return state
             evidence = EvidenceRegistry.from_dict(
@@ -96,6 +99,13 @@ class Engine:
                 if state.status != STATUS_PASS_PENDING_USER_APPROVAL:
                     raise InvalidStateError("검토를 통과한 승인 후보가 필요합니다.")
                 candidate = writer.read_text("draft/approval_candidate_spec.en.md")
+                from backend.services.rubric import digest
+                evaluation_hash = digest(state.rubric_evaluation)
+                if ((payload.get("evaluation_hash") is not None and payload["evaluation_hash"] != evaluation_hash)
+                        or (payload.get("accept_remaining_issues") is True and payload.get("evaluation_hash") != evaluation_hash)):
+                    raise InvalidStateError("승인할 평가가 변경되었습니다. 남은 결함을 다시 확인해주세요.")
+                state.approval_acceptance = {"accepted": payload.get("accept_remaining_issues") is True,
+                    "candidate_hash": state.candidate_hash, "evaluation_hash": digest(state.rubric_evaluation)}
                 self._validate_candidate_for_approval(candidate, state)
                 if (
                     hashlib.sha256(candidate.encode()).hexdigest()
@@ -228,10 +238,15 @@ class Engine:
         if not SpecCompiler.english_only(candidate_text):
             raise InvalidStateError("Approval candidate must be English-only.")
         stored_issues = parse_issue_list(state.structured_issues)
-        if count_unresolved_required(stored_issues):
-            raise InvalidStateError(
-                "Approval candidate still has unresolved required review issues."
-            )
+        from backend.services.rubric import require_approval_evaluation, digest
+        sheet = RequirementLockSheet.from_dict(state.requirement_lock_sheet).require_validated()
+        require_approval_evaluation(state.to_dict(), sheet, candidate_text)
+        acceptance = state.approval_acceptance
+        needs_acceptance = state.rubric_evaluation["score"] < 10 or any(issue.status != "resolved" for issue in stored_issues)
+        if needs_acceptance and not (acceptance.get("accepted") is True
+                and acceptance.get("candidate_hash") == hashlib.sha256(candidate_text.encode()).hexdigest()
+                and acceptance.get("evaluation_hash") == digest(state.rubric_evaluation)):
+            raise InvalidStateError("남은 결함을 확인하고 명시적으로 수락해야 승인할 수 있습니다.")
         if state.blocking_questions or any(
             issue.resolution_kind == "user_decision" and issue.status != "resolved"
             for issue in stored_issues

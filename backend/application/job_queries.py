@@ -29,6 +29,9 @@ class JobQueries:
             return []
         if state.get("status") == "FINALIZED":
             return ["message", "continue"]
+        from backend.services.refinement import needs_upgrade
+        if needs_upgrade(state):
+            return list(dict.fromkeys([action for action in state.get("allowed_actions", []) if action != "approve"] + ["retry"]))
         return state.get("allowed_actions", [])
 
     def summary(self, ident):
@@ -86,6 +89,10 @@ class JobQueries:
             "allowed_actions": self.allowed(ident),
             "saved_answers": saved_answer_dicts(state),
         }
+        from backend.services.refinement import public_review
+        review = public_review(state)
+        if review:
+            job["state"]["rubric_review"] = review
         job["execution_graph"], job["session_events"] = (
             history.graph(),
             history.conversation(),

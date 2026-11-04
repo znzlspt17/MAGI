@@ -111,6 +111,9 @@ class JobManager:
             execution_id=(ADMISSION.get() or (None, uuid4().hex))[1],
             _decision_selections=decision_reuse or [],
         )
+        if actor is not None:
+            from backend.mcp_client.service import MCPService
+            job["mcp_snapshot"] = MCPService(self.knowledge.store).snapshot(actor["id"])
         with self.knowledge.store.transaction():
             self.knowledge.store.accept_job(job, request.strip())
             self.workspace._validate_reuse_sources(job["reused_decisions"])
@@ -148,7 +151,9 @@ class JobManager:
             from backend.infrastructure.workflow_store import retry_state
             recovery = retry_state(self.workspace.documents(ident))
             if recovery["retry_requires_replay"] and not (isinstance(payload, dict) and payload.get("replay_pending") is True):
-                raise CleanupConflict("이전 호출의 완료 여부가 불확실합니다. 추가 비용 가능성을 확인하고 미완료 단계를 다시 실행하세요.")
+                raise CleanupConflict("이전 MCP 도구 호출의 완료 여부가 불확실합니다. 도구를 다시 실행하려면 확인이 필요합니다."
+                    if recovery.get("retry_kind") == "mcp" else
+                    "이전 모델 호출의 완료 여부가 불확실합니다. 추가 비용 가능성을 확인하고 미완료 단계를 다시 실행하세요.")
         self._next_order += 1
         now = _utc_now()
         job.update(

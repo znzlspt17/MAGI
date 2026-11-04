@@ -153,7 +153,7 @@ class SpecCompiler:
             rubric=rubric,
         )
         raw_output = complete_with_usage(
-            writer, provider, messages, model=route.model, stage="spec_compile", temperature=0,
+            writer, provider, messages, model=route.model, stage="spec_compile", temperature=0.7,
         )
         if not isinstance(raw_output, SpecDraftResponse):
             raise SpecCompilationError(["Return the complete structured SpecDraftResponse."])
@@ -234,18 +234,23 @@ class SpecCompiler:
             "requirement_lock_sheet": product_sheet,
             "previous_trace": previous_trace or {},
         }
-        required = [
+        resolved_issues = [
             issue.to_dict()
             for issue in issues or []
-            if issue.severity in {"blocking", "major"} and issue.status != "resolved"
+            if issue.status != "resolved"
         ]
+        # 해결 판단 전 이슈를 중복 전달하지 않고, 평가와 수정 제안만 제공한다.
+        evaluation = rubric.get("latest_evaluation", {}) if rubric else {}
+        feedback = {key: evaluation[key] for key in
+                    ("score", "score_reason", "verdicts", "critical_failures", "revision_directives") if key in evaluation}
         history = "\n\n".join(item for item in revision_history if item.strip())
         return build_messages(
             load_prompt("compiler"),
             user_request,
             json.dumps(manifest_summary, ensure_ascii=False, indent=2),
-            ("Must-fix issues", json.dumps(required, ensure_ascii=False, indent=2)),
+            ("Resolved review issues", json.dumps(resolved_issues, ensure_ascii=False, indent=2)),
             ("Task-specific rubric", json.dumps({"items": rubric["items"]}, ensure_ascii=False) if rubric is not None else ""),
+            ("Latest verifier feedback", json.dumps(feedback, ensure_ascii=False) if feedback else ""),
             ("Revision feedback history", history),
             ("Latest revision feedback", revision_feedback),
             ("Current draft to preserve and revise", previous_spec),

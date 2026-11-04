@@ -25,6 +25,7 @@ Google 로그인과 PostgreSQL을 사용하는 MAGI 서비스의 설정, 배포,
 | `GOOGLE_OAUTH_ID`, `GOOGLE_OAUTH_SECRET` | 백엔드 | Google OAuth 웹 클라이언트 설정 |
 | `SUBJECT_PEPPER` | 백엔드 | 계정 식별자 처리용 비밀값. 기존 계정 연결을 위해 같은 값을 유지 |
 | `INTERNAL_KEY` | 양쪽 | 내부 통신 인증 키. 사용할 경우 양쪽에 같은 값 지정. 제공 컨테이너 구성에서는 필수 |
+| `MAGI_MCP_ENCRYPTION_KEY` | 백엔드 | 사용자별 MCP 인증정보를 암호화할 Fernet 키. MCP 연결을 사용하려면 지정 |
 | `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | 백엔드 | PostgreSQL 접속 설정 |
 | `DB_PORT` | 백엔드 | 기본 `5432` |
 | `DB_SSLMODE` | 백엔드 | 기본 `prefer`. TLS 없는 DB는 `disable` |
@@ -37,6 +38,20 @@ Google 로그인과 PostgreSQL을 사용하는 MAGI 서비스의 설정, 배포,
 백엔드·게이트웨이·관리 명령은 실행 환경에 주입한 설정만 사용합니다. 인증값을 명령행 인자로 전달하거나 Git에 저장하지 않습니다.
 
 실제 인증값은 실행 환경에서 관리합니다. 모델은 `gpt-6-luna`로 고정되며 모델·가격을 선택하는 환경변수는 없습니다.
+
+### 사용자별 MCP 연결
+
+백엔드의 `MAGI_MCP_ENCRYPTION_KEY`에는 Fernet 키를 주입하고 백업을 안전하게 보관합니다. 키를 변경하거나 잃으면 기존 MCP 인증정보를 읽을 수 없습니다. 새 키는 다음 명령으로 만들 수 있습니다.
+
+```sh
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+키를 Git이나 로그에 저장하지 말고 백엔드 실행 환경에만 주입합니다. 키가 없으면 MCP 연결을 등록하거나 사용할 수 없습니다. 사용자는 계정 메뉴의 MCP 연결에서 원격 HTTPS 서버를 등록하고 연결 테스트 후 허용할 조회 도구를 선택합니다. 활성 연결은 새 작업의 인터뷰에 적용되며 도구 입력이 해당 서버로 전송될 수 있습니다. 서버의 조회 전용 표시는 서버가 제공하는 정보입니다.
+
+첫 버전에서는 입력 스키마에 참조(`$ref`) 또는 정규식(`pattern`)이 포함된 도구를 사용할 수 없습니다.
+
+MCP OAuth에는 공개 HTTPS `PUBLIC_ORIGIN`이 필요합니다. 인증 콜백 경로는 `/auth/mcp/callback`, 클라이언트 메타데이터 경로는 `/oauth/mcp-client-metadata.json`입니다. 연결 대상에서 사전 등록을 요구하면 해당 콜백 주소를 등록합니다. 로컬 명령어 실행 방식의 MCP 서버는 지원하지 않습니다.
 
 ## PostgreSQL과 모델 준비
 

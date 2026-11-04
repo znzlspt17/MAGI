@@ -25,6 +25,15 @@ from backend.services.questions import (
 class SpecInterviewer:
     agent_id = "interviewer"
 
+    def prepare_messages(self, state: Mapping[str, Any], manifest: dict[str, Any]) -> list[dict[str, str]]:
+        """2026-11-03: 인터뷰와 MCP 판단 노드가 같은 입력 구성을 사용한다."""
+        request = str(state.get("user_request", "")).strip()
+        request_type = classify_request_type(request, manifest)
+        explicit_answers, inferred_answers = _saved_answers(state)
+        answers = _merge_answers(inferred_answers, explicit_answers)
+        candidates = select_questions(request_type, answered_ids={item.question_id for item in answers})
+        return _build_messages(request, manifest, candidates, answers, state)
+
     def run(
         self,
         state: Mapping[str, Any],
@@ -36,11 +45,6 @@ class SpecInterviewer:
         request_type = classify_request_type(request, manifest)
         explicit_answers, inferred_answers = _saved_answers(state)
         answers = _merge_answers(inferred_answers, explicit_answers)
-        all_questions = _all_questions(request_type, answers)
-        candidates = select_questions(
-            request_type, answered_ids={item.question_id for item in answers}
-        )
-
         if not request:
             return InterviewResult(
                 request_type,
@@ -50,7 +54,7 @@ class SpecInterviewer:
                 True,
             )
 
-        payload = _build_messages(request, manifest, candidates, answers, state)
+        payload = self.prepare_messages(state, manifest)
         raw = provider_messages_fn(payload)
         if not isinstance(raw, InterviewResponse):
             raise InvalidStateError("Interview response schema is invalid.")

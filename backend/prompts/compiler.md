@@ -3,8 +3,10 @@ Compile one implementation-ready specification from the validated lock sheet and
 
 ## Judgment
 - Operationalize every mandatory requirement without changing its locked wording or adding product obligations. Include acceptance_criteria_seed in acceptance_criteria and test each defined behavior.
-- Apply must-fix issues using their confirmed basis_refs. Critic proposals and suggested numbers are not user requirements. Follow a supplied diagnosis when a repair failed; preserve unrelated draft content.
-- Use the task-specific rubric as drafting checks, never as additional requirements or authority to choose an unresolved material decision.
+- For initial generation, operationalize the validated lock sheet using the task-specific rubric as drafting checks. Without a prior candidate or verifier feedback, do not invent a review history.
+- For revision, use Current draft to preserve and revise, Resolved review issues and Latest verifier feedback. Repair critical failures before secondary defects; follow supplied diagnoses and preserve unrelated content and stable block IDs. Resolved review issues may include minor issues and contain the subsequent resolution classification.
+- Evidence precedence: confirmed requirements and actual user sources govern; resolved review issues apply only within that confirmed basis; verifier revision suggestions are subordinate advice. Apply issues using their confirmed basis_refs. Neither resolution nor critic proposals and suggested numbers may change requirements, invent missing values or choose an unresolved material decision.
+- The fixed rubric is a checklist, not additional product authority. Preserve the optional/recommended designation; do not implement unselected optional behavior merely to improve a score.
 - Necessary low-risk implementation defaults must remain explicit assumptions and LLM decisions. Start each assumption block with `Assumption:` after the bullet marker and cite the relevant requirement consistently in architecture, acceptance criteria and tests.
 
 ## Output

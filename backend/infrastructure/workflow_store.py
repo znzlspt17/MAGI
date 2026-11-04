@@ -45,7 +45,10 @@ def retry_state(documents):
             ).fetchone()
         if conversation and conversation["openai_conversation_state"] in {"creating", "initializing"}:
             return {**result, "retry_unavailable_reason": "OpenAI 대화 초기화 완료 여부가 불확실하여 자동 재시도할 수 없습니다."}
-        if any(task.interrupts for task in snapshot.tasks) and snapshot.values.get("status") == "CRITICAL_BLOCKED" and "retry" in snapshot.values.get("allowed_actions", []):
+        from backend.services.refinement import needs_upgrade
+        if any(task.interrupts for task in snapshot.tasks) and needs_upgrade(snapshot.values):
+            return {**result, "can_retry": True}
+        if any(task.interrupts for task in snapshot.tasks) and snapshot.values.get("status") in {"CRITICAL_BLOCKED", "PASS_PENDING_USER_APPROVAL"} and "retry" in snapshot.values.get("allowed_actions", []):
             return {**result, "can_retry": True}
         if not snapshot.next or any(task.interrupts for task in snapshot.tasks):
             return {**result, "retry_unavailable_reason": "다시 실행할 미완료 단계가 없습니다. 대화에서 다음 요청을 입력하세요."}
@@ -56,7 +59,8 @@ def retry_state(documents):
         with workflow_store(documents.store, documents.job_id) as (_, journal):
             uncertain = name != "approve" and (journal.status(ident) == "pending"
                                               or bool(conversation and conversation["openai_call_pending"]))
-        return {**result, "can_retry": True, "retry_requires_replay": uncertain, "task_id": ident}
+        return {**result, "can_retry": True, "retry_requires_replay": uncertain, "task_id": ident,
+                "retry_kind": "mcp" if uncertain and name == "mcp_execute" else "model" if uncertain else "none"}
     except (InvalidStateError, ValueError, TypeError, KeyError):
         return {**result, "retry_unavailable_reason": "저장된 checkpoint 형식이 올바르지 않아 다시 시도할 수 없습니다."}
 

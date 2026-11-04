@@ -18,13 +18,15 @@ from backend.model_policy import default_prices
 WAITING = {'NEEDS_USER_INPUT', 'PASS_PENDING_USER_APPROVAL'}
 SAFE_DOC = re.compile(r'(?:final/FINAL_AGENT_SPEC\.md|draft/approval_candidate_spec\.en\.md|critical/CRITICAL_REPORT\.ko\.md|history/[0-9a-f]{32}\.md)\Z')
 PUBLIC_FIELDS=set('''id request status message action created_at updated_at queued_at progress execution_id project_id retry_status retry_action can_continue read_only latest_completed source_hash step_id continuation_error state blocking_questions awaiting_input_reason review_questions question_forms saved_answers candidate final critical execution_graph version nodes session_events completed_documents title input feedback answers started_at completed_at questions summary document_step_id stage duration_ms issue_counts has_document has_issues detail_available result issues resolved_issues requirements document content filename kind language recording_incomplete source target edges mode embedding_status has_more offset next_offset body attrs active logical_key sequence actor section requirement_id scope title_path question text rationale conditions sources requirement_ids decision_ids question_id question_text answer selection selected_option_ids custom_text form_version input_type options label value decision_key required_change decision_question resolution_reason missing_information severity code explanation description confirmed_basis basis_refs status_label pending total limit truncated groups node_id node_count edge_count connected_id references source_text translated_text delta number_mismatches current_status pending_questions input_type is_required allow_custom selected label_ko default_id recommended help hint requirement text_ko text_en name reason duration elapsed_ms percent total_steps completed_steps count accepted superseded implementation changes source_id requirement source_refs coverage effect expected actual resolution issue_id summary_ko request_type non_scope mandatory_requirements constraints assumptions decisions workflow_status user_reply decision_text index information priority blocking major minor passed failed resolved unresolved answer_forms custom_label instruction prompt choices option_id decision support status_text done next_action can_retry user_action required provenance change original_quote known active_session sessions'''.split())
+PUBLIC_FIELDS.update('approval_review accepted remaining_issue_ids'.split())
 PUBLIC_FIELDS.add('candidate_hash')
+PUBLIC_FIELDS.update('rubric_review score score_reason round selected_round selected_cycle termination requires_acceptance evaluation_hash revision_directives remaining_issues items rubric_id condition importance verdict evidence_kind basis reference'.split())
 PUBLIC_FIELDS.update('stop_reason execution_diagnostic stop_code target_action block_reasons review_pass_count review_pass_limit'.split())
 PUBLIC_FIELDS.update('research search_method mode performed outcome result_count query retrieved_at url job_id resolution_reasons recommended_requirements optional_requirements locked_constraints document_has_more document_next_offset other_body other_kind original_text parent_id related_node_ids'.split())
 PUBLIC_FIELDS.update('change_review before_id after_id before_hash after_hash before after item_id start end line meaning relation evidence analysed remaining calls diff'.split())
 PUBLIC_FIELDS.update('review_snapshot_id review_status rows unlinked unlinked_total specification acceptance verification spec_status acceptance_status verification_status test_status spec_linked acceptance_linked verification_linked group shared category specification_total acceptance_total verification_total'.split())
 PUBLIC_FIELDS.update('impact recommendation option_ids'.split())
-PUBLIC_FIELDS.update('can_retry retry_unavailable_reason retry_requires_replay retry_of'.split())
+PUBLIC_FIELDS.update('can_retry retry_unavailable_reason retry_requires_replay retry_kind retry_of'.split())
 PUBLIC_FIELDS.update('reused_decisions reused_decision_count source_available registry_id decision_reuse decision_id'.split())
 PUBLIC_FIELDS.update('completed_id bundle_id format_version files size sha256 completeness korean_included task_count available total_size file_limit total_limit eof'.split())
 PUBLIC_FIELDS.update('plan goal tasks allowed_actions wait_reason revision document_versions task_results action target input_refs expected_result affected_requirement_ids requirements_hash result_hash hash'.split())
@@ -110,7 +112,7 @@ class PublicService:
         if request.get('csrf') is not None and not hmac.compare_digest(str(request['csrf']), actor['csrf']):
             raise AccessError('요청 확인 값이 올바르지 않습니다.')
         mutations = {'generate','answer','revise','approve','continue','retry','message','stop','auth.logout','knowledge.impact.analyse','projects.create','projects.decisions.register','projects.decisions.deactivate'}
-        if (method in mutations or method.startswith(('cleanup.','admin.')) or method == 'knowledge.retry' or method == 'document') and method != 'cleanup.catalog':
+        if (method in mutations or method.startswith(('cleanup.','admin.')) or method in {'mcp.create', 'mcp.update', 'mcp.delete', 'mcp.test', 'mcp.oauth.start'} or method == 'knowledge.retry' or method == 'document') and method != 'cleanup.catalog':
             if not hmac.compare_digest(str(request.get('csrf','')), actor['csrf']):
                 raise AccessError('요청 확인 값이 필요합니다.')
         if method == 'auth.me':
@@ -128,6 +130,45 @@ class PublicService:
             return self.admin(actor, method, params)
         token = ACTOR.set(actor)
         try:
+            if method.startswith('mcp.'):
+                from backend.mcp_client.service import MCPService
+                service = MCPService(self.store)
+                ident = params.get('id')
+                if method == 'mcp.list':
+                    return service.list(actor['id'])
+                if method == 'mcp.get':
+                    return service.get(actor['id'], ident)
+                if method in {'mcp.create', 'mcp.update', 'mcp.delete'}:
+                    from backend.mcp_client.secrets import request_fingerprint
+                    key = request.get('idempotency_key')
+                    if not isinstance(key, str) or not 8 <= len(key) <= 128:
+                        raise AccessError('중복 방지 요청 키가 필요합니다.', 'invalid')
+                    fingerprint = request_fingerprint(method, params)
+                    with self.store.transaction() as conn:
+                        previous = conn.execute('SELECT fingerprint,result FROM admissions WHERE user_id=%s AND key=%s', (actor['id'], key)).fetchone()
+                        if previous:
+                            if previous['fingerprint'] != fingerprint:
+                                raise AccessError('같은 요청 키에 다른 입력을 사용할 수 없습니다.', 'conflict')
+                            return previous['result']
+                        if method == 'mcp.create':
+                            result = service.create(actor['id'], params)
+                        elif method == 'mcp.update':
+                            result = service.update(actor['id'], ident, {k: v for k, v in params.items() if k != 'id'})
+                        else:
+                            result = service.delete(actor['id'], ident)
+                        conn.execute('INSERT INTO admissions VALUES (%s,%s,%s,%s)',
+                                     (actor['id'], key, fingerprint, self.store._json(result)))
+                        return result
+                if method == 'mcp.test':
+                    return service.test(actor['id'], ident)
+                if method == 'mcp.oauth.start':
+                    from backend.mcp_client.oauth import begin
+                    return begin(self.store, actor['id'], ident, sid, params.get('origin'))
+                if method == 'mcp.oauth.callback':
+                    from backend.mcp_client.oauth import callback
+                    callback(self.store, actor['id'], sid, params.get('state'), params.get('code'), params.get('origin'))
+                    return {'ok': True}
+                return self._deny()
             if method == 'progress.list':
                 with self.store.transaction(mode='read') as conn:
                     revisions = {r['job_id']: r['revision'] for r in conn.execute('SELECT job_id,revision FROM execution_progress').fetchall()}

@@ -13,6 +13,7 @@ import "./app/scrollbars.css";
 import { Research } from "./features/legal/Research";
 import { Licenses } from "./features/legal/Licenses";
 import { WorkspaceReturnLink } from "./features/workspace/WorkspaceReturnLink";
+import { McpSettings } from "./features/mcp/McpSettings";
 
 export function Privacy() {
   return (
@@ -53,6 +54,7 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/settings/mcp" element={<AuthProvider><McpSettings /></AuthProvider>} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/licenses" element={<Licenses />} />
         <Route path="/research" element={<Research />} />

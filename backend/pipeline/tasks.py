@@ -95,7 +95,7 @@ class WorkflowTasks:
         issues = parse_issue_list({"issues": raw_issues}) if raw_issues else None
         path = "draft/approval_candidate_spec.en.md"
         previous_spec = ""
-        if issues or state.get("revision_feedback") or state.get("revision_history"):
+        if issues or state.get("revision_feedback") or state.get("revision_history") or state.get("rubric_evaluation"):
             try:
                 previous_spec = self.writer.read_text(path)
             except Exception:
@@ -111,7 +111,7 @@ class WorkflowTasks:
             revision_feedback=str(state.get("revision_feedback", "")),
             revision_history=list(state.get("revision_history", [])),
             writer=self.writer,
-            rubric=rubric,
+            rubric={**rubric, "latest_evaluation": state.get("rubric_evaluation", {})},
         )
         self.writer.write_text(path, spec, overwrite=True)
         if path not in created:
@@ -128,10 +128,13 @@ class WorkflowTasks:
         }
 
     def compose_candidate(self, state: WorkflowState) -> dict[str, Any]:
+        from backend.services.refinement import restore_best
+        sheet = validate_locked_sources(RequirementLockSheet.from_dict(state.get("requirement_lock_sheet")).require_validated(), state)
+        selected = restore_best(self.writer, state, sheet)
+        state = {**state, **selected}
         issues = parse_issue_list(state.get("structured_issues", []))
         if (
             state.get("blocking_questions")
-            or count_unresolved_required(issues)
             or any(
                 issue.resolution_kind == "user_decision" and issue.status != "resolved"
                 for issue in issues
@@ -149,8 +152,10 @@ class WorkflowTasks:
         if not spec or not self.compiler.english_only(spec):
             raise InvalidStateError("Reviewed candidate is missing or invalid.")
         from backend.services.rubric import require_approval_evaluation
-        sheet = validate_locked_sources(RequirementLockSheet.from_dict(state.get("requirement_lock_sheet")).require_validated(), state)
         require_approval_evaluation(state, sheet, spec)
+        from backend.services.checklist import run_deterministic_checks
+        if count_unresolved_required(run_deterministic_checks(spec, sheet)):
+            raise InvalidStateError("Approval candidate no longer satisfies blocking checks.")
         if path not in created:
             created.append(path)
         # 변경 검토는 안내 기능이며 승인 후보 검증 결과를 바꾸지 않는다.
@@ -185,6 +190,7 @@ class WorkflowTasks:
                     "change review failure could not be saved"
                 )
         return {
+            **selected,
             "status": STATUS_PASS_PENDING_USER_APPROVAL,
             "approval_candidate_spec": path,
             "user_approval_status": "PENDING",
@@ -204,6 +210,9 @@ class WorkflowTasks:
         provider = self.provider
 
         def complete(messages: list[dict[str, str]]) -> InterviewResponse:
+            response = state.get("mcp", {}).get("response")
+            if response is not None:
+                return InterviewResponse.model_validate(response)
             return complete_with_usage(
                 self.writer,
                 provider,
@@ -418,13 +427,10 @@ class WorkflowTasks:
         }
         diagnosed = set(state.get("diagnosed_keys", []))
         to_diagnose = repeated - diagnosed
-        exhausted = repeated & diagnosed
-        stop = bool(exhausted)
+        stop = False
         draft = self.writer.read_text("draft/approval_candidate_spec.en.md")
         basis = confirmed_basis(state, sheet.to_dict())
-        pending_resolution = [
-            issue for issue in selected if final or defect_identity(issue) not in exhausted
-        ]
+        pending_resolution = selected
         reconfirm = set()
         if pending_resolution:
             canonical = {
@@ -468,15 +474,7 @@ class WorkflowTasks:
         )
         # 검토 원본과 다른 해결 분류도 동일 초안에 연결해 별도 이력으로 남긴다.
         data = [issue.to_dict() for issue in issues]
-        if pending:
-            action = "ask_user"
-        elif selected and (
-            stop
-            or state.get("critic_pass_count", 0) >= self.config.max_critic_passes
-        ):
-            action = "stop"
-        else:
-            action = "repair" if selected else "approve"
+        action = "ask_user" if pending else "repair"
         record = {
             "review_round": len(history) + 1,
             "pass": state.get("critic_pass_count", 0),
@@ -526,7 +524,14 @@ class WorkflowTasks:
             "created_artifacts": created,
         }
 
-        return result
+        if final and not state.get("rubric_evaluation"):
+            return result
+        from backend.services.refinement import record_round
+        refinement = record_round(self.writer, {**state, **result}, self.config)
+        action = "ask_user" if pending else "approve" if refinement.get("termination") else "repair"
+        history[-1]["action"] = action
+        self.writer.write_json("review/resolution.json", history[-1], overwrite=True)
+        return {**result, "refinement": refinement}
 
     def await_user(self, state: WorkflowState) -> dict[str, Any]:
         return {

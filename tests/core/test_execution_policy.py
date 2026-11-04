@@ -14,7 +14,7 @@ from test_stop_assessment import workflow
 
 def reviewed():
     return State(run_id="ready", status="CRITIQUING", user_request="명세",
-                 critic_pass_count=3, resolution_stop=True,
+                 critic_pass_count=3, resolution_stop=True, refinement={"termination": "max_score"},
                  completed_tasks=["spec_compile", "checklist_critic", "review_resolution"]).to_dict()
 
 
@@ -37,6 +37,8 @@ def test_reviewed_result_reaches_approval_wait_without_model(monkeypatch, needs_
     import backend.pipeline.agent_workflow as agent
     flow = workflow()
     flow.nodes.compose_candidate = Mock(return_value={"status": "PASS_PENDING_USER_APPROVAL"})
+    flow.writer = Mock()
+    flow.writer.read_text.return_value = "draft"
     planner = Mock(side_effect=AssertionError("확정된 전이에 모델 호출 금지"))
     monkeypatch.setattr(agent, "plan_next", planner)
     config = {"configurable": {"thread_id": "ready"}}
@@ -51,7 +53,7 @@ def test_reviewed_result_reaches_approval_wait_without_model(monkeypatch, needs_
                               "segment": 0, "status": "completed"}] * 2
     graph.invoke(state, config)
     saved = graph.get_state(config)
-    assert saved.values["allowed_actions"] == ["approve", "message", "revise"]
+    assert saved.values["allowed_actions"] == ["approve", "message", "revise", "retry"]
     assert saved.tasks[0].interrupts
     flow.nodes.compose_candidate.assert_called_once()
     assert flow.nodes.review_resolution.call_count == int(needs_resolution)
@@ -108,7 +110,7 @@ def test_required_candidate_never_bypasses_unresolved_product_decisions(pending)
         state["blocking_questions"] = ["[Q1] 정책을 선택해주세요."]
     result = evaluate_execution(state, SimpleNamespace(max_critic_passes=3))
     assert not result.eligibility["compose_candidate"].allowed
-    assert result.required_action == ("ask_user" if pending else "")
+    assert result.required_action == "ask_user"
 
 
 @pytest.mark.parametrize("diagnostic", [{}, {"stop_code": "invalid_plan", "target_action": "",

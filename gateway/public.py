@@ -181,6 +181,71 @@ def install(app, client):
     def usage():
         return relay('usage')
 
+    @app.get('/settings/mcp')
+    def mcp_settings_page():
+        if not public:
+            abort(404)
+        try:
+            client().call('auth.me')
+        except ClientError as exc:
+            if exc.status == 401:
+                page = app.make_response(render_frontend())
+                page.status_code = 401
+                return page
+            return '인증 상태를 확인할 수 없습니다.', exc.status
+        return render_frontend()
+
+    @app.get('/oauth/mcp-client-metadata.json')
+    def mcp_oauth_client_metadata():
+        if not public or not origin or not origin.startswith('https://'):
+            abort(404)
+        return jsonify(client_id=origin + '/oauth/mcp-client-metadata.json', client_name='MAGI',
+                       redirect_uris=[origin + '/auth/mcp/callback'], grant_types=['authorization_code', 'refresh_token'],
+                       response_types=['code'], token_endpoint_auth_method='none')
+
+    @app.route('/api/mcp/connections', methods=['GET', 'POST'])
+    def mcp_connections():
+        if not public:
+            abort(404)
+        return relay('mcp.list' if request.method == 'GET' else 'mcp.create',
+                     {} if request.method == 'GET' else request.get_json(silent=True) or {})
+
+    @app.route('/api/mcp/connections/<ident>', methods=['GET', 'PATCH', 'DELETE'])
+    def mcp_connection(ident):
+        if not public:
+            abort(404)
+        method = {'GET': 'mcp.get', 'PATCH': 'mcp.update', 'DELETE': 'mcp.delete'}[request.method]
+        data = request.get_json(silent=True) or {} if request.method == 'PATCH' else {}
+        if not isinstance(data, dict):
+            abort(400)
+        return relay(method, {**data, 'id': ident})
+
+    @app.post('/api/mcp/connections/<ident>/test')
+    def mcp_test(ident):
+        if not public:
+            abort(404)
+        return relay('mcp.test', {'id': ident})
+
+    @app.post('/api/mcp/connections/<ident>/oauth/start')
+    def mcp_oauth_start(ident):
+        if not public:
+            abort(404)
+        return relay('mcp.oauth.start', {'id': ident, 'origin': origin})
+
+    @app.get('/auth/mcp/callback')
+    def mcp_oauth_callback():
+        if not public:
+            abort(404)
+        try:
+            client().call('mcp.oauth.callback', {'state': request.args.get('state'),
+                'code': request.args.get('code'), 'origin': origin})
+            response = redirect('/settings/mcp')
+        except ClientError:
+            response = redirect('/settings/mcp?oauth=failed')
+        response.headers['Cache-Control'] = 'no-store'
+        response.headers['Referrer-Policy'] = 'no-referrer'
+        return response
+
     @app.get('/api/service/status')
     def status():
         return relay('service.status')

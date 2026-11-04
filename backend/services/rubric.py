@@ -15,7 +15,7 @@ from backend.services.review_resolution import confirmed_basis
 from backend.services.workflow_constraints import user_sources, validate_product_boundary
 
 
-POLICY_VERSION = 2
+POLICY_VERSION = 3
 PATH = "review/rubric.json"
 EVALUATION_PATH = "review/rubric_evaluation.json"
 GROUPS = ("mandatory_requirements", "recommended_requirements", "optional_requirements", "constraints", "non_scope")
@@ -55,10 +55,13 @@ def validate_items(response, sheet, canonical):
         raise invalid("rubric_identity")
     basis = canonical["confirmed_basis"]
     known = {item.id for group in GROUPS for item in getattr(sheet, group)}
+    optional = {item.id for group in (sheet.optional_requirements, sheet.recommended_requirements) for item in group}
     covered = set()
     for item in response.items:
         if (item.requirement_id not in known or not item.condition.strip()
                 or len(item.sections) != len(set(item.sections)) or not set(item.sections) <= SECTIONS):
+            raise invalid("rubric_basis")
+        if item.requirement_id in optional and item.importance != "secondary":
             raise invalid("rubric_basis")
         # 각 조건은 자신의 제품 요구사항을 직접 인용해야 한다.
         if not any(entry.reference == item.requirement_id for entry in item.basis):
@@ -147,11 +150,21 @@ def validate_evaluation(response: ReviewResponse, rubric, spec):
         if verdict.verdict == "PASS":
             if verdict.issue_checklist_id is not None or matches:
                 fail("rubric_issue")
-        elif (len(matches) != 1 or matches[0].severity not in {"blocking", "major"}
+        elif (len(matches) != 1 or matches[0].severity not in ({"blocking", "major", "minor"} if item["importance"] == "secondary" else {"blocking", "major"})
                 or not any(e.source == verdict.section and e.quote == verdict.quote for e in matches[0].evidence)):
             fail("rubric_issue")
+    failed = [item for item in verdicts if item.verdict != "PASS"]
+    critical = {item.rubric_id for item in failed if items[item.rubric_id]["importance"] != "secondary"}
+    critical.update(issue.checklist_id for issue in issues if issue.severity in {"blocking", "major"} and not issue.rubric_ids)
+    cap = 4 if any(items[item.rubric_id]["importance"] == "core" for item in failed) else 7 if critical or any(issue.severity in {"blocking", "major"} for issue in issues) else 9 if failed or issues else 10
+    if (not response.score_reason.strip() or response.score > cap or len(response.critical_failures) != len(set(response.critical_failures))
+            or set(response.critical_failures) != critical
+            or ((failed or issues) and not response.revision_directives)
+            or any(not value.strip() for value in response.revision_directives)):
+        fail("rubric_score")
     return {"rubric_hash": rubric["rubric_hash"], "draft_hash": hashlib.sha256(spec.encode()).hexdigest(),
-            "verdicts": [item.model_dump() for item in verdicts]}
+            "verdicts": [item.model_dump() for item in verdicts],
+            **response.model_dump(exclude={"rubric_verdicts"})}
 
 
 def save_evaluation(writer, evaluation):
@@ -167,15 +180,12 @@ def require_approval_evaluation(state, sheet, spec):
             or evaluation.get("rubric_hash") != rubric["rubric_hash"]
             or evaluation.get("draft_hash") != hashlib.sha256(spec.encode()).hexdigest()):
         raise invalid("rubric_stale", stage="compose_candidate")
-    verdicts = evaluation.get("verdicts", [])
-    expected = {item["rubric_id"] for item in rubric["items"]}
     try:
-        response = ReviewResponse(issues=[], rubric_verdicts=verdicts)
-        if (len(response.rubric_verdicts) != len(expected)
-                or any(item.verdict != "PASS" for item in response.rubric_verdicts)):
-            raise invalid("rubric_stale", stage="compose_candidate")
+        response = ReviewResponse.model_validate({**{key: evaluation[key] for key in
+            ("score", "score_reason", "critical_failures", "revision_directives", "issues")},
+            "rubric_verdicts": evaluation["verdicts"]})
         validate_evaluation(response, rubric, spec)
-    except (ValidationError, ReviewValidationError):
+    except (KeyError, ValidationError, ReviewValidationError):
         raise invalid("rubric_stale", stage="compose_candidate") from None
 
 

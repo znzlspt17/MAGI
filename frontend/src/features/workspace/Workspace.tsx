@@ -76,7 +76,7 @@ export default function Workspace() {
   async function mutate(action: string, payload: unknown) {
     const target = id;
     try {
-      if (await session.command(action, action === "retry" ? null : payload, action === "retry" && payload ? { replay_pending: typeof payload === "object" && payload !== null && "replay_pending" in payload && payload.replay_pending === true } : {}) && selectedId.current === target) auth.setNotice(action === "stop" ? "이 작업의 중지를 요청했습니다." : "작업을 대기열에 넣었습니다.");
+      if (await session.command(action, ["retry", "approve"].includes(action) ? null : payload, action === "approve" ? { accept_remaining_issues: typeof payload === "object" && payload !== null && "accept_remaining_issues" in payload && payload.accept_remaining_issues === true } : action === "retry" && payload ? { replay_pending: typeof payload === "object" && payload !== null && "replay_pending" in payload && payload.replay_pending === true } : {}) && selectedId.current === target) auth.setNotice(action === "stop" ? "이 작업의 중지를 요청했습니다." : "작업을 대기열에 넣었습니다.");
     } catch (e) {
       if (action !== "message") auth.setNotice((e as Error).message);
       throw e;

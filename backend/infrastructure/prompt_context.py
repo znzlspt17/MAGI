@@ -367,10 +367,13 @@ def prepare_context(writer, payload, stage):
         title, _, body = item["content"].partition("\n")
         if title.startswith("Retrieved knowledge"):
             continue
-        if title in {"Must-fix issues:", "Issues from the previous critic pass:", "User workflow constraints (not product requirements; subject to existing permissions):"}:
+        if title in {"Resolved review issues:", "Must-fix issues:", "Issues from the previous critic pass:", "User workflow constraints (not product requirements; subject to existing permissions):"}:
             data = json.loads(body)
-            if title in {"Must-fix issues:", "Issues from the previous critic pass:"}:
-                data = [{key: text for key, text in issue.items() if key in ISSUE_FIELDS | {"resolution_reason", "basis_refs", "decision_answer_id"}}
+            if title in {"Resolved review issues:", "Must-fix issues:", "Issues from the previous critic pass:"}:
+                fields = ISSUE_FIELDS | {"resolution_reason", "basis_refs", "decision_answer_id"}
+                if title == "Resolved review issues:":
+                    fields |= {"resolution_kind", "defect_kind"}
+                data = [{key: text for key, text in issue.items() if key in fields}
                         for issue in data if issue.get("status") != "resolved"]
             item = {**item, "content": title + "\n" + json.dumps(context.project(data), ensure_ascii=False)}
         result.append(item)

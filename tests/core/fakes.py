@@ -133,7 +133,7 @@ class DecisionProvider:
         elif schema is RubricResponse:
             basis = self.contexts[schema]["confirmed_basis"]
             parsed = schema(items=[dict(rubric_id="RUB-" + key, requirement_id=key,
-                category="requirement", basis=[{"reference": key, "quote": text}],
+                category="requirement", importance="core", basis=[{"reference": key, "quote": text}],
                 condition="Verify the confirmed behavior is specified.", sections=["architecture"])
                 for key, text in basis.items() if "." not in key])
         elif schema is SpecResponse:
@@ -159,7 +159,10 @@ class DecisionProvider:
             )
         elif schema is ReviewResponse:
             rubric = model_rubric(messages)
-            parsed = schema(issues=next(self.reviews), rubric_verdicts=[dict(
+            review_issues = next(self.reviews)
+            parsed = schema(score=7 if review_issues else 10, score_reason="검토 결과에 따른 점수입니다.",
+                critical_failures=[item["checklist_id"] for item in review_issues if item["severity"] in {"blocking", "major"} and not item.get("rubric_ids")],
+                revision_directives=[item["required_change"] for item in review_issues], issues=review_issues, rubric_verdicts=[dict(
                 rubric_id=item["rubric_id"], verdict="PASS", section="architecture", evidence_kind="quote",
                 quote="Store notes locally.", reason="확정 동작이 명세에 반영되어 있습니다.", issue_checklist_id=None)
                 for item in rubric.get("items", [])])

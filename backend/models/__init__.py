@@ -362,10 +362,12 @@ class State:
     rubric: dict[str, Any] = field(default_factory=dict)
     rubric_evaluation: dict[str, Any] = field(default_factory=dict)
     rubric_summary: dict[str, Any] = field(default_factory=dict)
+    refinement: dict[str, Any] = field(default_factory=dict)
+    approval_acceptance: dict[str, Any] = field(default_factory=dict)
     # critic stage
     structured_issues: list[dict[str, Any]] = field(default_factory=list)
     critic_pass_count: int = 0
-    max_critic_passes: int = 3
+    max_critic_passes: int = 5
     # artifact tracking
     approval_candidate_spec: str | None = None
     final_agent_spec: str | None = None
@@ -393,6 +395,7 @@ class State:
     candidate_hash: str = ""
     document_versions: list[dict[str, Any]] = field(default_factory=list)
     pending_input: dict[str, Any] = field(default_factory=dict)
+    mcp: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -722,6 +725,7 @@ class RubricBasis(ResponseModel):
 class RubricItem(ResponseModel):
     rubric_id: str = Field(pattern=r"^RUB-[A-Za-z0-9_-]{1,80}$")
     requirement_id: str
+    importance: Literal["core", "critical", "secondary"]
     category: Literal["requirement", "contract", "data_flow", "failure_completion", "acceptance_test"]
     basis: list[RubricBasis] = Field(min_length=1)
     condition: str = Field(min_length=1, description="English check grounded only in confirmed product requirements; never invent an obligation or choose an unresolved design.")
@@ -739,10 +743,14 @@ class RubricVerdict(ResponseModel):
     evidence_kind: Literal["quote", "absence"]
     quote: str
     reason: str = Field(min_length=1, description="Korean explanation of the verdict; absence identifies what is missing in the checked section.")
-    issue_checklist_id: str | None = Field(description="For non-PASS, checklist_id of a matching blocking/major issue with the same requirement and rubric_ids. Null for PASS.")
+    issue_checklist_id: str | None = Field(description="For non-PASS, checklist_id of exactly one matching issue with the same requirement and rubric_ids: blocking/major for core or critical checks; minor also allowed for secondary checks. Null for PASS.")
 
 
 class ReviewResponse(ResponseModel):
+    score: int = Field(ge=1, le=10, strict=True)
+    score_reason: str = Field(min_length=1)
+    critical_failures: list[str]
+    revision_directives: list[str]
     issues: list[IssueResponse]
     rubric_verdicts: list[RubricVerdict] = Field(default_factory=list)
 
@@ -899,6 +907,8 @@ class WorkflowState(TypedDict, total=False):
     rubric: dict[str, Any]
     rubric_evaluation: dict[str, Any]
     rubric_summary: dict[str, Any]
+    refinement: dict[str, Any]
+    approval_acceptance: dict[str, Any]
     structured_issues: list[dict[str, Any]]
     critic_pass_count: int
     max_critic_passes: int
@@ -929,6 +939,7 @@ class WorkflowState(TypedDict, total=False):
     candidate_hash: str
     document_versions: list[dict[str, Any]]
     pending_input: dict[str, Any]
+    mcp: dict[str, Any]
     _interview_direction_changing: bool
 
 

@@ -111,6 +111,12 @@ describe('질문 답변',()=>{
 });
 
 describe('대화 입력과 승인',()=>{
+ it('MCP 실행이 불확실하면 조회 중복과 요금 가능성을 안내한다',()=>{
+  const value:Job={id:'pending',execution_id:'e1',status:'error',can_retry:true,retry_requires_replay:true,retry_kind:'mcp'};
+  render(<QuestionActions job={value} onAction={vi.fn()} busy={false}/>);
+  expect(screen.getByText(/MCP 도구 실행 완료 여부를 확인할 수 없습니다/)).toBeTruthy();
+  expect(screen.getByText(/조회가 중복되고 추가 요금/)).toBeTruthy();
+ });
  it('불확실한 단계는 동의 후 명시적으로 재실행하며 실행 변경 시 동의를 해제한다',async()=>{
   const action=vi.fn().mockResolvedValue(undefined);
   const value:Job={id:'pending',execution_id:'e1',status:'error',can_retry:true,retry_requires_replay:true};
@@ -180,4 +186,43 @@ it('대화 본문에 질문을 유지하고 하단에는 작성 수와 제출 �
   await waitFor(()=>expect(action).toHaveBeenCalledOnce());
   expect(action.mock.calls[0][1]).toHaveLength(1);
  } finally { cleanup(); footer.remove(); }
+});
+
+const rubricReview = {
+ score: 7, score_reason: "저장 계약의 보완이 필요합니다.", round: 3, selected_round: 1, selected_cycle: 1,
+ termination: "patience" as const, requires_acceptance: true, evaluation_hash: "eval-1", revision_directives: ["저장 실패 처리를 명시하세요."],
+ remaining_issues: [{ issue_id: "I1", severity: "major", problem: "실패 처리가 누락됐습니다.", required_change: "저장 실패 처리를 명시하세요." }],
+ items: [{ rubric_id: "RUB-1", requirement_id: "REQ-1", condition: "Specify failure behavior.", importance: "critical" as const,
+ basis: [{ reference: "REQ-1", quote: "Store notes." }], verdict: "FAIL" as const, section: "architecture", quote: "",
+ reason: "실패 시 동작이 없습니다.", evidence_kind: "absence" as const }],
+};
+it('남은 결함 수락 전에는 저점 후보를 승인할 수 없고 후보 변경 시 다시 확인한다', async()=>{
+ const action=vi.fn().mockResolvedValue(undefined);
+ const current:Job={id:'low',status:'PASS_PENDING_USER_APPROVAL',state:{status:'PASS_PENDING_USER_APPROVAL',candidate_hash:'a',rubric_review:rubricReview}};
+ const view=render(<QuestionActions job={current} onAction={action} busy={false}/>);
+ expect(screen.getByText('명세 평가 7/10')).toBeTruthy();
+ expect(screen.getByText('Specify failure behavior.')).toBeTruthy();
+ expect((screen.getByRole('button',{name:'이 명세 승인'}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(screen.getByRole('checkbox'));
+ expect((screen.getByRole('button',{name:'이 명세 승인'}) as HTMLButtonElement).disabled).toBe(false);
+ view.rerender(<QuestionActions job={{...current,state:{...current.state,candidate_hash:'b'}}} onAction={action} busy={false}/>);
+ expect((screen.getByRole('button',{name:'이 명세 승인'}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(screen.getByRole('checkbox'));
+ await act(async()=>fireEvent.click(screen.getByRole('button',{name:'이 명세 승인'})));
+ expect(action).toHaveBeenCalledExactlyOnceWith('approve',{accept_remaining_issues:true});
+});
+it('최고점 후보에서 추가 실행은 명시적 retry로 전송한다',async()=>{
+ const action=vi.fn().mockResolvedValue(undefined);
+ render(<QuestionActions job={{id:'continue-low',status:'PASS_PENDING_USER_APPROVAL',state:{status:'PASS_PENDING_USER_APPROVAL',rubric_review:rubricReview}}} onAction={action} busy={false}/>);
+ await act(async()=>fireEvent.click(screen.getByRole('button',{name:'최고점 후보에서 추가 실행'})));
+ expect(action).toHaveBeenCalledExactlyOnceWith('retry',null);
+});
+
+it('저점 후보의 승인 저장 재시도에도 결함 수락을 확인한다',async()=>{
+ const action=vi.fn().mockResolvedValue(undefined);
+ render(<QuestionActions job={{id:'failed-low',status:'error',action:'approve',retry_status:'PASS_PENDING_USER_APPROVAL',state:{rubric_review:rubricReview}}} onAction={action} busy={false}/>);
+ expect((screen.getByRole('button',{name:'승인 다시 저장'}) as HTMLButtonElement).disabled).toBe(true);
+ fireEvent.click(screen.getByRole('checkbox'));
+ await act(async()=>fireEvent.click(screen.getByRole('button',{name:'승인 다시 저장'})));
+ expect(action).toHaveBeenCalledExactlyOnceWith('approve',{accept_remaining_issues:true});
 });

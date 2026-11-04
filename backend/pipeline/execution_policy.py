@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from enum import StrEnum
 
-from backend.models import count_unresolved_required, parse_issue_list
+from backend.models import parse_issue_list
 
 
 class StopReason(StrEnum):
@@ -58,47 +58,30 @@ def execution_constraints(state, config):
                                for other in recent) >= 2})
     return {"remaining_review_passes": max(0, config.max_critic_passes - state.get("critic_pass_count", 0)),
             "repair_limit_reached": state.get("critic_pass_count", 0) >= config.max_critic_passes,
-            "no_progress": bool(state.get("resolution_stop", False)),
+            "no_progress": False,
             "repeated_actions": repeated}
-
-
-def _repair_stop_reason(state, config):
-    # 해결 분류가 끝난 결함만 실행 제약으로 중단한다. 미결정 사항은 질문 경로를 유지한다.
-    if state.get("blocking_questions"):
-        return ""
-    assessed = "review_resolution" in state.get("completed_tasks", []) or any(
-        item.get("action") == "ask_user" and item.get("status") == "no_questions"
-        and item.get("segment") == state.get("execution_segment")
-        for item in state.get("task_results", [])[-1:]
-    )
-    if not assessed:
-        return ""
-    issues = [issue for issue in parse_issue_list(state.get("structured_issues", []))
-              if count_unresolved_required([issue])]
-    if not issues or any(issue.resolution_kind != "auto_fix" for issue in issues):
-        return ""
-    if state.get("resolution_stop"):
-        return StopReason.NO_PROGRESS.value
-    if state.get("critic_pass_count", 0) >= config.max_critic_passes:
-        return StopReason.REPAIR_LIMIT.value
-    return ""
 
 
 def evaluate_execution(state, config) -> ExecutionDecision:
     done = set(state.get("completed_tasks", []))
     constraints = execution_constraints(state, config)
-    stop = _repair_stop_reason(state, config)
+    stop = ""
     issues = parse_issue_list(state.get("structured_issues", [])) if "review_resolution" in done else []
-    unresolved = count_unresolved_required(issues) or any(
+    unresolved_decisions = any(
         issue.resolution_kind == "user_decision" and issue.status != "resolved" for issue in issues)
     required = ""
-    if state.get("blocking_questions"):
+    if state.get("blocking_questions") or unresolved_decisions:
         required = "ask_user"
+    elif "spec_compile" in done and "checklist_critic" not in done:
+        required = "checklist_critic"
     elif "checklist_critic" in done and "review_resolution" not in done:
         required = "review_resolution"
         stop = ""
-    elif "review_resolution" in done and not unresolved:
+    elif "review_resolution" in done and state.get("refinement", {}).get("termination"):
         required = "compose_candidate"
+        stop = ""
+    elif "review_resolution" in done:
+        required = "spec_compile"
         stop = ""
     elif stop:
         required = "blocked"
@@ -111,15 +94,15 @@ def evaluate_execution(state, config) -> ExecutionDecision:
         "spec_compile": "requirement_lock_stage" in done,
         "checklist_critic": "spec_compile" in done,
         "review_resolution": "checklist_critic" in done,
-        "compose_candidate": "review_resolution" in done and not unresolved,
+        "compose_candidate": "review_resolution" in done and not unresolved_decisions and not state.get("blocking_questions") and bool(state.get("refinement", {}).get("termination")),
     }
     eligibility = {}
     for action, ready in prerequisites.items():
         reasons = []
-        if not ready or (state.get("blocking_questions") and action not in {"ask_user", "blocked"}) or (stop and action != "blocked"):
+        if not ready or ((state.get("blocking_questions") or unresolved_decisions) and action not in {"ask_user", "blocked"}) or (stop and action != "blocked"):
             reasons.append(ActionBlockReason.PREREQUISITE_MISSING)
         if action in {"spec_compile", "checklist_critic"}:
-            if constraints["repair_limit_reached"]:
+            if constraints["repair_limit_reached"] and action != required:
                 reasons.append(ActionBlockReason.REVIEW_BUDGET_EXHAUSTED)
             if constraints["no_progress"]:
                 reasons.append(ActionBlockReason.REPEATED_WITHOUT_PROGRESS)
@@ -135,8 +118,10 @@ def required_plan(state, decision):
         return None
     reasons = {
         "ask_user": "미응답 사용자 결정을 확인합니다.",
+        "checklist_critic": "현재 명세를 고정 루브릭으로 평가합니다.",
         "review_resolution": "최신 검토 결과의 해결 방법을 판단합니다.",
-        "compose_candidate": "필수 결함이 해결된 명세의 승인용 검토본을 준비합니다.",
+        "compose_candidate": "최고점 명세와 남은 결함을 사용자 승인용으로 준비합니다.",
+        "spec_compile": "직전 평가의 수정 지시에 따라 명세를 보완합니다.",
         "blocked": "원인 진단 후에도 동일 결함이 반복되었습니다." if decision.stop_reason == StopReason.NO_PROGRESS
                    else "확정 근거로 수정할 문제가 남아 있지만 이번 검토·보완 횟수를 모두 사용했습니다.",
     }

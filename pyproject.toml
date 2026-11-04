@@ -25,6 +25,10 @@ dependencies = [
   "openai==3.31.0",
   "langgraph-checkpoint-postgres==3.2.0",
   "httpx2==2.13.1",
+  "mcp>=1.0,<2",
+  "jsonschema>=4.0,<5",
+  "cryptography>=45",
+  "httpx>=0.28,<1",
 ]
 
 [project.optional-dependencies]

@@ -1,3 +1,4 @@
+import { RubricReview } from "./RubricReview";
 import { ServiceStatusNotice, serviceState } from "../workspace/ServiceStatus";
 import { ChangeReview } from "../requirements/ChangeReview";
 import { RequirementReview } from "../requirements/RequirementReview";
@@ -92,6 +93,9 @@ export function QuestionActions({
     [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const [replayConsent, setReplayConsent] = useState(false);
+  const [acceptedCandidate, setAcceptedCandidate] = useState("");
+  const reviewKey = `${job.state?.candidate_hash || ""}:${job.state?.rubric_review?.evaluation_hash || ""}`;
+  const requiresAcceptance = job.state?.rubric_review?.requires_acceptance === true;
   const [approvedExecution, setApprovedExecution] = useState(() => sessionStorage.getItem(prefix + "approved-execution") || "");
   const submitting = useRef(false);
   const executionKey = `${job.id}:${job.execution_id}:${job.status}`;
@@ -198,15 +202,20 @@ export function QuestionActions({
       <section className={actionClass} id="job-actions">
         <h3>작업이 중단되었습니다</h3>
         <p>{retryApproval ? "검토가 완료된 명세의 승인을 다시 저장할 수 있습니다." : job.retry_requires_replay
-          ? "이전 단계의 호출 완료 여부를 확인할 수 없습니다. 미완료 단계를 다시 실행하면 이미 성공한 호출도 반복되어 추가 비용이 발생할 수 있습니다."
+          ? job.retry_kind === "mcp"
+            ? "MCP 도구 실행 완료 여부를 확인할 수 없습니다. 다시 실행하면 조회가 중복되고 추가 요금이 발생할 수 있습니다."
+            : "이전 단계의 호출 완료 여부를 확인할 수 없습니다. 미완료 단계를 다시 실행하면 이미 성공한 호출도 반복되어 추가 비용이 발생할 수 있습니다."
           : job.can_retry
           ? "저장된 답변을 유지하고 마지막 저장 지점부터 다시 시도합니다."
           : job.retry_unavailable_reason || job.continuation_error || "재시도 가능 여부를 확인할 수 없습니다. 최신 작업 상태를 확인해주세요."}</p>
+        {retryApproval && <RubricReview review={job.state?.rubric_review} />}
+        {retryApproval && requiresAcceptance && <label><input type="checkbox" checked={acceptedCandidate === reviewKey}
+          onChange={event => setAcceptedCandidate(event.target.checked ? reviewKey : "")} />표시된 남은 결함을 확인했으며, 이 명세에 남아 있는 상태로 수락합니다.</label>}
         {job.retry_requires_replay && <label><input type="checkbox" checked={replayConsent} onChange={e => setReplayConsent(e.target.checked)} />호출 반복과 추가 비용 가능성을 확인했습니다.</label>}
         <ServiceStatusNotice inline />
         {(job.can_retry || retryApproval) && controls(<div className="chat-answer-controls"><Button
-          className="primary" disabled={disabled || (!!job.retry_requires_replay && !replayConsent)}
-          onClick={() => void perform(retryApproval ? "approve" : "retry", job.retry_requires_replay ? { replay_pending: true } : null).catch(() => {})}
+          className="primary" disabled={disabled || (!!job.retry_requires_replay && !replayConsent) || (retryApproval && requiresAcceptance && acceptedCandidate !== reviewKey)}
+          onClick={() => void perform(retryApproval ? "approve" : "retry", retryApproval && requiresAcceptance ? { accept_remaining_issues: true } : job.retry_requires_replay ? { replay_pending: true } : null).catch(() => {})}
         >{pending ? "재시도 요청 중…" : retryApproval ? "승인 다시 저장" : job.retry_requires_replay ? "미완료 단계 다시 실행" : "다시 시도"}</Button></div>)}
       </section>
     );
@@ -365,7 +374,8 @@ export function QuestionActions({
   const approval =
     !normalization &&
     ["PASS_PENDING_USER_APPROVAL", "waiting_approval"].includes(effective) &&
-    (!job.state || job.state.status === "PASS_PENDING_USER_APPROVAL");
+    (!job.state || job.state.status === "PASS_PENDING_USER_APPROVAL") &&
+    (!job.state?.allowed_actions || job.state.allowed_actions.includes("approve"));
   return (
     <section className={actionClass} id="job-actions"><ServiceStatusNotice inline />
       <span className="eyebrow">NEXT STEP</span>
@@ -376,6 +386,8 @@ export function QuestionActions({
           의견을 유지해 다시 정리할 수 있습니다.
         </Notice>
       )}
+      {!approval && job.can_retry && job.state?.allowed_actions?.includes("retry") && <Button disabled={disabled}
+        onClick={() => void perform("retry", null).catch(() => {})}>저장된 결과 다시 평가</Button>}
       {approval && <RequirementReview key={`${job.id}:${job.execution_id || job.status}`} jobId={job.id} compact onOpen={onRequirementReview || onReview} />}
       {approval && <ChangeReview review={job.change_review} onQuestion={question => {
         const value = feedback.trim() ? `${feedback.trim()}\n\n${question}` : question;
@@ -400,13 +412,19 @@ export function QuestionActions({
         }}
       />
       <Notice>{error}</Notice></div>)}
+      <RubricReview review={job.state?.rubric_review} />
+      {(approval || retryApproval) && requiresAcceptance && <label><input type="checkbox" checked={acceptedCandidate === reviewKey}
+        disabled={disabled} onChange={event => setAcceptedCandidate(event.target.checked ? reviewKey : "")} />
+        표시된 남은 결함을 확인했으며, 이 명세에 남아 있는 상태로 수락합니다.
+      </label>}
       {approval && (
         <Item variant="outline" size="sm" className="spec-confirmation">
           <SealCheckIcon weight="duotone" size={25} aria-hidden />
           <ItemContent><ItemTitle>이 명세를 최종 승인할까요?</ItemTitle><ItemDescription>현재 검토본을 확인한 뒤 승인해주세요. 과거 명세를 여는 것만으로 승인되지는 않습니다.</ItemDescription></ItemContent>
           <ItemActions>
             {onReview && <Button onClick={onReview}>현재 검토본 열기</Button>}
-            <Button className="primary" disabled={disabled} onClick={() => void perform("approve", null).catch(() => {})}>{approvedExecution === executionKey ? "승인 전송됨" : "이 명세 승인"}</Button>
+            <Button className="primary" disabled={disabled || (requiresAcceptance && acceptedCandidate !== reviewKey)} onClick={() => void perform("approve", requiresAcceptance ? { accept_remaining_issues: true } : null).catch(() => {})}>{approvedExecution === executionKey ? "승인 전송됨" : "이 명세 승인"}</Button>
+            {job.state?.rubric_review?.termination && job.state.rubric_review.score < 10 && <Button disabled={disabled} onClick={() => void perform("retry", null).catch(() => {})}>최고점 후보에서 추가 실행</Button>}
           </ItemActions>
         </Item>
       )}

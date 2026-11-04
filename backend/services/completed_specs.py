@@ -11,6 +11,13 @@ def archive_completed(writer, state, content=None):
     content = writer.read_text("final/FINAL_AGENT_SPEC.md") if content is None else content
     data = {"content": content, "basis": {key: value for key, value in state.to_dict().items()
             if key in {"original_user_request", "user_request", "requirement_lock_sheet", "confirmed_user_sources", "revision_history", "reused_decisions"}}}
+    if state.rubric_evaluation:
+        from backend.services.rubric import digest
+        data["review"] = {"score": state.rubric_evaluation["score"],
+            "evaluation_hash": digest(state.rubric_evaluation),
+            "rubric_hash": state.rubric_evaluation["rubric_hash"],
+            "acceptance": state.approval_acceptance,
+            "remaining_issues": [item for item in state.structured_issues if item.get("status") != "resolved"]}
     if writer.exists("analysis/spec_trace.json"):
         data["trace"] = writer.read_json("analysis/spec_trace.json")
     from backend.services.requirement_review import load_snapshot
