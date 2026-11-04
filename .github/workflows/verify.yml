@@ -62,6 +62,7 @@ jobs:
       - name: Frontend tests and production assets
         run: |
           .venv/bin/python resources/licenses/python_notices.py --output frontend/static/vendor/python
+          pnpm --dir frontend typecheck
           pnpm --dir frontend test
           pnpm --dir frontend build
       - name: Install browser for acceptance scenarios

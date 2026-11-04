@@ -8,8 +8,9 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "build": "pnpm typecheck && vite build",
+    "build": "pnpm typecheck:app && vite build",
     "dev": "vite build --watch",
+    "typecheck:app": "tsc --noEmit",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.tests.json",
     "test": "vitest run --config frontend/vite.config.ts --root .. && node --test ../tests/frontend/scripts/check-notices.mjs"
   },
