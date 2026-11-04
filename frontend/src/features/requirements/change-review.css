@@ -17,4 +17,6 @@
 .change-originals > div { min-width: 0; }
 .change-kind { font-weight: 600; }
 .change-warning { padding: .75rem; border: 1px solid var(--line, #e7e4ec); border-radius: .4rem; }
+.change-question { min-width: 0; margin-block: 1rem; }
+.change-review .change-questions { padding-left: 0; list-style: none; }
 @media (max-width: 640px) { .change-originals { grid-template-columns: minmax(0, 1fr); } .change-review { padding: .75rem; } }

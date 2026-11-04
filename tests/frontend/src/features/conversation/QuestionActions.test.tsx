@@ -52,8 +52,9 @@ describe('질문 답변',()=>{
    id:'C',change:'modified',before:null,after:null,status:'unanalysed',reason:'analysis_failed',question:'다른 기기에서도 이어서 볼까요?'}]}};
   render(<QuestionActions job={value} onAction={action} busy={false}/>);
   expect((screen.getByRole('button',{name:'이 명세 승인'}) as HTMLButtonElement).disabled).toBe(false);
-  fireEvent.click(screen.getByRole('button',{name:'수정 의견에 추가'}));
-  expect((screen.getByRole('textbox',{name:'수정 의견 보내기'}) as HTMLTextAreaElement).value).toBe('다른 기기에서도 이어서 볼까요?');
+  fireEvent.change(screen.getByRole('textbox',{name:'다른 기기에서도 이어서 볼까요? · 직접 입력'}),{target:{value:'기기별로 분리'}});
+  fireEvent.click(screen.getByRole('button',{name:'답변을 수정 의견에 추가'}));
+  expect((screen.getByRole('textbox',{name:'수정 의견 보내기'}) as HTMLTextAreaElement).value).toBe('확인 제안: 다른 기기에서도 이어서 볼까요?\n답변: 기기별로 분리');
   expect(action).not.toHaveBeenCalled();
  });
  it('선택과 직접 입력을 검증하고 답변한 질문만 전송한다',async()=>{

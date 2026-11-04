@@ -73,12 +73,14 @@ export function QuestionActions({
   onReview,
   onRequirementReview,
   controlsTarget,
+  onAppendFeedback,
 }: {
   job: Job;
   onAction: (action: string, payload: unknown) => Promise<void>;
   busy: boolean;
   conversational?: boolean;
   controlsTarget?: HTMLElement | null;
+  onAppendFeedback?: (answer: string) => boolean;
   onReview?: () => void;
   onRequirementReview?: () => void;
 }) {
@@ -389,10 +391,13 @@ export function QuestionActions({
       {!approval && job.can_retry && job.state?.allowed_actions?.includes("retry") && <Button disabled={disabled}
         onClick={() => void perform("retry", null).catch(() => {})}>저장된 결과 다시 평가</Button>}
       {approval && <RequirementReview key={`${job.id}:${job.execution_id || job.status}`} jobId={job.id} compact onOpen={onRequirementReview || onReview} />}
-      {approval && <ChangeReview review={job.change_review} onQuestion={question => {
-        const value = feedback.trim() ? `${feedback.trim()}\n\n${question}` : question;
+      {approval && <ChangeReview key={job.id} review={job.change_review} disabled={disabled || job.read_only || (!!job.state?.plan && !onAppendFeedback)} onQuestion={question => {
+        if (job.state?.plan) return onAppendFeedback?.(question) ?? false;
+        const value = feedback.trim() ? `${feedback}\n\n${question}` : question;
+        if (value.length > 20000) return false;
         setFeedback(value); sessionStorage.setItem(prefix + "feedback", value);
         document.getElementById(`feedback-${job.id}`)?.focus();
+        return true;
       }} />}
       {!job.state?.plan && controls(<div className="chat-feedback-controls"><label htmlFor={`feedback-${job.id}`}>{job.can_continue ? "추가 요청 내용" : "수정 의견 보내기"}</label>
       <PromptInput

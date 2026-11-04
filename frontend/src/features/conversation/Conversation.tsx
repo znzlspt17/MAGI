@@ -11,8 +11,29 @@ import { Button, Notice, formatTime } from "../../shared/ui/UI";
 import type { Job } from "../../shared/types";
 import { AgentPlan, AgentComposer } from "../workspace/AgentPlan";
 import { ExecutionMonitor } from "../execution/ExecutionMonitor";
+import { useAuth } from "../auth/Auth";
 
-export function Conversation({ job, select, onAction, busy }: { job: Job; select: (stepId: string, requirements?: boolean) => void; onAction: (action: string, payload: unknown) => Promise<void>; busy: boolean }) {
+type ConversationProps = { job: Job; select: (stepId: string, requirements?: boolean) => void; onAction: (action: string, payload: unknown) => Promise<void>; busy: boolean };
+export function Conversation(props: ConversationProps) {
+  const { user } = useAuth();
+  const draftKey = `draft:${user?.id || "local"}:${props.job.id}:message`;
+  return <ConversationContent key={draftKey} {...props} draftKey={draftKey} />;
+}
+function ConversationContent({ job, select, onAction, busy, draftKey }: ConversationProps & { draftKey: string }) {
+  const [message, setMessage] = useState(() => sessionStorage.getItem(draftKey) || "");
+  function updateMessage(value: string) {
+    setMessage(value);
+    if (value) sessionStorage.setItem(draftKey, value);
+    else sessionStorage.removeItem(draftKey);
+  }
+  function appendMessage(answer: string) {
+    const value = message.trim() ? `${message}\n\n${answer}` : answer;
+    if (value.length > 20000) return false;
+    updateMessage(value);
+    document.getElementById(`agent-message-${job.id}`)?.focus();
+    return true;
+  }
+  const messageDraft = { value: message, onChange: updateMessage };
   const [controlsTarget, setControlsTarget] = useState<HTMLDivElement | null>(null);
   const root = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -57,7 +78,7 @@ export function Conversation({ job, select, onAction, busy }: { job: Job; select
             </MessageScrollerItem>)}
             <MessageScrollerItem messageId="current-plan"><AgentPlan job={job} onDocument={select} /></MessageScrollerItem>
             <MessageScrollerItem messageId="current-state"><ExecutionMonitor job={job} select={select} /></MessageScrollerItem>
-            <MessageScrollerItem messageId="current-actions"><Message align="start" className="chat-turn magi"><MessageContent><QuestionActions key={job.id} job={job} onAction={onAction} busy={busy} conversational controlsTarget={controlsTarget} onReview={reviewStep ? () => select(reviewStep) : undefined} onRequirementReview={reviewStep ? () => select(reviewStep, true) : undefined} /></MessageContent></Message></MessageScrollerItem>
+            <MessageScrollerItem messageId="current-actions"><Message align="start" className="chat-turn magi"><MessageContent><QuestionActions key={job.id} job={job} onAction={onAction} busy={busy} conversational controlsTarget={controlsTarget} onAppendFeedback={appendMessage} onReview={reviewStep ? () => select(reviewStep) : undefined} onRequirementReview={reviewStep ? () => select(reviewStep, true) : undefined} /></MessageContent></Message></MessageScrollerItem>
           </MessageScrollerContent>
         </MessageScrollerViewport>
         <MessageScrollerButton size="sm" className="chat-latest">최신 메시지로 이동</MessageScrollerButton>
@@ -66,7 +87,7 @@ export function Conversation({ job, select, onAction, busy }: { job: Job; select
     <div className="chat-actions" ref={setControlsTarget} />
     {job.state?.plan && (waiting ? <Collapsible className="chat-secondary-composer">
       <CollapsibleTrigger className="chat-question-trigger">수정 의견 또는 추가 요청<CaretDownIcon size={14} aria-hidden /></CollapsibleTrigger>
-      <CollapsibleContent><AgentComposer key={job.id} job={job} onAction={onAction} busy={busy} /></CollapsibleContent>
-    </Collapsible> : <AgentComposer key={job.id} job={job} onAction={onAction} busy={busy} />)}
+      <CollapsibleContent><AgentComposer key={job.id} job={job} onAction={onAction} busy={busy} draft={messageDraft} /></CollapsibleContent>
+    </Collapsible> : <AgentComposer key={job.id} job={job} onAction={onAction} busy={busy} draft={messageDraft} />)}
   </section>;
 }

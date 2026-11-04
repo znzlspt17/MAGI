@@ -14,9 +14,11 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.infrastructure.provider_call import _complete_once
+from backend.models import QuestionFormSpec
+from backend.services.question_forms import question_form
 
 
-VERSION = 1
+VERSION = 2
 MAX_CALLS = 3
 MAX_PROMPT_CHARS = 16_000
 LATEST = "state/candidate_snapshot.json"
@@ -34,6 +36,10 @@ direct는 제공된 사용자 원문이 해당 변경을 직접 요구하는 경
 근거는 sources에 있는 source_id와 그 원문의 정확한 인용으로만 반환한다.
 직접 요청 근거가 없으면 direct를 사용하지 않는다. summary는 변경 사실, rationale은 판단 이유다.
 uncertain 또는 직접 요청하지 않은 의미 변화에는 확인할 question을 작성한다.
+question이 있으면 question_form도 작성한다. 근거 있는 대안이 있으면 single_choice 또는 multiple_choice와
+구체적인 한국어 선택지를 최소 2개 제공한다. 대안을 구성할 근거가 부족하면 text를 사용한다.
+선택지와 영향·추천은 제안이지 사용자 결정이 아니다. 기본 선택을 가정하거나 미확정 사실을 만들지 않는다.
+question이 없으면 question_form은 null이다. 질문은 필수 답변이나 승인 차단 조건이 아니다.
 반환된 change_id는 제공된 changes의 id만 사용한다. 문서 위치와 전후 본문을 만들거나 수정하지 않는다.
 """
 
@@ -52,6 +58,7 @@ class ChangeJudgment(BaseModel):
     summary: str = Field(min_length=1, max_length=600)
     rationale: str = Field(min_length=1, max_length=1000)
     question: str = Field(max_length=600)
+    question_form: QuestionFormSpec | None
     evidence: list[SourceQuote]
 
 
@@ -312,7 +319,13 @@ def _validate(value, batch, sources):
             raise ValueError("Change review explanations must be Korean")
         if (item.meaning == "uncertain" or item.meaning == "semantic" and item.relation != "direct") and not re.search(r"[가-힣]", item.question):
             raise ValueError("Unconfirmed changes require a Korean question")
-    return {item.change_id: item.model_dump(exclude={"change_id"}) for item in value.judgments}
+        if bool(item.question.strip()) != (item.question_form is not None):
+            raise ValueError("Questions require a form; absent questions require null")
+    return {item.change_id: {
+        **item.model_dump(exclude={"change_id", "question_form"}),
+        "question_form": question_form(item.change_id, item.question, item.question_form.model_dump())
+        if item.question_form is not None else None,
+    } for item in value.judgments}
 
 
 def review_candidate(context, state, spec):

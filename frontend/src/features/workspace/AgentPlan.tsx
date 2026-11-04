@@ -46,12 +46,22 @@ export function AgentPlan({ job, onDocument }: { job: Job; onDocument?: (stepId:
   </Collapsible>;
 }
 
-export function AgentComposer({ job, onAction, busy }: {
+export function AgentComposer({ job, onAction, busy, draft }: {
   job: Job; onAction: (action: string, payload: unknown) => Promise<void>; busy: boolean;
+  draft?: { value: string; onChange: (value: string) => void };
 }) {
   const { user, status, publicMode } = useAuth();
   const key = `draft:${user?.id || "local"}:${job.id}:message`;
-  const [text, setText] = useState(() => sessionStorage.getItem(key) || "");
+  const [localText, setLocalText] = useState(() => sessionStorage.getItem(key) || "");
+  const text = draft ? draft.value : localText;
+  function setText(value: string) {
+    if (draft) draft.onChange(value);
+    else {
+      setLocalText(value);
+      if (value) sessionStorage.setItem(key, value);
+      else sessionStorage.removeItem(key);
+    }
+  }
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
   const sending = useRef(false);
@@ -63,14 +73,14 @@ export function AgentComposer({ job, onAction, busy }: {
     sending.current = true; setPending(true); setError("");
     try {
       await onAction(action, action === "message" ? text.trim() : null);
-      if (action === "message") { setText(""); sessionStorage.removeItem(key); }
+      if (action === "message") setText("");
     } catch (cause) { setError((cause as Error).message); }
     finally { sending.current = false; setPending(false); }
   }
   return <section className="agent-composer" aria-label="대화 입력">
     <PromptInput label="수정 의견 또는 추가 요청" id={`agent-message-${job.id}`} value={text}
       buttonLabel={pending ? "보내는 중…" : "의견 보내기"} disabled={disabled} rows={2}
-      onChange={(event) => { setText(event.target.value); sessionStorage.setItem(key, event.target.value); }}
+      onChange={(event) => setText(event.target.value)}
       onSend={() => void send("message")} />
     {running && <p>실행이 끝나면 작성한 의견을 보낼 수 있습니다.</p>}
     {job.state?.allowed_actions?.includes("retry") && <Button disabled={disabled} onClick={() => void send("retry")}>저장된 결과로 추가 실행</Button>}

@@ -123,6 +123,7 @@ export interface SpecChange {
   meaning?: "wording" | "semantic" | "uncertain";
   relation?: "direct" | "related" | "unverified";
   summary?: string; rationale?: string; question?: string; diff?: string;
+  question_form?: QuestionForm | null;
   evidence?: { source_id: string; quote: string }[];
 }
 export interface ChangeReviewData {

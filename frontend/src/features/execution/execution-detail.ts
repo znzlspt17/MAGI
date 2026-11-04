@@ -30,13 +30,41 @@ const resultFields = {
 };
 const decodeResult = object(resultFields);
 const location = requiredObject({ item_id: text, section: text, text, start: number, end: number, line: number, requirement_ids: strings, decision_ids: strings });
+const changeQuestionForm = requiredObject({ question_id: text, question: text, form_version: text,
+  input_type: literal("text", "single_choice", "multiple_choice"),
+  options: array(requiredObject({ id: text, label: text, impact: optional(nullable(text)), assumptions: optional(strings) })),
+  recommendation: optional(nullable(requiredObject({ option_ids: strings, reason: text, assumptions: strings }))) });
+function decodeChangeQuestionForm(value: unknown) {
+  const form = changeQuestionForm(value);
+  const ids = form.options.map(option => option.id);
+  const labels = form.options.map(option => option.label.trim());
+  const recommended = form.recommendation?.option_ids;
+  if (![form.question_id, form.question, form.form_version, ...ids, ...labels].every(item => item.trim()) ||
+      new Set(ids).size !== ids.length || new Set(labels).size !== labels.length ||
+      (form.input_type === "text" ? ids.length !== 0 : ids.length < 2) ||
+      (recommended && (form.input_type === "text" || recommended.length === 0 ||
+        new Set(recommended).size !== recommended.length || recommended.some(id => !ids.includes(id)) ||
+        (form.input_type === "single_choice" && recommended.length !== 1)))) {
+    throw new Error("확인 제안의 질문 형식이 올바르지 않습니다.");
+  }
+  return form;
+}
+const change = requiredObject({ id: text, change: literal("added", "removed", "modified", "moved"), before: nullable(location), after: nullable(location),
+    status: literal("analysed", "unanalysed"), reason: text, meaning: optional(literal("wording", "semantic", "uncertain")),
+    relation: optional(literal("direct", "related", "unverified")), summary: optional(text), rationale: optional(text), question: optional(text), diff: optional(text),
+    question_form: optional(nullable(decodeChangeQuestionForm)),
+    evidence: optional(array(requiredObject({ source_id: text, quote: text }))) });
+function decodeChange(value: unknown) {
+  const parsed = change(value);
+  if (parsed.question_form && (parsed.question_form.question_id !== parsed.id || parsed.question_form.question !== parsed.question)) {
+    throw new Error("확인 제안과 질문 폼이 일치하지 않습니다.");
+  }
+  return parsed;
+}
 export const decodeChangeReview = requiredObject({ status: literal("no_baseline", "unchanged", "complete", "partial", "failed", "running"),
   before_id: optional(nullable(text)), after_id: optional(text), before_hash: optional(nullable(text)), after_hash: text,
   analysed: number, remaining: nullable(number), sources: array(requiredObject({ source_id: text, text, question: optional(text) })),
-  changes: array(requiredObject({ id: text, change: literal("added", "removed", "modified", "moved"), before: nullable(location), after: nullable(location),
-    status: literal("analysed", "unanalysed"), reason: text, meaning: optional(literal("wording", "semantic", "uncertain")),
-    relation: optional(literal("direct", "related", "unverified")), summary: optional(text), rationale: optional(text), question: optional(text), diff: optional(text),
-    evidence: optional(array(requiredObject({ source_id: text, quote: text }))) })) });
+  changes: array(decodeChange) });
 const detailFields = { id: text, stage: text, status: text, title: text, summary: text, recording_incomplete: boolean,
   unavailable: boolean, message: text, result: decodeResult, research,
   document: requiredObject({ content: text, filename: optional(text), language: optional(text), kind: optional(text), source_hash: optional(text), completed_id: optional(text) }),
