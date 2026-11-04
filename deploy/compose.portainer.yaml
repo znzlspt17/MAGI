@@ -139,6 +139,7 @@ services:
       DB_SSLMODE: ${DB_SSLMODE:-disable}
       EMBEDDING_MODEL_PATH: /models/bge-m3
       EMBEDDING_DEVICE: cpu
+      MAGI_MCP_ENCRYPTION_KEY: ${MAGI_MCP_ENCRYPTION_KEY}
     volumes:
       - *timezone-volume
       - type: bind
