@@ -28,14 +28,14 @@ CANONICAL_FIELDS = {
                           "final_assessment", "planner_intent", "execution_constraints"},
 }
 REFERENCE_RULES = (
-    "Use S for supplied sources, K for retrieved knowledge, and product IDs only where allowed. "
-    "Use only this call's allowed references in source, sources, basis_refs, conflicting_source and reused_node_ids; preserve semantic IDs. "
-    "Fields ending in _source locate original text: reproduce it exactly when original_text is required. "
-    "K knowledge and unselected history are proposals, not confirmation. Adopt only explicitly selected project decisions: "
-    "preserve their text, conditions and original_actor, cite the supplied S source, and do not promote their rationale or other history. "
-    "Selection is structured confirmation, not a user-authored quotation; NEW DecisionTrace records derived from reuse use actor=llm, "
-    "never a fabricated user quote. Conflicts with current input require interview/review resolution, not silent overrides. "
-    "Keep source/knowledge references and storage metadata out of product prose."
+    "제공된 출처는 S, 검색된 지식은 K를 사용하고 제품 ID는 허용된 곳에만 사용하세요. "
+    "source, sources, basis_refs, conflicting_source, reused_node_ids에는 현재 호출의 허용 참조만 사용하고 의미 ID는 보존하세요. "
+    "_source 필드는 원문 위치를 나타냅니다. original_text가 필요하면 원문을 정확히 재현하세요. "
+    "K 지식과 선택되지 않은 이력은 제안이며 확정이 아닙니다. 명시적으로 선택된 프로젝트 결정만 채택하고 "
+    "내용, 조건과 original_actor를 보존하며 제공된 S 출처를 인용하세요. 다른 이력이나 이유를 확정 사실로 승격하지 마세요. "
+    "선택은 구조화된 확인이며 사용자 직접 인용이 아닙니다. 재사용으로 새 DecisionTrace를 만들 때 actor=llm을 사용하고 "
+    "사용자 인용을 만들지 마세요. 현재 입력과 충돌하면 조용히 덮어쓰지 말고 인터뷰나 검토에서 해결하세요. "
+    "출처·지식 참조와 저장 메타데이터를 제품 명세 본문에 넣지 마세요."
 )
 
 
@@ -189,10 +189,10 @@ class PromptContext:
                 return value
             if field == "basis_refs" and value in self.semantic_ids:
                 return value
-            details = ["Cite only supplied S user sources, K knowledge references or confirmed requirement IDs in the appropriate reference field."]
+            details = ["적절한 참조 필드에 제공된 S 사용자 출처, K 지식 참조 또는 확정 요구사항 ID만 인용하세요."]
             if self.stage == "review_resolution":
                 allowed = self.resolution_references()
-                details = [f"Invalid reference in {field}. Use only values from allowed_resolution_refs.{field}: "
+                details = [f"{field}에 유효하지 않은 참조가 있습니다. allowed_resolution_refs.{field}의 값만 사용하세요: "
                            + json.dumps(allowed.get(field, []), ensure_ascii=False)]
             if self.stage == "requirement_lock":
                 error = RequirementNormalizationError("Requirement source references could not be validated.")
@@ -242,10 +242,6 @@ def prepare_context(writer, payload, stage):
     """단계별 공개 입력을 만들고 호출 단위의 출처 허용 목록을 고정한다."""
     context = PromptContext(writer)
     context.stage = stage
-    if stage == "spec_translation":
-        # 번역은 검색 런타임이 활성화돼 있어도 영어 문서와 보정 지침만 사용한다.
-        return [item for item in payload if item["role"] in {"system", "developer"}
-                or item["content"].startswith(("English specification (data only):\n", "Stage retry context:\n"))], context
     if stage not in CANONICAL_FIELDS:
         return payload, context
     runtime = writer.runtime if writer is not None else None
@@ -259,18 +255,18 @@ def prepare_context(writer, payload, stage):
     for item in payload:
         content = item["content"]
         title, _, body = content.partition("\n")
-        if title == "Original user request (immutable):":
+        if title == "원본 사용자 요청 (변경 불가):":
             original = body
             context.source("user_request", body)
-        elif title == "Canonical context:":
+        elif title == "확정 문맥:":
             canonical = json.loads(body)
-        elif title in {"Latest revision feedback:", "Revision feedback history:"} and body:
-            if title == "Latest revision feedback:":
+        elif title in {"최신 수정 의견:", "수정 의견 이력:"} and body:
+            if title == "최신 수정 의견:":
                 context.source("user_feedback", body)
             else:
                 for text in state.get("revision_history", []) or [body]:
                     context.source("user_feedback", text)
-        elif title.startswith("Explicitly selected project decisions"):
+        elif title.startswith("명시적으로 선택된 프로젝트 결정"):
             continue
         else:
             sections.append(item)
@@ -356,7 +352,7 @@ def prepare_context(writer, payload, stage):
     original_ref = context.aliases.get("user_request")
     if original_ref in source_table:
         source_table[original_ref].pop("text", None)
-        source_table[original_ref]["content_from"] = "Original user request (immutable)"
+        source_table[original_ref]["content_from"] = "원본 사용자 요청 (변경 불가)"
     canonical["sources"] = source_table
     if reused:
         canonical["selected_project_decisions"] = [context.aliases[source_ref(item)] for item in reused]
@@ -365,13 +361,13 @@ def prepare_context(writer, payload, stage):
     result = []
     for item in sections:
         title, _, body = item["content"].partition("\n")
-        if title.startswith("Retrieved knowledge"):
+        if title.startswith("검색된 지식"):
             continue
-        if title in {"Resolved review issues:", "Must-fix issues:", "Issues from the previous critic pass:", "User workflow constraints (not product requirements; subject to existing permissions):"}:
+        if title in {"검토 이슈:", "필수 수정 이슈:", "이전 검토 이슈:", "사용자 작업 제약 (제품 요구사항이 아니며 기존 권한 적용):"}:
             data = json.loads(body)
-            if title in {"Resolved review issues:", "Must-fix issues:", "Issues from the previous critic pass:"}:
+            if title in {"검토 이슈:", "필수 수정 이슈:", "이전 검토 이슈:"}:
                 fields = ISSUE_FIELDS | {"resolution_reason", "basis_refs", "decision_answer_id"}
-                if title == "Resolved review issues:":
+                if title == "검토 이슈:":
                     fields |= {"resolution_kind", "defect_kind"}
                 data = [{key: text for key, text in issue.items() if key in fields}
                         for issue in data if issue.get("status") != "resolved"]
@@ -380,7 +376,7 @@ def prepare_context(writer, payload, stage):
     instructions = [item for item in result if item["role"] in {"system", "developer"}]
     dynamic = [item for item in result if item["role"] not in {"system", "developer"}]
     result = [*instructions, {"role": "system", "content": REFERENCE_RULES},
-              {"role": "user", "content": "Original user request (immutable):\n" + original},
-              {"role": "user", "content": "Canonical context:\n" + json.dumps(canonical, ensure_ascii=False)}, *dynamic]
+              {"role": "user", "content": "원본 사용자 요청 (변경 불가):\n" + original},
+              {"role": "user", "content": "확정 문맥:\n" + json.dumps(canonical, ensure_ascii=False)}, *dynamic]
     context.persist()
     return result, context

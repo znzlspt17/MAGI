@@ -88,14 +88,15 @@ class WorkspaceClient:
                     },
                     "document": {
                         "content": "# Tutorial Stage 1\n\n## 1. 목표\n\n키보드로 이동하고 전투하는 튜토리얼 게임을 만듭니다.\n\n## 2. 플레이어 행동\n\n- 좌우 이동과 점프\n- 보는 방향으로 대시와 발사\n\n## 3. 검증\n\n로컬 파일을 열어 스테이지를 완료할 수 있는지 확인합니다.",
-                        "filename": "FINAL_AGENT_SPEC.md",
+                        "filename": "SPEC.ko.md",
+                        "language": "ko",
                     },
                 }
             return self.jobs[0]
         if method == "document":
             return {
                 **self.call("get", {"step_id": "final"})["document"],
-                "language": params["language"],
+                "language": "ko",
             }
         if method == "continue":
             assert params["id"] == self.jobs[0]["id"]

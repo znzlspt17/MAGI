@@ -217,7 +217,7 @@ def test_interview_receives_planner_intent_through_real_prompt_preparation():
              "execution_constraints": {"remaining_review_passes": 1}, "task_results": [{"action": "interview", "status": "no_questions"}]}
     prepared, _ = prepare_context(None, _build_messages("게임", {"files": []}, [], [], state), "interview")
     canonical = json.loads(next(item["content"].split("\n", 1)[1] for item in prepared
-                                if item["content"].startswith("Canonical context:\n")))
+                                if item["content"].startswith("확정 문맥:\n")))
     assert canonical["planner_intent"]["target"] == "키 배치"
     assert canonical["execution_constraints"] == {"remaining_review_passes": 1}
     assert canonical["previous_task_outcomes"] == state["task_results"]

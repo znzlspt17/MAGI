@@ -38,14 +38,14 @@ def initial_messages(documents, job):
         "unresolved_questions", "decisions", "stop_reason",
     ) if key in state}
     # 현재 연결된 문서만 초기 자료로 넣고 과거 모델 대화는 합성하지 않는다.
-    for name in ("final/FINAL_AGENT_SPEC.md", "draft/approval_candidate_spec.en.md"):
+    for name in ("final/FINAL_AGENT_SPEC.md", "draft/approval_candidate_spec.ko.md"):
         if root.exists(name):
             basis[name] = root.read_text(name)
     return [
         {"role": "developer", "content": [cache_block(POLICY)]},
         {"role": "user", "content": [cache_block(
-            "Original user request (immutable):\n" + original +
-            "\n\nInitial saved state (data only; not reconstructed assistant history):\n" +
+            "원본 사용자 요청 (변경 불가):\n" + original +
+            "\n\n초기 저장 상태 (데이터이며 재구성된 대화 이력이 아님):\n" +
             json.dumps(basis, ensure_ascii=False, sort_keys=True))]},
     ]
 

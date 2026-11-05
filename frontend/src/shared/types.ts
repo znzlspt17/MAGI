@@ -33,7 +33,7 @@ export interface DocumentData {
   completed_id?: string;
   content: string;
   filename?: string;
-  language?: string;
+  language: "ko";
   source_hash?: string;
   kind?: string;
 }

@@ -2,12 +2,10 @@
 from __future__ import annotations
 from typing import Any
 import re
-import threading
 from pathlib import Path
 from backend.errors import InvalidStateError
-from backend.application.activity import tracked
 from backend.application.execution_history import ExecutionHistory
-from backend.services.spec_translation import korean_translation, source_key
+from backend.services.document_hash import source_key
 from backend.services.implementation_package import PackageCache
 
 
@@ -22,35 +20,11 @@ class DocumentQueries:
         self.state = access.state
         self._activities = activities
 
-    @tracked
-    def document(self, ident, step_id, language, *, meter=None):
-        if language not in {"ko", "en"}:
-            raise ValueError("문서 언어를 확인하세요.")
+    def document(self, ident, step_id, *, meter=None):
         doc = self.step(ident, step_id).get("document")
         if not doc or not isinstance(doc.get("content"), str):
             raise KeyError(step_id)
-        if language == "en":
-            return {**doc, "language": "en"}
-        with self.lock:
-            guard = self._document_locks.setdefault(
-                (ident, source_key(doc["content"])), threading.Lock()
-            )
-        with guard:
-            engine = self.engine(ident, meter=meter)
-            translated = korean_translation(
-                doc["content"],
-                writer=self.documents(ident).scope(
-                    "translations/" + source_key(doc["content"])
-                ),
-                provider=engine.provider,
-                model=engine.config.model_routing["compiler"].model,
-            )
-        return {
-            **doc,
-            **translated,
-            "filename": Path(doc.get("filename", "SPEC.en.md")).stem.removesuffix(".en")
-            + ".ko.md",
-        }
+        return {**doc, "language": "ko"}
 
     def step(self, ident: str, step_id: str) -> dict:
         """선택한 실행 노드의 저장된 상세만 돌려준다."""
@@ -76,7 +50,7 @@ class DocumentQueries:
                     "status": "completed",
                     "document": {
                         "content": content,
-                        "filename": "FINAL_AGENT_SPEC.en.md",
+                        "filename": "FINAL_AGENT_SPEC.ko.md",
                         "kind": "final",
                         "completed_id": step_id,
                     },
@@ -88,6 +62,10 @@ class DocumentQueries:
             document = detail.get("document")
             if isinstance(document, dict) and isinstance(document.get("content"), str):
                 document["source_hash"] = source_key(document["content"])
+                document["language"] = "ko"
+                filename = document.get("filename", "SPEC.md")
+                if not filename.endswith(".ko.md"):
+                    document["filename"] = Path(filename).stem + ".ko.md"
                 if document.get("kind") == "final":
                     from backend.services.completed_specs import (
                         completed_references,
@@ -119,7 +97,6 @@ class DocumentQueries:
             load_completed,
         )
         from backend.services.implementation_package import create_package, file_chunk
-        from backend.services.spec_translation import cached_translation
 
         with self.lock:
             self.get(ident)
@@ -147,13 +124,7 @@ class DocumentQueries:
             else None
         )
         if cached is None:
-            doc = {"content": archive["content"], "filename": "SPEC.en.md"}
-            translated = cached_translation(
-                doc, writer.scope("translations/" + source_key(archive["content"]))
-            )
-            metadata, files = create_package(
-                completed_id, archive, translated["content"] if translated else None
-            )
+            metadata, files = create_package(completed_id, archive)
             if bundle_id is not None and bundle_id != metadata["bundle_id"]:
                 raise ValueError(
                     "묶음 자료가 변경되었습니다. 포함 자료를 다시 조회하세요."

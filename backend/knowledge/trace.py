@@ -174,7 +174,7 @@ def validate_links(links, decisions, sheet, sections):
         if not link["item_id"].strip() or link["item_id"] in item_ids:
             raise TraceValidationError(
                 "명세 항목 ID가 비어 있거나 중복되었습니다.",
-                path + ".item_id: must be nonempty and unique.",
+                path + ".item_id: 비어 있지 않은 고유 값이어야 합니다.",
             )
         item_ids.add(link["item_id"])
         if link["section"] not in sections or not isinstance(
@@ -183,23 +183,23 @@ def validate_links(links, decisions, sheet, sections):
             raise TraceValidationError(
                 "명세 항목의 섹션과 인용을 확인할 수 없습니다.",
                 path
-                + ".section: must be an exact prose response field name, e.g. architecture; never a Markdown heading, decisions or spec_links.",
+                + ".section: architecture 같은 정확한 본문 응답 필드명이어야 하며 Markdown 제목, decisions 또는 spec_links는 허용하지 않습니다.",
             )
         if not link["quote"].strip() or link["quote"] not in sections[link["section"]]:
             raise TraceValidationError(
                 "명세 항목의 섹션과 인용을 확인할 수 없습니다.",
                 path
-                + ".quote: must be an exact nonempty substring of its named section. Keep the quote in the final assembled document; use implementation sections for links to locked requirements.",
+                + ".quote: 지정된 섹션에 정확히 포함된 비어 있지 않은 원문이어야 합니다. 최종 문서에서 인용을 유지하고 확정 요구사항 링크에는 구현 섹션을 사용하세요.",
             )
         if not set(link["requirement_ids"]) <= requirements:
             raise TraceValidationError(
                 "명세 항목이 존재하지 않는 결정을 참조합니다.",
                 path
-                + ".requirement_ids: reference only requirement IDs present in the supplied lock sheet.",
+                + ".requirement_ids: 제공된 확정 요구사항에 있는 ID만 참조하세요.",
             )
         if not set(link["decision_ids"]) <= known_decisions:
             raise TraceValidationError(
                 "명세 항목이 존재하지 않는 결정을 참조합니다.",
                 path
-                + ".decision_ids: reference only supplied lock decisions or decisions declared in this response.",
+                + ".decision_ids: 제공된 확정 결정이나 이번 응답에서 선언된 결정만 참조하세요.",
             )

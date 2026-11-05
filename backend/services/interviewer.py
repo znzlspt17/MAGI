@@ -139,9 +139,9 @@ def _build_messages(
         load_prompt("interviewer"),
         original,
         json.dumps(summary, ensure_ascii=False, indent=2),
-        ("Revision feedback history", history_text),
-        ("Latest revision feedback", str(state.get("revision_feedback") or "")),
-        ("Candidate questions", candidate_text),
+        ("수정 의견 이력", history_text),
+        ("최신 수정 의견", str(state.get("revision_feedback") or "")),
+        ("질문 후보", candidate_text),
     )
 
 

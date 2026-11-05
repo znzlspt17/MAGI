@@ -298,7 +298,7 @@ def test_planned_review_question_recovers_uncertain_call_and_resumes_with_answer
 
     issue = dict(section="functional_requirements", severity="major", checklist_id="retention",
                  problem="보관 기간이 확정되지 않았습니다.", required_change="보관 기간을 반영하세요.",
-                 requirement_id="REQ-001", evidence=[{"source": "draft", "quote": "Store notes locally."}],
+                 requirement_id="REQ-001", evidence=[{"source": "draft", "quote": "메모를 로컬에 저장합니다."}],
                  defect_kind="spec_omission", resolution_kind="auto_fix", resolution_reason="보완이 필요합니다.",
                  missing_information="", decision_key="retention", decision_question=None)
 

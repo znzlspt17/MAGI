@@ -200,12 +200,8 @@ def create_app(config: dict | None = None) -> Flask:
 
     @app.post("/api/jobs/<ident>/steps/<step_id>/document")
     def job_document(ident, step_id):
-        data = _json()
-        language = data.get("language")
-        if not isinstance(language, str) or language not in {"ko", "en"}:
-            return jsonify(error="문서 언어는 한국어 또는 영어를 선택하세요."), 400
         try:
-            response = jsonify(client().call("document", {"id": ident, "step_id": step_id, "language": language}))
+            response = jsonify(client().call("document", {"id": ident, "step_id": step_id}))
             response.headers["Cache-Control"] = "no-store"
             return response
         except ClientError as exc:

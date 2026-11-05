@@ -38,7 +38,7 @@ def test_invalid_rubric_is_rejected(case, change, check):
 
 def test_generation_uses_only_bound_product_inputs(case):
     payload = case.complete.call_args.args[2]
-    assert not any("Draft specification" in m["content"] for m in payload)
+    assert not any(m["content"].startswith("명세 초안:\n") for m in payload if m["role"] == "user")
     canonical, _ = rubric.inputs(case.sheet, case.state)
     assert canonical["confirmed_basis"]["REQ-001.original_text"] == "메모 저장"
     case.sheet.workflow_constraints = [RequirementItem("WF-001", "Use one model.", original_text="모델 하나", source="user_request")]
@@ -98,7 +98,7 @@ def test_absence_becomes_existing_required_issue_without_fake_quote(case, verdic
 
 
 def test_deterministic_failure_survives_all_pass(case):
-    broken = case.spec.replace("## 1. Mission", "## Missing Mission")
+    broken = case.spec.replace("## 1. 목표", "## 목표 누락")
     with pytest.raises(ReviewValidationError):
         ChecklistCritic().critique(broken, case.sheet, provider_messages_fn=lambda _: review(case), rubric=case.record, evaluation_sink=lambda _: None)
 
@@ -216,7 +216,7 @@ def test_new_job_shares_rubric_and_records_safe_counts(store, monkeypatch):
         assert state["rubric_evaluation"]["rubric_hash"] == state["rubric"]["rubric_hash"]
         docs = manager.workspace.documents(ident)
         rubric.require_approval_evaluation(state, RequirementLockSheet.from_dict(state["requirement_lock_sheet"]),
-                                          docs.read_text("draft/approval_candidate_spec.en.md"))
+                                          docs.read_text("draft/approval_candidate_spec.ko.md"))
         history = ExecutionHistory(docs)
         node = next(n for n in history.graph()["nodes"] if n["stage"] == "checklist_critic")
         detail = history.detail(node["id"])
@@ -267,7 +267,7 @@ def test_failed_check_uses_existing_repair_loop_and_reuses_rubric(store, monkeyp
             if isinstance(result.parsed, ReviewResponse) and self.calls.count(ReviewResponse) == 1:
                 rubric_id = model_rubric(messages)["items"][0]["rubric_id"]
                 response = failed_review(SimpleNamespace(verdict=dict(rubric_id=rubric_id,
-                    verdict="PASS", section="architecture", evidence_kind="quote", quote="Store notes locally.",
+                    verdict="PASS", section="architecture", evidence_kind="quote", quote="메모를 로컬에 저장합니다.",
                     reason="명세의 저장 검증 방법을 확인했습니다.", issue_checklist_id=None)))
                 item = response.rubric_verdicts[0]
                 item.rubric_id, item.section, item.issue_checklist_id = rubric_id, "architecture", rubric_id
@@ -317,8 +317,8 @@ def test_malformed_structured_response_is_retryable_without_echoing_output(schem
 
 
 @pytest.mark.parametrize(("failure", "check", "expected"), [
-    ("coverage", "rubric_evaluation_coverage", "exactly once"),
-    ("evidence", "rubric_evidence", "quote"),
+    ("coverage", "rubric_evaluation_coverage", "정확히 한 번"),
+    ("evidence", "rubric_evidence", "인용"),
 ])
 def test_workflow_recovers_when_review_retry_receives_specific_feedback(store, monkeypatch, failure, check, expected):
     import json
@@ -341,7 +341,7 @@ def test_workflow_recovers_when_review_retry_receives_specific_feedback(store, m
                         result.parsed.rubric_verdicts[0].quote = "FABRICATED_QUOTE"
                 else:
                     payload = next(json.loads(item["content"].split("\n", 1)[1]) for item in messages
-                                   if item["content"].startswith("Stage retry context:\n"))
+                                   if item["content"].startswith("단계 재시도 문맥:\n"))
                     assert payload["failed_checks"] == [check]
                     assert expected in " ".join(payload["validation_failures"])
             return result
@@ -378,7 +378,7 @@ def test_deterministic_issues_are_visible_and_enforce_score_cap(case, monkeypatc
             provider_messages_fn=lambda messages: respond(messages, cap + 1))
     assert error.value.failed_checks == ["rubric_score"]
     payload = next(json.loads(item["content"].split("\n", 1)[1]) for item in seen[0]
-                   if item["content"].startswith("Deterministic checks:\n"))
+                   if item["content"].startswith("결정적 검사:\n"))
     assert payload["score_cap"] == cap
     assert any(item["checklist_id"] == "SEC-REQUIRED-001" and item["section"] == "structure"
                and item["severity"] == severity for item in payload["issues"])
@@ -395,7 +395,7 @@ def test_no_deterministic_issue_has_unrestricted_score_cap(case):
         return review(case)
     assert ChecklistCritic().critique(case.spec, case.sheet, rubric=case.record, provider_messages_fn=respond) == []
     payload = next(json.loads(item["content"].split("\n", 1)[1]) for item in seen
-                   if item["content"].startswith("Deterministic checks:\n"))
+                   if item["content"].startswith("결정적 검사:\n"))
     assert payload["issues"] == [] and payload["score_cap"] == 10
 
 
@@ -414,7 +414,7 @@ def test_deterministic_summary_keeps_source_data_out_of_safe_issue_metadata(case
         return value
     issues = ChecklistCritic().critique(case.spec, case.sheet, rubric=case.record, provider_messages_fn=respond)
     payload = next(json.loads(item["content"].split("\n", 1)[1]) for item in seen
-                   if item["content"].startswith("Deterministic checks:\n"))
+                   if item["content"].startswith("결정적 검사:\n"))
     assert payload["issues"][0]["checklist_id"] == "LOCK-COVER-001"
     assert "PRIVATE" not in json.dumps(payload)
     assert issues[0].checklist_id == "LOCK-COVER-PRIVATE"

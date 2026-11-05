@@ -17,7 +17,7 @@ from backend.model_policy import default_prices
 
 WAITING = {'NEEDS_USER_INPUT', 'PASS_PENDING_USER_APPROVAL'}
 SAFE_DOC = re.compile(r'(?:final/FINAL_AGENT_SPEC\.md|draft/approval_candidate_spec\.en\.md|critical/CRITICAL_REPORT\.ko\.md|history/[0-9a-f]{32}\.md)\Z')
-PUBLIC_FIELDS=set('''id request status message action created_at updated_at queued_at progress execution_id project_id retry_status retry_action can_continue read_only latest_completed source_hash step_id continuation_error state blocking_questions awaiting_input_reason review_questions question_forms saved_answers candidate final critical execution_graph version nodes session_events completed_documents title input feedback answers started_at completed_at questions summary document_step_id stage duration_ms issue_counts has_document has_issues detail_available result issues resolved_issues requirements document content filename kind language recording_incomplete source target edges mode embedding_status has_more offset next_offset body attrs active logical_key sequence actor section requirement_id scope title_path question text rationale conditions sources requirement_ids decision_ids question_id question_text answer selection selected_option_ids custom_text form_version input_type options label value decision_key required_change decision_question resolution_reason missing_information severity code explanation description confirmed_basis basis_refs status_label pending total limit truncated groups node_id node_count edge_count connected_id references source_text translated_text delta number_mismatches current_status pending_questions input_type is_required allow_custom selected label_ko default_id recommended help hint requirement text_ko text_en name reason duration elapsed_ms percent total_steps completed_steps count accepted superseded implementation changes source_id requirement source_refs coverage effect expected actual resolution issue_id summary_ko request_type non_scope mandatory_requirements constraints assumptions decisions workflow_status user_reply decision_text index information priority blocking major minor passed failed resolved unresolved answer_forms custom_label instruction prompt choices option_id decision support status_text done next_action can_retry user_action required provenance change original_quote known active_session sessions'''.split())
+PUBLIC_FIELDS=set('''id request status message action created_at updated_at queued_at progress execution_id project_id retry_status retry_action can_continue read_only latest_completed source_hash step_id continuation_error state blocking_questions awaiting_input_reason review_questions question_forms saved_answers candidate final critical execution_graph version nodes session_events completed_documents title input feedback answers started_at completed_at questions summary document_step_id stage duration_ms issue_counts has_document has_issues detail_available result issues resolved_issues requirements document content filename kind language recording_incomplete source target edges mode embedding_status has_more offset next_offset body attrs active logical_key sequence actor section requirement_id scope title_path question text rationale conditions sources requirement_ids decision_ids question_id question_text answer selection selected_option_ids custom_text form_version input_type options label value decision_key required_change decision_question resolution_reason missing_information severity code explanation description confirmed_basis basis_refs status_label pending total limit truncated groups node_id node_count edge_count connected_id references delta current_status pending_questions input_type is_required allow_custom selected label_ko default_id recommended help hint requirement name reason duration elapsed_ms percent total_steps completed_steps count accepted superseded implementation changes source_id requirement source_refs coverage effect expected actual resolution issue_id summary_ko request_type non_scope mandatory_requirements constraints assumptions decisions workflow_status user_reply decision_text index information priority blocking major minor passed failed resolved unresolved answer_forms custom_label instruction prompt choices option_id decision support status_text done next_action can_retry user_action required provenance change original_quote known active_session sessions'''.split())
 PUBLIC_FIELDS.update('approval_review accepted remaining_issue_ids'.split())
 PUBLIC_FIELDS.add('candidate_hash')
 PUBLIC_FIELDS.update('rubric_review score score_reason round selected_round selected_cycle termination requires_acceptance evaluation_hash revision_directives remaining_issues items rubric_id condition importance verdict evidence_kind basis reference'.split())
@@ -28,7 +28,7 @@ PUBLIC_FIELDS.update('review_snapshot_id review_status rows unlinked unlinked_to
 PUBLIC_FIELDS.update('impact recommendation option_ids'.split())
 PUBLIC_FIELDS.update('can_retry retry_unavailable_reason retry_requires_replay retry_kind retry_of'.split())
 PUBLIC_FIELDS.update('reused_decisions reused_decision_count source_available registry_id decision_reuse decision_id'.split())
-PUBLIC_FIELDS.update('completed_id bundle_id format_version files size sha256 completeness korean_included task_count available total_size file_limit total_limit eof'.split())
+PUBLIC_FIELDS.update('completed_id bundle_id format_version files size sha256 completeness task_count available total_size file_limit total_limit eof'.split())
 PUBLIC_FIELDS.update('plan goal tasks allowed_actions wait_reason revision document_versions task_results action target input_refs expected_result affected_requirement_ids requirements_hash result_hash hash'.split())
 PUBLIC_FIELDS.update('basis node recorded paths path_total inferred topic included omitted recorded_total recorded_included stale change_kind proposal limitations quote'.split())
 
@@ -239,19 +239,7 @@ class PublicService:
                 return user_payload(result)
             if method in {'generate','answer','revise','approve','continue','retry','message','stop'}:
                 return self.admit(actor, request, dispatch)
-            if method == 'document':
-                self.manager.get(params.get('id'))
-                if params.get('language')=='en':
-                    return self.result(dispatch({**request,'params':params}))
-                if params.get('language') == 'ko':
-                    cached = self.cached_document(params)
-                    if cached is not None:
-                        return user_payload(cached)
-            temporary = method == 'document'
-            if temporary:
-                with self.temporary(actor, params.get('id') or uuid4().hex) as meter:
-                    return self.result(dispatch({**request,'params':params,'_meter':meter}))
-            if method not in {'get','download','knowledge.search','knowledge.graph','knowledge.document','subscribe','requirement.review','implementation.package','implementation.package.file'}:
+            if method not in {'get','document','download','knowledge.search','knowledge.graph','knowledge.document','subscribe','requirement.review','implementation.package','implementation.package.file'}:
                 raise AccessError('요청을 처리할 수 없습니다.', 'invalid')
             return self.result(dispatch({**request,'params':params}))
         finally:
@@ -293,19 +281,6 @@ class PublicService:
             for future, (ident, execution) in list(self.manager._futures.items()):
                 if ident == jid and execution is not None and execution.execution_id == execution_id:
                     future.cancel()
-
-    def cached_document(self, params):
-        from backend.services.spec_translation import source_key
-        detail = self.manager.workspace.step(params['id'], params['step_id'])
-        doc = detail.get('document')
-        if not doc:
-            raise KeyError('document')
-        root = self.manager.workspace.documents(params['id']).scope('translations/'+source_key(doc['content']))
-        if not root.exists('translation.ko.json'):
-            return None
-        # 캐시 전용 함수는 원격 호출을 하지 않는다.
-        from backend.services.spec_translation import cached_translation
-        return cached_translation(doc, root)
 
     def admit(self, actor, request, dispatch):
         key = request.get('idempotency_key')

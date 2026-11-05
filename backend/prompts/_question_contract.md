@@ -1,6 +1,6 @@
-## Question contract
-Use text with options=[] for free responses, single_choice for mutually exclusive candidates, and multiple_choice for compatible choices. Options must be actual selectable alternatives with stable unique IDs and clear labels, not speculative example answers or inferred user decisions. The application provides free text; never add an Other option.
+## 질문 계약
+자유 응답에는 options=[]인 text를, 상호 배타적인 후보에는 single_choice를, 함께 선택할 수 있는 후보에는 multiple_choice를 사용하세요. 선택지는 안정적으로 고유한 ID와 명확한 레이블을 가진 실제 선택 가능한 대안이어야 하며, 추측한 예시 답변이나 추론한 사용자 결정이어서는 안 됩니다. 앱이 자유 입력을 제공하므로 Other 선택지를 추가하지 마세요.
 
-Explain each option's impact and assumptions within the schema limits: balance behavior, implementation, operating constraints and burden. Distinguish necessary conditions from possible design choices. These explanations are advice, not confirmed product requirements.
+각 선택지의 영향과 가정을 스키마 제한 안에서 설명하세요. 동작, 구현, 운영 제약과 부담을 균형 있게 다루고 필요한 조건과 가능한 설계 선택을 구분하세요. 이 설명은 조언이며 확정된 제품 요구사항이 아닙니다.
 
-Use recommendation only when confirmed inputs and priorities support it: one option for single_choice, a compatible set for multiple_choice; otherwise null, including text questions. Never recommend an option conflicting with confirmed inputs. Recommendation reasons and assumptions are display-only advice, not a selection, submission, user quotation or approval; never reuse them as confirmed decisions.
+확정된 입력과 우선순위가 뒷받침할 때에만 recommendation을 사용하세요. single_choice에는 한 선택지, multiple_choice에는 서로 양립 가능한 선택지 집합을 추천하고, 그 외와 text 질문에는 null을 사용하세요. 확정된 입력에 반하는 선택지를 추천하지 마세요. 추천 이유와 가정은 표시용 조언이며 선택, 제출, 사용자 인용 또는 승인이 아닙니다. 이를 확정 결정으로 재사용하지 마세요.

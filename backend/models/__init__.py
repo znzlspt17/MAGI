@@ -42,20 +42,20 @@ class ResponseModel(BaseModel):
 class QuestionOption(ResponseModel):
     id: str
     label: str
-    impact: str | None = Field(default=None, min_length=1, max_length=240, description="Korean conditional impact, including relevant benefits and burdens. Advisory, never a user decision.")
-    assumptions: list[Annotated[str, Field(min_length=1, max_length=120)]] = Field(default_factory=list, max_length=3, description="Korean conditions under which the impact applies; not confirmed requirements.")
+    impact: str | None = Field(default=None, min_length=1, max_length=240, description="관련 이점과 부담을 포함한 조건부 한국어 영향 설명입니다. 참고 정보이며 사용자 결정이 아닙니다.")
+    assumptions: list[Annotated[str, Field(min_length=1, max_length=120)]] = Field(default_factory=list, max_length=3, description="영향이 적용되는 한국어 조건이며 확정 요구사항이 아닙니다.")
 
 
 class QuestionRecommendation(ResponseModel):
     option_ids: list[str] = Field(min_length=1)
-    reason: str = Field(min_length=1, max_length=300, description="Korean recommendation rationale grounded in supplied context, never user approval.")
+    reason: str = Field(min_length=1, max_length=300, description="제공된 문맥에 근거한 한국어 추천 이유이며 사용자 승인이 아닙니다.")
     assumptions: list[Annotated[str, Field(min_length=1, max_length=120)]] = Field(default_factory=list, max_length=3)
 
 
 class QuestionFormSpec(ResponseModel):
     input_type: Literal["text", "single_choice", "multiple_choice"] = "text"
     options: list[QuestionOption] = Field(default_factory=list)
-    recommendation: QuestionRecommendation | None = Field(default=None, description="Optional advice. Use null when priorities or context are insufficient; never preselect an answer.")
+    recommendation: QuestionRecommendation | None = Field(default=None, description="선택적 권고입니다. 우선순위나 문맥이 부족하면 null을 사용하고 답변을 미리 선택하지 마세요.")
 
     @model_validator(mode="after")
     def validate_options(self):
@@ -79,7 +79,7 @@ class QuestionFormSpec(ResponseModel):
 
 class QuestionResponse(QuestionFormSpec):
     question_id: str
-    question: str = Field(description='Korean question. Preserve an existing quoted user question verbatim.')
+    question: str = Field(description='한국어 질문입니다. 기존에 인용된 사용자 질문은 그대로 보존하세요.')
 
 
 # 데이터 클래스와 응답 모델은 클래스 이름의 알파벳순으로 정렬한다.
@@ -114,7 +114,7 @@ class AssumptionItem:
 
 class AssumptionResponse(ResponseModel):
     id: str
-    text: str = Field(description='Normalized English assumption; keep risk enum unchanged.')
+    text: str = Field(description='정규화된 한국어 가정. risk enum은 변경하지 마세요.')
     risk: Literal["low", "medium", "high"]
 
 
@@ -164,15 +164,15 @@ class EvidenceItem:
 
 class EvidenceResponse(ResponseModel):
     source: str
-    quote: str = Field(description='Exact evidence excerpt in its original language, without translation.')
+    quote: str = Field(description='번역하지 않은 원어 그대로의 정확한 근거 인용입니다.')
 
 
 class InterviewResponse(ResponseModel):
     request_type: Literal["product", "feature", "bugfix", "refactor", "infra"]
-    assumptions: list[str] = Field(description='Korean explanations of unconfirmed assumptions.')
-    blocking_questions: list[QuestionResponse] = Field(description='Korean questions requiring a user decision.')
-    additional_questions: list[QuestionResponse] = Field(description='Korean additional questions.')
-    pre_answers: list[AnswerResponse] = Field(description='Saved user answers preserved verbatim without translation.')
+    assumptions: list[str] = Field(description='확정되지 않은 가정에 대한 한국어 설명입니다.')
+    blocking_questions: list[QuestionResponse] = Field(description='사용자 결정이 필요한 한국어 질문입니다.')
+    additional_questions: list[QuestionResponse] = Field(description='한국어 추가 질문입니다.')
+    pre_answers: list[AnswerResponse] = Field(description='번역 없이 원문 그대로 보존한 사용자 답변입니다.')
 
 
 @dataclass(slots=True)
@@ -306,32 +306,32 @@ class IssueResponse(ResponseModel):
     rubric_ids: list[str] = Field(default_factory=list)
     decision_form: QuestionFormSpec | None = None
     defect_kind: Literal["requirements_gap", "spec_omission", "verification_gap", "confirmed_conflict"]
-    resolution_reason: str = Field(description="Korean explanation grounded in confirmed inputs.")
-    missing_information: str = Field(description="Korean description of a missing material choice and its impact; empty if nothing is missing.")
-    decision_key: str = Field(description="Stable English decision topic identifier, reused across changed wording or severity. Do not include a question sentence.")
+    resolution_reason: str = Field(description="확정된 입력에 근거한 한국어 설명입니다.")
+    missing_information: str = Field(description="누락된 중요한 선택과 그 영향에 대한 한국어 설명입니다. 누락이 없으면 빈 문자열입니다.")
+    decision_key: str = Field(description="문구나 심각도가 바뀌어도 재사용할 안정적인 영문 결정 주제 식별자입니다. 질문 문장을 넣지 마세요.")
     section: str
     severity: Literal["blocking", "major", "minor"]
     checklist_id: str
-    problem: str = Field(description='Korean explanation of the defect.')
-    required_change: str = Field(description='Korean explanation of the required fix. Quote proposed English specification wording verbatim.')
+    problem: str = Field(description='결함에 대한 한국어 설명입니다.')
+    required_change: str = Field(description='필요한 수정에 대한 한국어 설명입니다. 제안 명세 문구는 그대로 인용하세요.')
     requirement_id: str | None
     evidence: list[EvidenceResponse]
-    resolution_kind: Literal["auto_fix", "user_decision"] = Field(default="auto_fix", description='Independent of severity. Use user_decision only for a material choice not answered by confirmed inputs.')
-    decision_question: str | None = Field(default=None, description='Required Korean question for user_decision; otherwise null. Use identical wording for the same decision across issues and passes.')
+    resolution_kind: Literal["auto_fix", "user_decision"] = Field(default="auto_fix", description='심각도와 무관합니다. 확정 입력으로 답하지 못한 중요한 선택에만 user_decision을 사용하세요.')
+    decision_question: str | None = Field(default=None, description='user_decision에 필요한 한국어 질문이며 그렇지 않으면 null입니다. 동일 결정은 이슈와 검토를 넘어 같은 문구를 사용하세요.')
 
 
 class LockResponse(ResponseModel):
-    decisions: list[DecisionTrace] = Field(default_factory=list, description='Explicit choices with stable IDs, exact user quotes for actor=user, and verified source/requirement IDs. Reuse must remain actor=llm.')
-    request_summary: str = Field(description='Korean summary of the user request.')
+    decisions: list[DecisionTrace] = Field(default_factory=list, description='안정적인 ID를 가진 명시적 선택입니다. actor=user에는 정확한 사용자 인용과 검증된 출처/요구사항 ID가 필요하며 재사용은 actor=llm을 유지합니다.')
+    request_summary: str = Field(description='사용자 요청의 한국어 요약입니다.')
     mandatory_requirements: list[RequirementResponse]
     recommended_requirements: list[RequirementResponse]
     optional_requirements: list[RequirementResponse]
     non_scope: list[RequirementResponse]
-    workflow_constraints: list[WorkflowConstraintResponse] = Field(description="User requests about MAGI operation only, separate from target-product requirements. Required array, empty when none were supplied; WF-* IDs and exact verified user quotations.")
+    workflow_constraints: list[WorkflowConstraintResponse] = Field(description="대상 제품 요구사항과 분리된 MAGI 작업 방식에 대한 사용자 요청입니다. 필수 배열이며 없으면 비웁니다. WF-* ID와 검증된 정확한 사용자 인용을 사용하세요.")
     assumptions: list[AssumptionResponse]
     constraints: list[RequirementResponse]
-    acceptance_criteria_seed: list[str] = Field(description='Observable English acceptance criteria citing requirement IDs.')
-    unresolved_questions: list[str] = Field(description='Korean unresolved questions; must be empty after interview resolution.')
+    acceptance_criteria_seed: list[str] = Field(description='요구사항 ID를 인용하는 관찰 가능한 한국어 수용 기준입니다.')
+    unresolved_questions: list[str] = Field(description='미해결 한국어 질문이며 인터뷰 해결 후에는 비어 있어야 합니다.')
 
 
 @dataclass(slots=True)
@@ -685,14 +685,14 @@ class RequirementLockSheet:
 
 class RequirementResponse(ResponseModel):
     id: str
-    text: str = Field(description='Normalized English requirement text.')
+    text: str = Field(description='정규화된 한국어 요구사항입니다.')
     source: str
-    original_text: str = Field(description='Exact original user wording, without translation; empty when not applicable.')
+    original_text: str = Field(description='번역하지 않은 정확한 사용자 원문이며 해당하지 않으면 빈 문자열입니다.')
     sources: list[str]
 
 
 class WorkflowConstraintResponse(RequirementResponse):
-    original_text: str = Field(description="Exact nonempty quotation from the cited actual user input describing how MAGI should work, not target-product behavior.")
+    original_text: str = Field(description="대상 제품 동작이 아닌 MAGI 작업 방식을 설명하는 실제 사용자 입력의 정확하고 비어 있지 않은 인용입니다.")
 
 
 LockResponse.model_rebuild()
@@ -710,7 +710,7 @@ class ResolutionItem(ResponseModel):
     required_change: str
     basis_refs: list[str]
     impact: Literal["none", "scope", "behavior", "data", "cost"]
-    conflicting_source: str | None = Field(description="Supplied S reference for current user feedback only when a NEW user request conflicts with an already answered decision; otherwise null.")
+    conflicting_source: str | None = Field(description="새 사용자 요청이 이미 답변된 결정과 충돌할 때만 현재 피드백의 제공된 S 참조를 사용하고 그렇지 않으면 null입니다.")
 
 
 class ReviewResolutionResponse(ResponseModel):
@@ -728,8 +728,8 @@ class RubricItem(ResponseModel):
     importance: Literal["core", "critical", "secondary"]
     category: Literal["requirement", "contract", "data_flow", "failure_completion", "acceptance_test"]
     basis: list[RubricBasis] = Field(min_length=1)
-    condition: str = Field(min_length=1, description="English check grounded only in confirmed product requirements; never invent an obligation or choose an unresolved design.")
-    sections: list[str] = Field(min_length=1, description="SpecResponse section field names to inspect.")
+    condition: str = Field(min_length=1, description="확정된 제품 요구사항에만 근거한 한국어 평가 조건입니다. 없는 의무를 만들거나 미결 설계를 선택하지 마세요.")
+    sections: list[str] = Field(min_length=1, description="검사할 SpecResponse 섹션 필드 이름입니다.")
 
 
 class RubricResponse(ResponseModel):
@@ -742,8 +742,8 @@ class RubricVerdict(ResponseModel):
     section: str
     evidence_kind: Literal["quote", "absence"]
     quote: str
-    reason: str = Field(min_length=1, description="Korean explanation of the verdict; absence identifies what is missing in the checked section.")
-    issue_checklist_id: str | None = Field(description="For non-PASS, checklist_id of exactly one matching issue with the same requirement and rubric_ids: blocking/major for core or critical checks; minor also allowed for secondary checks. Null for PASS.")
+    reason: str = Field(min_length=1, description="판정의 한국어 설명입니다. absence인 경우 검사 섹션의 누락 사항을 밝히세요.")
+    issue_checklist_id: str | None = Field(description="PASS가 아니면 같은 requirement와 rubric_ids를 가진 정확히 한 이슈의 checklist_id입니다. core/critical은 blocking/major, secondary는 minor도 허용합니다. PASS면 null입니다.")
 
 
 class ReviewResponse(ResponseModel):
@@ -755,36 +755,32 @@ class ReviewResponse(ResponseModel):
     rubric_verdicts: list[RubricVerdict] = Field(default_factory=list)
 
 
-class SpecTranslationResponse(ResponseModel):
-    content: str = Field(description='Complete Korean Markdown translation of the supplied specification. Preserve structure, IDs, numbers, code and original quotations.')
-
-
 class SpecResponse(ResponseModel):
-    decisions: list[DecisionTrace] = Field(default_factory=list, description='Additional explicit LLM choices. Preserve existing decision IDs in links rather than redeclaring them. Include application rationale and reused_node_ids for adopted references.')
-    spec_links: list[SpecLink] = Field(default_factory=list, description='Canonical links constructed by the application from generated content blocks. Quotes are actual rendered source text.')
-    mission: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    background: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    user_intent: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    in_scope: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    out_of_scope: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    definitions: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    evidence_summary: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    recommended_requirements: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    optional_requirements: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    forbidden_behaviors: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    input_contract: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    output_contract: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    architecture: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    module_responsibilities: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    data_flow: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    error_handling_policy: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    configuration_policy: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    persistence_artifact_policy: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    implementation_order: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    acceptance_criteria: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    test_plan: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    manual_verification_checklist: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
-    instructions_for_ai_coding_agent: str = Field(description="English section prose. Preserve code, paths and explicitly marked original quotations.")
+    decisions: list[DecisionTrace] = Field(default_factory=list, description='추가적인 명시적 LLM 선택입니다. 기존 결정 ID는 다시 선언하지 말고 링크에 보존하세요. 채택한 참조에 적용 이유와 reused_node_ids를 포함하세요.')
+    spec_links: list[SpecLink] = Field(default_factory=list, description='생성된 본문 블록으로 애플리케이션이 구성한 정식 링크입니다. 인용은 실제 표시되는 원문입니다.')
+    mission: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    background: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    user_intent: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    in_scope: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    out_of_scope: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    definitions: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    evidence_summary: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    recommended_requirements: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    optional_requirements: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    forbidden_behaviors: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    input_contract: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    output_contract: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    architecture: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    module_responsibilities: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    data_flow: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    error_handling_policy: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    configuration_policy: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    persistence_artifact_policy: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    implementation_order: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    acceptance_criteria: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    test_plan: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    manual_verification_checklist: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
+    instructions_for_ai_coding_agent: str = Field(description="한국어 섹션 본문입니다. 코드, 경로 및 표시된 원문 인용은 보존하세요.")
 
     def markdown(self) -> str:
         """고정 heading과 잠금 섹션은 모델이 생성하지 않는다."""
@@ -793,7 +789,7 @@ class SpecResponse(ResponseModel):
         fields = iter(value for key, value in self.model_dump().items() if key not in {"decisions", "spec_links"})
         sections = []
         for heading in REQUIRED_FINAL_SPEC_HEADINGS:
-            if heading in {"# Final Agent Specification", "## 4. Scope", "## 7. Mandatory Requirements"}:
+            if heading in {"# 최종 에이전트 명세", "## 4. 범위", "## 7. 필수 요구사항"}:
                 sections.append(heading)
             else:
                 sections.append(heading + "\n\n" + next(fields))
@@ -803,25 +799,25 @@ class SpecResponse(ResponseModel):
 class SpecBlock(ResponseModel):
     """명세 본문과 연결 정보를 한 번만 생성하는 출력 단위."""
 
-    item_id: str = Field(description="Unique stable block ID across all sections. Never use the reserved LOCKED- prefix.")
-    text: str = Field(description="The actual English paragraph, list, table or code block to render. Do not repeat this text elsewhere as a quotation.")
-    requirement_ids: list[str] = Field(description="Only requirement IDs from the supplied lock sheet that this block operationalizes.")
-    decision_ids: list[str] = Field(description="Only supplied lock decisions or additional decisions declared in this response.")
+    item_id: str = Field(description="모든 섹션에서 유일하고 안정적인 블록 ID입니다. 예약된 LOCKED- 접두사는 사용하지 마세요.")
+    text: str = Field(description="표시할 한국어 문단, 목록, 표 또는 코드 블록입니다. 다른 곳에서 인용으로 반복하지 마세요.")
+    requirement_ids: list[str] = Field(description="이 블록에서 구체화하는 제공된 잠금 요구사항 ID만 포함하세요.")
+    decision_ids: list[str] = Field(description="제공된 잠금 결정 또는 이 응답에서 선언한 추가 결정만 포함하세요.")
 
 
 class ImplementationTask(SpecBlock):
-    title: str = Field(description="Short English implementation task title.")
-    depends_on: list[str] = Field(description="Predecessor task item IDs; no cycles or self reference.")
-    spec_item_ids: list[str] = Field(min_length=1, description="Actual behavior block IDs in this response, outside implementation_order and verification sections.")
-    completion_item_ids: list[str] = Field(min_length=1, description="Existing block IDs in acceptance_criteria, test_plan or manual_verification_checklist.")
+    title: str = Field(description="짧은 한국어 구현 작업 제목입니다.")
+    depends_on: list[str] = Field(description="선행 작업 item ID이며 순환이나 자기 참조는 허용하지 않습니다.")
+    spec_item_ids: list[str] = Field(min_length=1, description="implementation_order 및 검증 섹션 밖에 있는 이 응답의 실제 동작 블록 ID입니다.")
+    completion_item_ids: list[str] = Field(min_length=1, description="acceptance_criteria, test_plan 또는 manual_verification_checklist에 있는 기존 블록 ID입니다.")
 
 
 # 저장·조회 형식인 SpecResponse는 유지하고 제공자 출력만 블록 구조로 분리한다.
 _draft_fields: dict[str, Any] = {
     "decisions": (list[DecisionTrace], Field(default_factory=list)),
     **{name: (list[ImplementationTask] if name == "implementation_order" else list[SpecBlock], Field(description=(
-        "Application-owned section assembled from locked product non_scope. Return an empty array; do not generate content or references."
-        if name == "out_of_scope" else "Ordered substantive English content blocks for this section. Include at least one block.")))
+        "확정된 제품 non_scope로 애플리케이션이 조립하는 섹션입니다. 빈 배열을 반환하고 내용이나 참조를 생성하지 마세요."
+        if name == "out_of_scope" else "이 섹션의 순서가 있는 실질적인 한국어 본문 블록입니다. 하나 이상 포함하세요.")))
        for name in SpecResponse.model_fields if name not in {"decisions", "spec_links"}},
 }
 SpecDraftResponse = create_model("SpecDraftResponse", __base__=ResponseModel, **_draft_fields)
@@ -834,7 +830,7 @@ def assemble_spec_draft(draft, sheet, task_plan=None):
     from backend.services.spec_compiler import REQUIRED_FINAL_SPEC_HEADINGS, _mask_fenced_code
     known_requirements = {item["id"] for group in REQUIREMENT_GROUPS for item in sheet.to_dict().get(group, [])}
     known_decisions = {item["id"] for item in sheet.decisions} | {item.id for item in draft.decisions}
-    headings = set(REQUIRED_FINAL_SPEC_HEADINGS) | {"### Locked Constraints"}
+    headings = set(REQUIRED_FINAL_SPEC_HEADINGS) | {"### 확정된 제약"}
     from backend.services.implementation_plan import prepare_plan
     task_plan = task_plan or prepare_plan(draft, sheet)
     sections: dict[str, str] = {}
@@ -845,7 +841,7 @@ def assemble_spec_draft(draft, sheet, task_plan=None):
             continue
         if name == "out_of_scope":
             # 앱이 교체하는 모델 블록은 ID·내용 검증이나 구현 근거에 사용하지 않는다.
-            sections[name] = "\n".join(f"- [{item.id}] {item.text}" for item in sheet.non_scope) or "No explicit product exclusions were supplied."
+            sections[name] = "\n".join(f"- [{item.id}] {item.text}" for item in sheet.non_scope) or "명시된 제품 범위 제외가 없습니다."
             links.extend(SpecLink(item_id="LOCKED-" + item.id, section=name, quote=item.text,
                                   requirement_ids=[item.id], decision_ids=[]) for item in sheet.non_scope)
             continue
@@ -853,26 +849,26 @@ def assemble_spec_draft(draft, sheet, task_plan=None):
         if name == "implementation_order":
             blocks = [SpecBlock(item_id=t["item_id"], text=t["rendered"], requirement_ids=t["requirement_ids"], decision_ids=t["decision_ids"]) for t in task_plan["tasks"]]
         if not blocks:
-            raise SpecCompilationError([f"{name}: include at least one substantive content block."], check="spec_blocks",
+            raise SpecCompilationError([f"{name}: 실질적인 본문 블록을 하나 이상 포함하세요."], check="spec_blocks",
                                        block_reason="empty_section", section=name)
         for index, block in enumerate(blocks):
             if not block.item_id.strip() or block.item_id in identities or block.item_id.startswith("LOCKED-"):
-                raise SpecCompilationError([f"{name}[{index}].item_id: use a unique nonempty stable ID without the LOCKED- prefix."], check="spec_blocks",
+                raise SpecCompilationError([f"{name}[{index}].item_id: LOCKED- 접두사 없이 비어 있지 않은 고유한 안정적 ID를 사용하세요."], check="spec_blocks",
                                            block_reason=("empty_item_id" if not block.item_id.strip() else
                                                          "duplicate_item_id" if block.item_id in identities else "reserved_item_id"),
                                            section=name, index=index, field="item_id")
             identities.add(block.item_id)
             if not block.text.strip():
-                raise SpecCompilationError([f"{name}[{index}].text: include substantive English content."], check="spec_blocks",
+                raise SpecCompilationError([f"{name}[{index}].text: 실질적인 한국어 내용을 포함하세요."], check="spec_blocks",
                                            block_reason="empty_text", section=name, index=index, field="text")
             if not set(block.requirement_ids) <= known_requirements:
-                raise SpecCompilationError([f"{name}[{index}].requirement_ids: use only supplied requirement IDs."], check="spec_blocks",
+                raise SpecCompilationError([f"{name}[{index}].requirement_ids: 제공된 요구사항 ID만 사용하세요."], check="spec_blocks",
                                            block_reason="unknown_requirement", section=name, index=index, field="requirement_ids")
             if not set(block.decision_ids) <= known_decisions:
-                raise SpecCompilationError([f"{name}[{index}].decision_ids: use only known decision IDs."], check="spec_blocks",
+                raise SpecCompilationError([f"{name}[{index}].decision_ids: 알려진 결정 ID만 사용하세요."], check="spec_blocks",
                                            block_reason="unknown_decision", section=name, index=index, field="decision_ids")
             if any(line.strip() in headings for line in _mask_fenced_code(block.text).splitlines()):
-                raise SpecCompilationError([f"{name}[{index}].text: omit fixed section headings and Locked Constraints headings; the application renders them."], check="spec_blocks",
+                raise SpecCompilationError([f"{name}[{index}].text: 고정 섹션 제목과 확정된 제약 제목은 애플리케이션이 작성하므로 제외하세요."], check="spec_blocks",
                                            block_reason="fixed_heading", section=name, index=index, field="text")
         sections[name] = "\n\n".join(block.text.rstrip() for block in blocks)
         links.extend(SpecLink(item_id=block.item_id, section=name, quote=block.text.rstrip(),
@@ -945,7 +941,6 @@ class WorkflowState(TypedDict, total=False):
 
 STAGE_SCHEMAS: dict[str, type[BaseModel]] = {
     "rubric_generate": RubricResponse,
-    "spec_translation": SpecTranslationResponse,
     "interview": InterviewResponse,
     "requirement_lock": LockResponse,
     "spec_compile": SpecDraftResponse,

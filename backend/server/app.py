@@ -15,7 +15,7 @@ from pathlib import Path
 from websockets.asyncio.server import serve
 from websockets.exceptions import ConnectionClosed
 
-from backend.errors import TranslationValidationError, InvalidStateError
+from backend.errors import InvalidStateError
 from backend.server.diagnostics import diagnose_exception, safe_user_error
 from backend.server.job_manager import JobManager
 from backend.server.cleanup import CleanupConflict
@@ -282,11 +282,6 @@ class Server:
             return getattr(self, handler)(params, request)
         except (InvalidStateError, CleanupConflict) as exc:
             raise AccessError(safe_user_error(exc), "conflict") from None
-        except TranslationValidationError as exc:
-            _log_exception("dispatch failed", exc, method=method)
-            raise AccessError(
-                diagnose_exception(exc)["reason"], "translation_invalid"
-            ) from None
         except ValueError:
             raise AccessError(
                 "입력 또는 현재 작업 상태를 확인하세요.", "invalid"
@@ -307,7 +302,6 @@ class Server:
         return self.manager.workspace.document(
             _ident(params),
             params.get("step_id"),
-            params.get("language"),
             meter=request.get("_meter"),
         )
 

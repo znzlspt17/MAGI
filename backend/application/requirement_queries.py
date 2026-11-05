@@ -68,7 +68,7 @@ class RequirementQueries:
                 path = (
                     "final/FINAL_AGENT_SPEC.md"
                     if job["status"] == "FINALIZED"
-                    else "draft/approval_candidate_spec.en.md"
+                    else "draft/approval_candidate_spec.ko.md"
                 )
                 content = self.read_text(ident, path) or ""
                 basis_id = (self.read_json(ident, LATEST) or {}).get("id")

@@ -18,7 +18,7 @@ def impact_context(store, job_id, node_id=None):
             raise KeyError(job_id)
         if state.get("status") not in READY or job["data"].get("status") not in READY:
             raise ValueError("승인 후보가 준비된 작업에서 변경 영향을 검토할 수 있습니다.")
-        path = "final/FINAL_AGENT_SPEC.md" if state["status"] == "FINALIZED" else "draft/approval_candidate_spec.en.md"
+        path = "final/FINAL_AGENT_SPEC.md" if state["status"] == "FINALIZED" else "draft/approval_candidate_spec.ko.md"
         source_hash = digest(store.documents(job_id).read_text(path))
         rows = conn.execute("SELECT id,logical_key,kind,body,attrs FROM nodes WHERE job_id=%s AND active "
             "AND (kind IN ('requirement','decision') AND attrs->>'scope'='product' "

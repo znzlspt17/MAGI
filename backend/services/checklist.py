@@ -22,31 +22,31 @@ CHECKLIST: list[ChecklistItem] = [
         "SCOPE-NONSCOPE-001",
         "scope",
         "blocking",
-        "Out of Scope (### 4.2 Out of Scope) 섹션이 비어있지 않음",
+        "범위 제외 (### 4.2 범위 제외) 섹션이 비어있지 않음",
     ),
     ChecklistItem(
         "FORBIDDEN-001",
         "forbidden",
         "blocking",
-        "## 10. Forbidden Behaviors 섹션이 비어있지 않음",
+        "## 10. 금지 행동 섹션이 비어있지 않음",
     ),
     ChecklistItem(
         "AC-001",
         "acceptance",
         "blocking",
-        "## 20. Acceptance Criteria 섹션이 비어있지 않음",
+        "## 20. 수용 기준 섹션이 비어있지 않음",
     ),
     ChecklistItem(
         "AC-QUALITY-001",
         "acceptance",
         "major",
-        "Acceptance Criteria에 Final spec includes... 같은 자리표시자가 없음",
+        "수용 기준에 최종 명세 완료 같은 자리표시자가 없음",
     ),
     ChecklistItem(
         "TEST-001",
         "test_plan",
         "blocking",
-        "## 21. Test Plan 섹션이 비어있지 않음",
+        "## 21. 테스트 계획 섹션이 비어있지 않음",
     ),
     ChecklistItem(
         "UNRESOLVED-Q-001",
@@ -87,13 +87,15 @@ _AMBIGUOUS_WORDS = {
 }
 
 _PLACEHOLDER_ACCEPTANCE = re.compile(
-    r"^\s*(?:[-*]\s*)?(?:\d+[.)]\s*)?final spec includes(?:\s*(?:\.\.\.|…|\.))?\s*$",
+    r"^\s*(?:[-*]\s*)?(?:\d+[.)]\s*)?(?:final spec includes|최종 명세(?:에|는)?\s*(?:포함(?:한다|합니다|되어 있다)?)?)(?:\s*(?:\.\.\.|…|\.))?\s*$",
     re.IGNORECASE,
 )
 _GENERIC_COMPLETION_ACCEPTANCE = re.compile(
-    r"^\s*(?:[-*]\s*)?(?:\d+[.)]\s*)?final spec includes "
+    r"^\s*(?:[-*]\s*)?(?:\d+[.)]\s*)?(?:final spec includes "
     r"(?=[^.]*\bscope\b)(?=[^.]*\bforbidden behaviors\b)"
-    r"(?=[^.]*\bacceptance criteria\b)(?=[^.]*\btest plan\b)[^.]+\.?\s*$",
+    r"(?=[^.]*\bacceptance criteria\b)(?=[^.]*\btest plan\b)[^.]+|"
+    r"최종\s*명세(?:에|는)?\s*(?=[^.]*범위)(?=[^.]*금지\s*행동)"
+    r"(?=[^.]*수용\s*기준)(?=[^.]*테스트\s*계획)[^.]*포함[^.]*)\.?\s*$",
     re.IGNORECASE,
 )
 
@@ -125,8 +127,8 @@ def run_deterministic_checks(
                 severity="blocking",
                 blocking=True,
                 checklist_id="SEC-REQUIRED-001",
-                problem=f"Missing required headings: {missing_headings[:5]}",
-                required_change="Add all required headings in order.",
+                problem=f"필수 제목이 누락되었습니다: {missing_headings[:5]}",
+                required_change="필수 제목을 모두 순서대로 추가하세요.",
             )
         )
     elif not _headings_in_required_order(visible_spec):
@@ -137,13 +139,13 @@ def run_deterministic_checks(
                 severity="blocking",
                 blocking=True,
                 checklist_id="SEC-REQUIRED-ORDER-001",
-                problem="Required headings are present but not in the required order.",
-                required_change="Restore all required headings in the documented order.",
+                problem="필수 제목의 순서가 올바르지 않습니다.",
+                required_change="필수 제목을 지정된 순서로 복원하세요.",
             )
         )
 
     # SCOPE-NONSCOPE-001: Out of Scope not empty
-    oos_heading = "### 4.2 Out of Scope"
+    oos_heading = "### 4.2 범위 제외"
     oos_position = _heading_position(visible_spec, oos_heading)
     if oos_position is not None:
         oos_idx = oos_position + len(oos_heading)
@@ -158,13 +160,13 @@ def run_deterministic_checks(
                     severity="blocking",
                     blocking=True,
                     checklist_id="SCOPE-NONSCOPE-001",
-                    problem="Out of Scope section is empty.",
-                    required_change="List at least one explicit out-of-scope item.",
+                    problem="범위 제외 섹션이 비어 있습니다.",
+                    required_change="명시적인 범위 제외 항목을 하나 이상 작성하세요.",
                 )
             )
 
     # FORBIDDEN-001: Forbidden Behaviors not empty
-    fb_heading = "## 10. Forbidden Behaviors"
+    fb_heading = "## 10. 금지 행동"
     fb_position = _heading_position(visible_spec, fb_heading)
     if fb_position is not None:
         fb_idx = fb_position + len(fb_heading)
@@ -178,13 +180,13 @@ def run_deterministic_checks(
                     severity="blocking",
                     blocking=True,
                     checklist_id="FORBIDDEN-001",
-                    problem="Forbidden Behaviors section is empty.",
-                    required_change="List at least one explicit forbidden behavior.",
+                    problem="금지 행동 섹션이 비어 있습니다.",
+                    required_change="명시적인 금지 행동을 하나 이상 작성하세요.",
                 )
             )
 
     # AC-001: Acceptance Criteria not empty
-    ac_heading = "## 20. Acceptance Criteria"
+    ac_heading = "## 20. 수용 기준"
     ac_position = _heading_position(visible_spec, ac_heading)
     if ac_position is not None:
         ac_idx = ac_position + len(ac_heading)
@@ -198,8 +200,8 @@ def run_deterministic_checks(
                     severity="blocking",
                     blocking=True,
                     checklist_id="AC-001",
-                    problem="Acceptance Criteria section is empty.",
-                    required_change="Provide at least one verifiable acceptance criterion.",
+                    problem="수용 기준 섹션이 비어 있습니다.",
+                    required_change="검증 가능한 수용 기준을 하나 이상 작성하세요.",
                 )
             )
         else:
@@ -214,10 +216,10 @@ def run_deterministic_checks(
                 only_placeholders = len(placeholder_lines) == len(acceptance_lines)
                 severity = "major" if only_placeholders else "minor"
                 required_change = (
-                    "Replace the placeholder with observable behavior, expected result, "
-                    "and a verification method."
+                    "자리표시자를 관찰 가능한 행동, 기대 결과, "
+                    "검증 방법으로 교체하세요."
                     if only_placeholders
-                    else "Remove the redundant completion-summary placeholder."
+                    else "중복된 완료 요약 자리표시자를 제거하세요."
                 )
                 issues.append(
                     IssuePacket(
@@ -227,15 +229,15 @@ def run_deterministic_checks(
                         blocking=False,
                         checklist_id="AC-QUALITY-001",
                         problem=(
-                            "Acceptance Criteria contains a generic final-spec completion "
-                            "placeholder."
+                            "수용 기준에 최종 명세의 일반적인 완료 "
+                            "자리표시자가 있습니다."
                         ),
                         required_change=required_change,
                     )
                 )
 
     # TEST-001: Test Plan not empty
-    tp_heading = "## 21. Test Plan"
+    tp_heading = "## 21. 테스트 계획"
     tp_position = _heading_position(visible_spec, tp_heading)
     if tp_position is not None:
         tp_idx = tp_position + len(tp_heading)
@@ -249,8 +251,8 @@ def run_deterministic_checks(
                     severity="blocking",
                     blocking=True,
                     checklist_id="TEST-001",
-                    problem="Test Plan section is empty.",
-                    required_change="Provide at least one test strategy.",
+                    problem="테스트 계획 섹션이 비어 있습니다.",
+                    required_change="테스트 전략을 하나 이상 작성하세요.",
                 )
             )
 
@@ -263,13 +265,13 @@ def run_deterministic_checks(
                 severity="blocking",
                 blocking=True,
                 checklist_id="UNRESOLVED-Q-001",
-                problem=f"Unresolved blocking questions: {sheet.unresolved_questions[:3]}",
-                required_change="Resolve all blocking questions before finalising the spec.",
+                problem=f"해결되지 않은 필수 질문: {sheet.unresolved_questions[:3]}",
+                required_change="명세를 확정하기 전에 모든 필수 질문을 해결하세요.",
             )
         )
 
     # AMBIG-001: locked wording is preserved; flag it only as an operationalization hint.
-    req_heading = "## 7. Mandatory Requirements"
+    req_heading = "## 7. 필수 요구사항"
     req_position = _heading_position(visible_spec, req_heading)
     if req_position is not None:
         req_idx = req_position + len(req_heading)
@@ -286,17 +288,17 @@ def run_deterministic_checks(
                     severity="minor",
                     blocking=False,
                     checklist_id="AMBIG-001",
-                    problem=f"Ambiguous words in Mandatory Requirements: {found_ambig}",
+                    problem=f"필수 요구사항에 모호한 표현이 있습니다: {found_ambig}",
                     required_change=(
-                        "Preserve the locked wording and add observable acceptance criteria "
-                        "and tests for this requirement."
+                        "확정된 표현을 보존하고 관찰 가능한 수용 기준과 "
+                        "테스트를 추가하세요."
                     ),
                 )
             )
 
     # LOCK-COVER-001: section 7 must keep every locked ID and exact wording.
     locked_lines = _locked_requirement_lines(
-        _section_content(visible_spec, "## 7. Mandatory Requirements")
+        _section_content(visible_spec, "## 7. 필수 요구사항")
     )
     for req in sheet.mandatory_requirements:
         entries = locked_lines.get(req.id, [])
@@ -306,7 +308,7 @@ def run_deterministic_checks(
                     req.id,
                     "missing",
                     req.text,
-                    "Add this locked line to section 7 exactly once.",
+                    "확정된 항목을 7번 섹션에 정확히 한 번 추가하세요.",
                 )
             )
             continue
@@ -316,7 +318,7 @@ def run_deterministic_checks(
                     req.id,
                     "duplicate",
                     req.text,
-                    "Keep this locked requirement exactly once in section 7.",
+                    "확정된 요구사항을 7번 섹션에 정확히 한 번 유지하세요.",
                     entries[0],
                 )
             )
@@ -327,21 +329,21 @@ def run_deterministic_checks(
                     req.id,
                     "changed",
                     req.text,
-                    "Restore the locked requirement wording in section 7.",
+                    "7번 섹션의 확정된 요구사항 문구를 복원하세요.",
                     entries[0],
                 )
             )
 
     # 필수 결정이 별도 분류에 있어도 잠금 원문을 동일하게 보장한다.
-    parent = _heading_position(visible_spec, "## 10. Forbidden Behaviors")
+    parent = _heading_position(visible_spec, "## 10. 금지 행동")
     forbidden = ""
     if parent is not None:
-        tail = visible_spec[parent + len("## 10. Forbidden Behaviors"):]
+        tail = visible_spec[parent + len("## 10. 금지 행동"):]
         following = re.search(r"(?m)^## ", tail)
         forbidden = tail[:following.start()] if following else tail
     for items, heading, content in (
-        (sheet.non_scope, "### 4.2 Out of Scope", _section_content(visible_spec, "### 4.2 Out of Scope")),
-        (sheet.constraints, "### Locked Constraints", _section_content(forbidden, "### Locked Constraints")),
+        (sheet.non_scope, "### 4.2 범위 제외", _section_content(visible_spec, "### 4.2 범위 제외")),
+        (sheet.constraints, "### 확정된 제약", _section_content(forbidden, "### 확정된 제약")),
     ):
         lines = _locked_requirement_lines(content)
         for req in items:
@@ -349,8 +351,8 @@ def run_deterministic_checks(
             condition = "missing" if not entries else "duplicate" if len(entries) != 1 else "changed" if entries[0] != req.text else None
             if condition:
                 issue = _locked_requirement_issue(req.id, condition, req.text,
-                    f"Restore the locked line exactly once under {heading}.", entries[0] if entries else None)
-                issue.problem = f"Locked decision [{req.id}] is {condition} under {heading}."
+                    f"확정된 항목을 {heading} 아래에 정확히 한 번 복원하세요.", entries[0] if entries else None)
+                issue.problem = f"확정된 결정 [{req.id}]이 {heading}에서 {condition} 상태입니다."
                 issue.evidence[0].source = heading
                 issues.append(issue)
 
@@ -447,13 +449,13 @@ def _locked_requirement_issue(
         blocking=True,
         checklist_id=f"LOCK-COVER-{condition.upper()}-{requirement_id}",
         problem=(
-            f"Locked mandatory requirement [{requirement_id}] is {condition} in section 7."
+            f"확정된 필수 요구사항 [{requirement_id}]이 7번 섹션에서 {condition} 상태입니다."
         ),
         required_change=required_change,
         requirement_id=requirement_id,
         evidence=[
             IssueEvidence(
-                source="## 7. Mandatory Requirements",
+                source="## 7. 필수 요구사항",
                 quote=quote,
             )
         ],

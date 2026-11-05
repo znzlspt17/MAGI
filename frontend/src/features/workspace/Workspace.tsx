@@ -140,7 +140,6 @@ export default function Workspace() {
       <DocumentView
         jobId={actualJob.id}
         stepId={step}
-        initialLanguage={new URLSearchParams(location.search).has("completed_id") ? "en" : "ko"}
         document={detail.document}
         reviewOnly={evidenceOnly}
         onShowDocument={() => setEvidenceOnly(false)}

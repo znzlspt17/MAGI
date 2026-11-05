@@ -81,27 +81,3 @@ class SpecCompilationError(Error):
         self.block_reason = block_reason if isinstance(block_reason, str) and block_reason in self.block_reasons else None
         self.block_section, self.block_index = section, index
         self.block_field = field if isinstance(field, str) and field in self.block_fields else None
-
-
-TRANSLATION_RULES = {
-    "heading_structure": "Preserve every heading level, section number and section order.",
-    "heading_language": "Translate specification headings into Korean.",
-    "identifiers": "Preserve every requirement ID and its occurrence count.",
-    "numbers": "Preserve all numerical values and their occurrence counts.",
-    "protected_content": "Preserve all code and marked original quotations verbatim.",
-    "section_language": "Translate the prose of every section into Korean.",
-    "document_language": "Return a Korean translation, not the English source.",
-}
-
-
-class TranslationValidationError(Error):
-    """원문을 포함하지 않는 번역 보존 검증 실패."""
-
-    number_mismatches: list[dict[str, Any]]
-    code = "SPEC_TRANSLATION_INVALID"
-    stage = "spec_translation"
-
-    def __init__(self, details):
-        super().__init__("Specification translation could not be validated.")
-        self.validation_details = details
-        self.failed_checks = [code for code, message in TRANSLATION_RULES.items() if message in details]

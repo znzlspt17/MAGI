@@ -15,13 +15,13 @@ _ID = re.compile(r"[0-9a-f]{32}\Z")
 _SECTIONS = set(SpecResponse.model_fields) - {"decisions", "spec_links"}
 _REASONS = SpecCompilationError.block_reasons | {"unknown_reference"}
 _LEGACY_RULES = {
-    ("", "include at least one substantive content block."): "empty_section",
-    (".item_id", "use a unique nonempty stable ID without the LOCKED- prefix."): "invalid_item_id",
-    (".text", "include substantive English content."): "empty_text",
+    ("", "실질적인 본문 블록을 하나 이상 포함하세요."): "empty_section",
+    (".item_id", "LOCKED- 접두사 없이 비어 있지 않은 고유한 안정적 ID를 사용하세요."): "invalid_item_id",
+    (".text", "실질적인 한국어 내용을 포함하세요."): "empty_text",
     ("", "use only supplied requirement IDs and known decision IDs."): "unknown_reference",
-    (".requirement_ids", "use only supplied requirement IDs."): "unknown_requirement",
-    (".decision_ids", "use only known decision IDs."): "unknown_decision",
-    (".text", "omit fixed section headings and Locked Constraints headings; the application renders them."): "fixed_heading",
+    (".requirement_ids", "제공된 요구사항 ID만 사용하세요."): "unknown_requirement",
+    (".decision_ids", "알려진 결정 ID만 사용하세요."): "unknown_decision",
+    (".text", "고정 섹션 제목과 확정된 제약 제목은 애플리케이션이 작성하므로 제외하세요."): "fixed_heading",
 }
 
 

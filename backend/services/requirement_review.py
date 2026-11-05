@@ -11,7 +11,7 @@ from backend.models import SpecResponse
 
 VERIFICATION = {"acceptance_criteria", "test_plan", "manual_verification_checklist"}
 SECTIONS = dict(zip(
-    [h for h in REQUIRED_FINAL_SPEC_HEADINGS if h not in {"# Final Agent Specification", "## 4. Scope", "## 7. Mandatory Requirements"}],
+    [h for h in REQUIRED_FINAL_SPEC_HEADINGS if h not in {"# 최종 에이전트 명세", "## 4. 범위", "## 7. 필수 요구사항"}],
     [f for f in SpecResponse.model_fields if f not in {"decisions", "spec_links"}],
 ))
 
@@ -76,7 +76,7 @@ def build_review(content, snapshot=None, *, basis_id=None, review_status="unknow
                "verification_linked": sum(r["verification_status"] == "linked" for r in applicable), "test_status": "not_collected"}
     selected = [r for r in rows if (not query or query.casefold() in (r["id"] + " " + r["text"]).casefold())
                 and (not missing or any(r[k] != "linked" for k in ("spec_status", "acceptance_status", "verification_status")))]
-    from backend.services.spec_translation import source_key
+    from backend.services.document_hash import source_key
 
     def preview(ref, length):
         return {**ref, "quote": ref["quote"][:length], "end": ref["start"] + len(ref["quote"][:length]),

@@ -23,8 +23,10 @@ def validate_workflow(items, sources=None):
         if not re.fullmatch(r"WF-[A-Za-z0-9_-]+", item.id) or item.id in ids:
             raise ValueError(path + ".id: must be unique and start with WF-.")
         ids.add(item.id)
-        if not item.text.strip() or re.search(r"[가-힣]", item.text) or not item.original_text.strip():
-            raise ValueError(path + ": English text and an exact original user quotation are required.")
+        from backend.infrastructure.output_language import has_hangul, prose, technical_only
+        body = prose(item.text).strip()
+        if not body or not (has_hangul(body) or technical_only(body)) or not item.original_text.strip():
+            raise ValueError(path + ": 한국어 설명과 정확한 사용자 원문 인용이 필요합니다.")
         markers = [item.source, *item.sources]
         if any(not re.fullmatch(r"user_request|user_feedback|user_answer:[A-Za-z0-9_-]+", marker) for marker in markers):
             raise ValueError(path + ".source: must refer to an actual user input, never system policy.")

@@ -93,7 +93,7 @@ class WorkflowTasks:
         rubric = ensure_rubric(self.writer, self.provider, self.config.model_routing["critic"].model, sheet, state)
         raw_issues = state.get("structured_issues", [])
         issues = parse_issue_list({"issues": raw_issues}) if raw_issues else None
-        path = "draft/approval_candidate_spec.en.md"
+        path = "draft/approval_candidate_spec.ko.md"
         previous_spec = ""
         if issues or state.get("revision_feedback") or state.get("revision_history") or state.get("rubric_evaluation"):
             try:
@@ -144,12 +144,12 @@ class WorkflowTasks:
                 "Approval candidate still has unresolved required review issues."
             )
         created = list(state.get("created_artifacts", []))
-        path = "draft/approval_candidate_spec.en.md"
+        path = "draft/approval_candidate_spec.ko.md"
         try:
             spec = self.writer.read_text(path)
         except Exception:
             spec = ""
-        if not spec or not self.compiler.english_only(spec):
+        if not spec or not self.compiler.korean_document(spec):
             raise InvalidStateError("Reviewed candidate is missing or invalid.")
         from backend.services.rubric import require_approval_evaluation
         require_approval_evaluation(state, sheet, spec)
@@ -319,7 +319,7 @@ class WorkflowTasks:
 
     def checklist_critic(self, state: WorkflowState) -> dict[str, Any]:
         created = list(state.get("created_artifacts", []))
-        spec = self.writer.read_text("draft/approval_candidate_spec.en.md")
+        spec = self.writer.read_text("draft/approval_candidate_spec.ko.md")
         sheet_data = state.get("requirement_lock_sheet")
         from backend.services.workflow_constraints import validate_locked_sources
 
@@ -428,7 +428,7 @@ class WorkflowTasks:
         diagnosed = set(state.get("diagnosed_keys", []))
         to_diagnose = repeated - diagnosed
         stop = False
-        draft = self.writer.read_text("draft/approval_candidate_spec.en.md")
+        draft = self.writer.read_text("draft/approval_candidate_spec.ko.md")
         basis = confirmed_basis(state, sheet.to_dict())
         pending_resolution = selected
         reconfirm = set()
@@ -451,7 +451,7 @@ class WorkflowTasks:
                 load_prompt("review_resolution"),
                 basis["user_request"],
                 json.dumps(canonical, ensure_ascii=False),
-                ("Draft specification", draft),
+                ("명세 초안", draft),
             )
             packet = complete_with_usage(
                 self.writer,
@@ -487,7 +487,7 @@ class WorkflowTasks:
         reviews = [dict(entry) for entry in state.get("review_history", [])]
         if reviews:
             reviews[-1].update(issues=data, draft_hash=record["draft_hash"])
-        self.writer.write_text("review/resolved_draft.en.md", draft, overwrite=True)
+        self.writer.write_text("review/resolved_draft.ko.md", draft, overwrite=True)
         self.writer.write_json("review/resolution.json", record, overwrite=True)
         self.writer.write_text(
             "analysis/05_blocking_questions.ko.md",
@@ -501,7 +501,7 @@ class WorkflowTasks:
                 [
                     *state.get("created_artifacts", []),
                     "review/resolution.json",
-                    "review/resolved_draft.en.md",
+                    "review/resolved_draft.ko.md",
                     "analysis/05_blocking_questions.ko.md",
                 ]
             )
@@ -543,7 +543,7 @@ class WorkflowTasks:
         }
 
     def critical_report(self, state: WorkflowState) -> dict[str, Any]:
-        path = "draft/approval_candidate_spec.en.md"
+        path = "draft/approval_candidate_spec.ko.md"
         try:
             failed_draft = self.writer.read_text(path)
         except Exception as exc:
@@ -552,10 +552,10 @@ class WorkflowTasks:
             raise InvalidStateError("Reviewed candidate draft is missing.")
         report = self.critical_reporter.generate(state)
         created = list(state.get("created_artifacts", []))
-        self.writer.write_text("critical/FAILED_AGENT_SPEC_DRAFT.en.md", failed_draft)
+        self.writer.write_text("critical/FAILED_AGENT_SPEC_DRAFT.ko.md", failed_draft)
         self.writer.write_text("critical/CRITICAL_REPORT.ko.md", report)
         created.extend(
-            ["critical/FAILED_AGENT_SPEC_DRAFT.en.md", "critical/CRITICAL_REPORT.ko.md"]
+            ["critical/FAILED_AGENT_SPEC_DRAFT.ko.md", "critical/CRITICAL_REPORT.ko.md"]
         )
         return {
             "status": STATUS_CRITICAL_BLOCKED,

@@ -47,5 +47,5 @@ def test_identical_mcp_context_is_sent_only_once_per_conversation(store, monkeyp
     _complete_connected(writer, fake, [], **kwargs)
     _complete_connected(writer, fake, [], **kwargs)
     first, second = [call.args[0] for call in fake.complete_result.call_args_list]
-    assert any("External MCP reference data:" in item.get("content", "") for item in first)
-    assert not any("External MCP reference data:" in item.get("content", "") for item in second)
+    assert any("외부 MCP 참고 자료:" in item.get("content", "") for item in first)
+    assert not any("외부 MCP 참고 자료:" in item.get("content", "") for item in second)

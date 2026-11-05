@@ -147,6 +147,37 @@ def test_duplicate_command_is_accepted_once_and_rejects_changed_input(
         manager.close()
 
 
+def test_document_read_does_not_reserve_cost_or_execution_lease(store, monkeypatch):
+    manager, _ = manager_for(store, monkeypatch)
+    service = PublicService(manager, google=Mock(), pepper="fake-test-pepper")
+    sid, user = account(service.access, "document-owner")
+    request = {"method": "document", "params": {"id": "job", "step_id": "step"},
+               "session": sid, "csrf": user["csrf"]}
+    def reject_reservation(*args, **kwargs):
+        pytest.fail("원본 문서 조회에 비용 예약이나 실행 슬롯을 사용해서는 안 됩니다")
+    monkeypatch.setattr(service, "temporary", reject_reservation)
+    monkeypatch.setattr(service.access, "reserve", reject_reservation)
+    monkeypatch.setattr(service.access, "acquire", reject_reservation)
+    def snapshot():
+        with store.transaction(mode="read") as conn:
+            return [conn.execute(f"SELECT count(*) AS total FROM {table}").fetchone()["total"]
+                    for table in ("cost_calls", "execution_leases")]
+    def dispatch(value):
+        assert ACTOR.get()["id"] == user["id"]
+        assert value["params"] == {"id": "job", "step_id": "step"}
+        assert "_meter" not in value
+        return {"content": "저장된 명세입니다.", "language": "ko", "filename": "SPEC.ko.md"}
+    try:
+        before = snapshot()
+        for _ in range(2):
+            result = service.invoke(request, dispatch)
+            assert result["content"] == "저장된 명세입니다."
+            assert result["language"] == "ko"
+        assert snapshot() == before
+    finally:
+        manager.close()
+
+
 def test_rls_protects_document_bodies_and_versions(store, admin_transaction):
     access = AccessStore(store)
     _, owner = account(access, "owner")

@@ -5,7 +5,7 @@ import hashlib
 from backend.errors import InvalidStateError
 from backend.services.rubric import digest, require_approval_evaluation, summary
 
-DRAFT = "draft/approval_candidate_spec.en.md"
+DRAFT = "draft/approval_candidate_spec.ko.md"
 # 초안에 종속된 추적 근거도 같은 라운드로 복원한다.
 DOCUMENTS = ("analysis/spec_trace.json", "analysis/implementation_plan.json", "analysis/spec_blocks.json")
 
@@ -54,7 +54,7 @@ def restore_best(writer, state, sheet):
     for name, value in snapshot["documents"].items():
         writer.write_json(name, value)
     writer.write_json("review/resolution.json", snapshot["resolution"])
-    writer.write_text("review/resolved_draft.en.md", snapshot["spec"], overwrite=True)
+    writer.write_text("review/resolved_draft.ko.md", snapshot["spec"], overwrite=True)
     from backend.services.rubric import save_evaluation
     save_evaluation(writer, snapshot["evaluation"])
     return {"rubric_evaluation": snapshot["evaluation"], "structured_issues": snapshot["issues"],

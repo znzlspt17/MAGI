@@ -20,7 +20,7 @@ try{
   };
  });
  let current=null,expired=false,status={ready:true,active_count:0,queued_count:0,max_parallel:2,own_active_count:0};
- const id='a'.repeat(32),english={content:'# English specification\n\nStore notes for 30 days.',filename:'spec.en.md',source_hash:'fixture'},korean={content:'# 한국어 명세\n\n메모를 30일 동안 보관합니다.',filename:'spec.ko.md',source_hash:'fixture',language:'ko'};
+ const id='a'.repeat(32),korean={content:'# 한국어 명세\n\n메모를 30일 동안 보관합니다.',filename:'spec.ko.md',source_hash:'fixture',language:'ko'};
  const forms={A:{question_id:'A',question:'보관 기간',input_type:'text',options:[],form_version:'A-v1'},B:{question_id:'B',question:'저장 방식',input_type:'text',options:[],form_version:'B-v1'}};
  const node={id:'current',stage:'await_user',status:'waiting',detail_available:true};
  await page.route('**/api/**',async route=>{
@@ -46,8 +46,8 @@ try{
   }else if(path==='/api/commands'&&data.kind==='approve'){
    assert.equal(data.execution_id,'execution-1');assert.equal(data.candidate_hash,'f'.repeat(64));current.status='FINALIZED';current.state.status='FINALIZED';current.can_continue=true;current.latest_completed={step_id:'current'};current.execution_graph.nodes=[{...node,stage:'approve',status:'completed',has_document:true}];current.session_events.push({id:'event-approve',action:'approve',summary:'최종 명세가 승인되었습니다.',document_step_id:'current'});body=current;
   }else if (path.endsWith('/requirement-review')) body = { status: 'unavailable', message: '예시 근거 자료 없음' };
-    else if(path.endsWith('/document'))body=korean;
-  else if(path.includes('/steps/'))body={result:{summary:'요구사항 확인'},...(current.status==='NEEDS_USER_INPUT'?{}:{document:english})};
+    else if(path.endsWith('/document'))throw new Error('문서 열람은 번역 요청을 보내지 않아야 합니다.');
+  else if(path.includes('/steps/'))body={result:{summary:'요구사항 확인'},...(current.status==='NEEDS_USER_INPUT'?{}:{document:korean})};
   else if(path==='/api/jobs/'+id)body=current;
   else if(path==='/api/projects')body=[];
   else throw new Error('검증되지 않은 API: '+path);
@@ -99,9 +99,8 @@ try{
  await page.getByRole('tab',{name:'명세',exact:true}).click();
  const downloaded=page.waitForEvent('download');await page.getByRole('button',{name:'Markdown 다운로드',exact:true}).click();
  const file=await downloaded;assert.equal(file.suggestedFilename(),'spec.ko.md');assert.equal(readFileSync(await file.path(),'utf8'),korean.content);
- await page.getByRole('button',{name:'English',exact:true}).click();await page.getByRole('heading',{name:'English specification',exact:true}).waitFor();
- const englishDownload=page.waitForEvent('download');await page.getByRole('button',{name:'Markdown 다운로드',exact:true}).click();
- const original=await englishDownload;assert.equal(original.suggestedFilename(),'spec.en.md');assert.equal(readFileSync(await original.path(),'utf8'),english.content);
+ assert.equal(await page.getByRole('button',{name:'English',exact:true}).count(),0);
+ assert.equal(calls.some(c=>c.path.endsWith('/document')),false,'명세 표시와 다운로드는 문서 번역 요청이 없어야 합니다.');
  assert.equal(await page.getByRole('button',{name:'계속 사용',exact:true}).count(),0);
  assert.equal(await page.getByRole('button',{name:'사용 종료',exact:true}).count(),0);
  assert.equal(calls.some(c=>c.path.startsWith('/api/lease/')),false);

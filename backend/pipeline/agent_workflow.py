@@ -259,7 +259,7 @@ class AgentWorkflow:
                     content = self.writer.read_text(f"draft_versions/{version_hash}.md")
                     if hashlib.sha256(content.encode()).hexdigest() != version_hash:
                         raise InvalidStateError("명세 버전의 내용을 확인할 수 없습니다.")
-                    self.writer.write_text("draft/approval_candidate_spec.en.md", content, overwrite=True)
+                    self.writer.write_text("draft/approval_candidate_spec.ko.md", content, overwrite=True)
             operation = _stage("requirement_lock" if action == "requirement_lock_stage" else action,
                 getattr(self.nodes, action),
                 self.progress)
@@ -283,7 +283,7 @@ class AgentWorkflow:
                              "requirements_hash": digest(state.get("requirement_lock_sheet")),
                              "input_refs": state["plan"].get("input_refs", [])})
             self.writer.write_text(f"draft_versions/{self._candidate_hash()}.md",
-                                   self.writer.read_text("draft/approval_candidate_spec.en.md"), overwrite=True)
+                                   self.writer.read_text("draft/approval_candidate_spec.ko.md"), overwrite=True)
         result.update(completed_tasks=done, document_versions=versions,
                       task_results=[*recent, {"action": action, "revision": state.get("revision", 0),
                           "segment": state.get("execution_segment"),
@@ -292,7 +292,7 @@ class AgentWorkflow:
         if action == "compose_candidate":
             # 최고점 복원 후 최신 버전 참조도 선택된 초안에 맞춘다.
             chosen = self._candidate_hash()
-            self.writer.write_text(f"draft_versions/{chosen}.md", self.writer.read_text("draft/approval_candidate_spec.en.md"), overwrite=True)
+            self.writer.write_text(f"draft_versions/{chosen}.md", self.writer.read_text("draft/approval_candidate_spec.ko.md"), overwrite=True)
             result["document_versions"] = [*versions, {"revision": state.get("revision", 0), "hash": chosen}]
             result.update(candidate_hash=self._candidate_hash(), wait_reason="검토를 마친 명세를 승인하거나 수정해주세요.",
                           allowed_actions=["approve", "message", "revise", "retry"])
@@ -361,7 +361,7 @@ class AgentWorkflow:
         return {**result, "allowed_actions": ["message", "revise"], "wait_reason": ""}
 
     def _candidate_hash(self):
-        name = "draft/approval_candidate_spec.en.md"
+        name = "draft/approval_candidate_spec.ko.md"
         return hashlib.sha256(self.writer.read_text(name).encode()).hexdigest() if self.writer.exists(name) else ""
 
     def build(self, saver):

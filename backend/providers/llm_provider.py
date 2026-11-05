@@ -84,7 +84,7 @@ class ChatModelProvider:
         inputs = [{**item, "role": "developer" if item.get("role") == "system" else item["role"]}
                   for item in messages if item.get("role") != "assistant"
                   and not (isinstance(item.get("content"), str)
-                           and item["content"].startswith("Original user request (immutable):\n"))]
+                           and item["content"].startswith("원본 사용자 요청 (변경 불가):\n"))]
         for item in inputs:
             content = item.get("content")
             if item["role"] == "user" and isinstance(content, str) and content.startswith("{"):

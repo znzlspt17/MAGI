@@ -12,13 +12,13 @@ from tests.support.task_fixture import with_tasks
 @pytest.fixture
 def sheet():
     return RequirementLockSheet(lock_id="test", request_type="feature", request_summary="메모 저장",
-        workflow_constraints=[], mandatory_requirements=[RequirementItem("REQ-001", "Store notes locally.")])
+        workflow_constraints=[], mandatory_requirements=[RequirementItem("REQ-001", "메모를 로컬에 저장합니다.")])
 
 
 @pytest.fixture
 def draft():
     return SpecDraftResponse(**with_tasks({name: [{"item_id": "ITEM-" + name,
-        "text": "Store notes locally. Verify local persistence on Windows.",
+        "text": "메모를 로컬에 저장합니다. Windows에서 로컬 저장을 검증합니다.",
         "requirement_ids": ["REQ-001"] if name == "architecture" else [], "decision_ids": []}]
         for name in SpecDraftResponse.model_fields if name != "decisions"}))
 
@@ -26,10 +26,10 @@ def draft():
 @pytest.mark.parametrize("locked", [False, True])
 def test_application_owned_out_of_scope_does_not_require_model_blocks(draft, sheet, locked):
     if locked:
-        sheet.non_scope = [RequirementItem("NS-001", "Cloud synchronization is excluded.")]
+        sheet.non_scope = [RequirementItem("NS-001", "클라우드 동기화는 범위에서 제외합니다.")]
     draft.out_of_scope = []
     result = assemble_spec_draft(draft, sheet)
-    expected = "- [NS-001] Cloud synchronization is excluded." if locked else "No explicit product exclusions were supplied."
+    expected = "- [NS-001] 클라우드 동기화는 범위에서 제외합니다." if locked else "명시된 제품 범위 제외가 없습니다."
     assert result.out_of_scope == expected
     assert [link.item_id for link in result.spec_links if link.section == "out_of_scope"] == (["LOCKED-NS-001"] if locked else [])
 
@@ -53,7 +53,7 @@ def test_generated_content_keeps_strict_validation(draft, sheet, mutation, reaso
     elif mutation == "blank": draft.background[0].text = "   "
     elif mutation == "unknown_ref": draft.background[0].requirement_ids = ["UNKNOWN-001"]
     elif mutation == "unknown_decision": draft.background[0].decision_ids = ["UNKNOWN-001"]
-    else: draft.background[0].text = "## 2. Background\nRepeated heading."
+    else: draft.background[0].text = "## 2. 배경\nRepeated heading."
     with pytest.raises(SpecCompilationError) as error:
         assemble_spec_draft(draft, sheet)
     assert error.value.failed_checks == ["spec_blocks"]
@@ -77,7 +77,7 @@ def compiler_and_writer():
 
 def test_compiler_persists_only_canonical_non_scope_blocks(draft, sheet, monkeypatch):
     from backend.services.change_review import BLOCKS
-    sheet.non_scope = [RequirementItem("NS-001", "Cloud synchronization is excluded.")]
+    sheet.non_scope = [RequirementItem("NS-001", "클라우드 동기화는 범위에서 제외합니다.")]
     draft.out_of_scope[0].text = "DISCARDED_MODEL_TEXT"
     compiler, writer = compiler_and_writer()
     monkeypatch.setattr("backend.services.spec_compiler.complete_with_usage", lambda *a, **kw: draft)
@@ -102,7 +102,7 @@ def test_compiler_repairs_generated_block_with_shared_retry_budget(draft, sheet,
     compiler, writer = compiler_and_writer()
     monkeypatch.setattr("backend.services.spec_compiler.complete_with_usage", complete)
     result = _stage("spec_compile", lambda state: {"spec": compiler.compile(sheet, None, writer=writer)}, None)({})
-    assert "# Final Agent Specification" in result["spec"]
+    assert "# 최종 에이전트 명세" in result["spec"]
     assert attempts == [(0, None), (1, "duplicate_item_id")]
     assert CURRENT_RETRY.get() is None
 
@@ -126,8 +126,8 @@ def test_discarded_scope_prose_is_not_subject_to_model_language_contract(draft):
     from backend.infrastructure.output_language import language_issues
     draft.out_of_scope[0].text = "앱이 사용하지 않을 모델 비범위 원문"
     assert language_issues(draft) == []
-    draft.background[0].text = "생성 본문은 여전히 영어여야 합니다."
-    assert "background[0].text: en" in language_issues(draft)
+    draft.background[0].text = "Generated prose must be Korean."
+    assert "background[0].text: ko" in language_issues(draft)
 
 
 def test_saved_validation_records_bind_explicit_execution_context(draft, sheet, monkeypatch):

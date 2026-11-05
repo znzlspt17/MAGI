@@ -24,13 +24,13 @@ def service(store):
 
 
 @pytest.mark.parametrize("detail,reason,section,index", [
-    ("out_of_scope: include at least one substantive content block.", "empty_section", "out_of_scope", None),
-    ("background[2].item_id: use a unique nonempty stable ID without the LOCKED- prefix.", "invalid_item_id", "background", 2),
-    ("architecture[0].text: include substantive English content.", "empty_text", "architecture", 0),
+    ("out_of_scope: 실질적인 본문 블록을 하나 이상 포함하세요.", "empty_section", "out_of_scope", None),
+    ("background[2].item_id: LOCKED- 접두사 없이 비어 있지 않은 고유한 안정적 ID를 사용하세요.", "invalid_item_id", "background", 2),
+    ("architecture[0].text: 실질적인 한국어 내용을 포함하세요.", "empty_text", "architecture", 0),
     ("architecture[1]: use only supplied requirement IDs and known decision IDs.", "unknown_reference", "architecture", 1),
-    ("architecture[1].requirement_ids: use only supplied requirement IDs.", "unknown_requirement", "architecture", 1),
-    ("architecture[1].decision_ids: use only known decision IDs.", "unknown_decision", "architecture", 1),
-    ("background[0].text: omit fixed section headings and Locked Constraints headings; the application renders them.", "fixed_heading", "background", 0),
+    ("architecture[1].requirement_ids: 제공된 요구사항 ID만 사용하세요.", "unknown_requirement", "architecture", 1),
+    ("architecture[1].decision_ids: 알려진 결정 ID만 사용하세요.", "unknown_decision", "architecture", 1),
+    ("background[0].text: 고정 섹션 제목과 확정된 제약 제목은 애플리케이션이 작성하므로 제외하세요.", "fixed_heading", "background", 0),
 ])
 def test_legacy_only_accepts_whole_fixed_rules(detail, reason, section, index):
     value = safe_record(json.dumps({"stage": "spec_compile", "failed_checks": ["spec_blocks"], "attempt": 4, "validation_details": [detail]}))
@@ -41,8 +41,8 @@ def test_legacy_only_accepts_whole_fixed_rules(detail, reason, section, index):
 
 @pytest.mark.parametrize("payload", [
     {}, {"stage": "OTHER_PRIVATE"}, {"stage": "spec_compile", "validation_details": ["PRIVATE_INPUT"]},
-    {"stage": "spec_compile", "failed_checks": ["spec_blocks"], "validation_details": ["PRIVATE[0].text: include substantive English content."]},
-    {"stage": "spec_compile", "failed_checks": ["spec_blocks"], "validation_details": ["background[0].text: include substantive English content. PRIVATE"]},
+    {"stage": "spec_compile", "failed_checks": ["spec_blocks"], "validation_details": ["PRIVATE[0].text: 실질적인 한국어 내용을 포함하세요."]},
+    {"stage": "spec_compile", "failed_checks": ["spec_blocks"], "validation_details": ["background[0].text: 실질적인 한국어 내용을 포함하세요. PRIVATE"]},
     {"stage": "spec_compile", "failed_checks": ["spec_blocks"], "validation_reason": "PRIVATE", "validation_section": "PRIVATE", "validation_index": "PRIVATE", "execution_id": "PRIVATE"},
 ])
 def test_unknown_data_is_not_reflected(payload):
@@ -71,7 +71,7 @@ def test_versions_are_isolated_paginated_and_execution_links_are_verified(store)
             conn.execute("INSERT INTO executions(id,job_id,data) VALUES (%s,%s,'{}')", (execution, ident))
     docs = store.documents(JOB)
     legacy = {"stage": "spec_compile", "failed_checks": ["spec_blocks"], "attempt": 4,
-              "validation_details": ["out_of_scope: include at least one substantive content block."]}
+              "validation_details": ["out_of_scope: 실질적인 본문 블록을 하나 이상 포함하세요."]}
     docs.write_json(DOCUMENT, legacy)
     new = {**legacy, "execution_id": EXECUTION, "validation_reason": "unknown_requirement", "validation_section": "architecture", "validation_index": 2, "validation_field": "requirement_ids", "validation_details": ["PRIVATE_RESPONSE"]}
     docs.write_json(DOCUMENT, new)

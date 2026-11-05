@@ -21,16 +21,16 @@ from backend.services.checklist import run_deterministic_checks
 
 # 2026-11-04: 검사 식별자를 설명하되 입력에서 추출한 원문이나 실패 위치는 전달하지 않는다.
 _DETERMINISTIC_DESCRIPTIONS = {
-    "SEC-REQUIRED-001": "A required specification heading is missing.",
-    "SEC-REQUIRED-ORDER-001": "Required specification headings are out of order.",
-    "SCOPE-NONSCOPE-001": "The Out of Scope section is empty.",
-    "FORBIDDEN-001": "The Forbidden Behaviors section is empty.",
-    "AC-001": "The Acceptance Criteria section is empty.",
-    "AC-QUALITY-001": "Acceptance criteria contain a generic placeholder.",
-    "TEST-001": "The Test Plan section is empty.",
-    "UNRESOLVED-Q-001": "A blocking question is unresolved.",
-    "AMBIG-001": "A locked requirement needs observable criteria and tests.",
-    "LOCK-COVER-001": "A locked requirement or product decision is missing, duplicated or changed in the specification.",
+    "SEC-REQUIRED-001": "필수 명세 제목이 누락되었습니다.",
+    "SEC-REQUIRED-ORDER-001": "필수 명세 제목의 순서가 올바르지 않습니다.",
+    "SCOPE-NONSCOPE-001": "범위 제외 섹션이 비어 있습니다.",
+    "FORBIDDEN-001": "금지 행동 섹션이 비어 있습니다.",
+    "AC-001": "수용 기준 섹션이 비어 있습니다.",
+    "AC-QUALITY-001": "수용 기준에 일반적인 자리표시자가 있습니다.",
+    "TEST-001": "테스트 계획 섹션이 비어 있습니다.",
+    "UNRESOLVED-Q-001": "필수 질문이 해결되지 않았습니다.",
+    "AMBIG-001": "확정 요구사항에 관찰 가능한 기준과 테스트가 필요합니다.",
+    "LOCK-COVER-001": "확정 요구사항이나 제품 결정이 명세에서 누락·중복·변경되었습니다.",
 }
 
 
@@ -56,7 +56,7 @@ class ChecklistCritic:
         evaluation_sink: Any = None,
     ) -> list[IssuePacket]:
         sheet.require_validated()
-        # 1. Deterministic checks (always authoritative, no LLM needed)
+        # 1. 결정적 검사 (always authoritative, no LLM needed)
         deterministic = run_deterministic_checks(spec_md, sheet)
         # 2026-11-04: 결정적 결함은 별도 병합하므로 모델에는 안전한 요약과 점수 상한만 제공한다.
         deterministic_cap = (7 if any(item.severity in {"blocking", "major"} for item in deterministic)
@@ -141,12 +141,12 @@ def _build_messages(
         load_prompt("checklist_critic"),
         user_request,
         canonical,
-        ("Revision feedback history", history),
-        ("Latest revision feedback", revision_feedback),
-        ("Issues from the previous critic pass", _serialize_previous_issues(previous_issues)),
-        ("Draft specification", spec_md),
-        ("Task-specific rubric", json.dumps({"items": rubric["items"]}, ensure_ascii=False) if rubric is not None else ""),
-        ("Deterministic checks", json.dumps(deterministic_checks, ensure_ascii=False) if deterministic_checks is not None else ""),
+        ("수정 의견 이력", history),
+        ("최신 수정 의견", revision_feedback),
+        ("이전 검토 이슈", _serialize_previous_issues(previous_issues)),
+        ("명세 초안", spec_md),
+        ("작업별 평가 기준", json.dumps({"items": rubric["items"]}, ensure_ascii=False) if rubric is not None else ""),
+        ("결정적 검사", json.dumps(deterministic_checks, ensure_ascii=False) if deterministic_checks is not None else ""),
         workflow_constraints=workflow,
     )
 
@@ -206,7 +206,7 @@ def _parse_provider_issues(
             isinstance(item.get(key), str) for key in ("resolution_reason", "missing_information", "decision_key")) or not item["resolution_reason"].strip() or not item["decision_key"].strip():
             raise ReviewValidationError(["Supply defect_kind, resolution_reason, missing_information and a stable decision_key."], check="review_classification")
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,100}", item["decision_key"]):
-            raise ReviewValidationError(["decision_key must be a stable English topic key."], check="decision_key")
+            raise ReviewValidationError(["decision_key는 안정적인 영문 주제 식별자여야 합니다."], check="decision_key")
         kind = item.get("resolution_kind", "auto_fix")
         question = item.get("decision_question")
         if kind not in {"auto_fix", "user_decision"}:

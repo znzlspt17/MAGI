@@ -90,7 +90,7 @@ def project(job_id, state, artifacts, stage=None):
             edge(ident, keys.get("req:" + req), "derived")
         for reused in item["reused_node_ids"]:
             edge(reused, ident, "reused", rationale=item["rationale"])
-    spec_path = next((p for p in ("final/FINAL_AGENT_SPEC.md", "draft/approval_candidate_spec.en.md") if p in artifacts), None) if spec_stage else None
+    spec_path = next((p for p in ("final/FINAL_AGENT_SPEC.md", "draft/approval_candidate_spec.ko.md") if p in artifacts), None) if spec_stage else None
     if spec_path:
         from backend.services.spec_compiler import _mask_fenced_code
         spec = artifacts[spec_path]

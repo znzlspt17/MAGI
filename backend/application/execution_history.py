@@ -339,11 +339,11 @@ class ExecutionHistory:
             node["summary"] = "사용자 답변을 기다리고 있습니다."
         elif stage == "spec_compile":
             self._copy_document(
-                "draft/approval_candidate_spec.en.md", detail, node, "draft"
+                "draft/approval_candidate_spec.ko.md", detail, node, "draft"
             )
         elif stage in {"checklist_critic", "review_resolution"}:
             self._copy_document(
-                "draft/approval_candidate_spec.en.md", detail, node, "draft"
+                "draft/approval_candidate_spec.ko.md", detail, node, "draft"
             )
             issues = _read_json(
                 root,
@@ -407,7 +407,7 @@ class ExecutionHistory:
                 }
         elif stage == "compose_candidate":
             self._copy_document(
-                "draft/approval_candidate_spec.en.md", detail, node, "candidate"
+                "draft/approval_candidate_spec.ko.md", detail, node, "candidate"
             )
             review = _read_json(root, "analysis/change_review.json")
             from backend.services.change_review import digest, normalize
@@ -424,7 +424,7 @@ class ExecutionHistory:
             node["summary"] = "사용자 승인을 기다리고 있습니다."
         elif stage == "critical_report":
             self._copy_document(
-                "critical/FAILED_AGENT_SPEC_DRAFT.en.md", detail, node, "draft"
+                "critical/FAILED_AGENT_SPEC_DRAFT.ko.md", detail, node, "draft"
             )
             try:
                 report = root.read_text("critical/CRITICAL_REPORT.ko.md")

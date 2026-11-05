@@ -26,7 +26,7 @@ def test_31_snapshots_survive_service_restart_and_step_api(store, monkeypatch):
                                     f"결함 {index}", f"보완 {index}", decision_key="boss_weapon",
                                     resolution_kind="auto_fix", resolution_reason=f"해결 판단 {index}",
                                     decision_answer_id="Q1", basis_refs=["user_answer:Q1"])
-                docs.write_text("draft/approval_candidate_spec.en.md", f"# Draft {index}", overwrite=True)
+                docs.write_text("draft/approval_candidate_spec.ko.md", f"# Draft {index}", overwrite=True)
                 docs.write_json("review/resolution.json", {"issues": [issue.to_dict()], "pass": index,
                                                           "action": "repair", "draft_hash": str(index), "diagnosed_keys": []}, overwrite=True)
                 result = {"structured_issues": [issue.to_dict()]}
@@ -34,7 +34,7 @@ def test_31_snapshots_survive_service_restart_and_step_api(store, monkeypatch):
             node = ExecutionHistory(docs).graph()["nodes"][-1]
             snapshots.append((node["id"], manager.workspace.step(ident, node["id"])))
         # 현재 문서와 상태를 바꿔도 이전 단계의 문서·판단은 변하지 않는다.
-        docs.write_text("draft/approval_candidate_spec.en.md", "# Later draft", overwrite=True)
+        docs.write_text("draft/approval_candidate_spec.ko.md", "# Later draft", overwrite=True)
         job.update(status="CRITICAL_BLOCKED")
         store.save_job(job)
     finally:

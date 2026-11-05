@@ -81,7 +81,7 @@ class RequirementLockBuilder:
                                        runtime.confirmed_sources(state) if runtime else None,
                                        previous, state.get("reused_decisions", []))
                 except ValueError:
-                    raise _normalization_error("trace", ["Decision trace references are invalid."]) from None
+                    raise _normalization_error("trace", ["결정 추적 참조가 올바르지 않습니다."]) from None
                 from backend.services.project_decisions import validate_requirement_sources
                 try:
                     validate_requirement_sources(sheet, state.get("reused_decisions", []), require_all=not bool(state.get("revision_feedback")))
@@ -124,8 +124,8 @@ def _build_messages(
         load_prompt("requirement_lock"),
         user_request,
         json.dumps(canonical, ensure_ascii=False, indent=2),
-        ("Revision feedback history", history_text),
-        ("Latest revision feedback", str(state.get("revision_feedback") or "")),
+        ("수정 의견 이력", history_text),
+        ("최신 수정 의견", str(state.get("revision_feedback") or "")),
         workflow_constraints=workflow,
     )
 
@@ -173,7 +173,7 @@ def _validate_decision_coverage(
     if feedback and not any(_covers_source(item, "user_feedback") for item in decisions):
         missing.append("user_feedback")
     if missing:
-        error = _normalization_error("source_coverage", [f"Missing source in product requirements or workflow_constraints: {marker}" for marker in missing])
+        error = _normalization_error("source_coverage", [f"제품 요구사항 또는 workflow_constraints에 출처가 누락되었습니다: {marker}" for marker in missing])
         error.code = "SOURCE_COVERAGE_MISSING"
         raise error
 
@@ -188,41 +188,41 @@ def _validate_preserved_mandatory_ids(
     old_ids = {item.id for item in previous.mandatory_requirements if item.id}
     current_ids = {item.id for item in current_sheet.mandatory_requirements if item.id}
     if not old_ids.issubset(current_ids):
-        raise _normalization_error("mandatory_ids", [f"Preserve mandatory ID: {ident}" for ident in sorted(old_ids - current_ids)])
+        raise _normalization_error("mandatory_ids", [f"필수 ID를 보존하세요: {ident}" for ident in sorted(old_ids - current_ids)])
 
 
 def _covers_source(item: RequirementItem, marker: str) -> bool:
     return (
         bool(item.text.strip())
-        and not _contains_hangul(item.text)
+        and _korean_or_technical(item.text)
         and marker in {item.source, *item.sources}
     )
 
 
 def _response_validation_error(parsed: Any) -> RequirementNormalizationError:
     if not isinstance(parsed, dict):
-        return _normalization_error("structure", ["Response must be a JSON object."])
-    details = [] if isinstance(parsed.get("workflow_constraints"), list) else ["workflow_constraints must be supplied as an array, separate from product requirements."]
-    non_english = []
+        return _normalization_error("structure", ["응답은 JSON 객체여야 합니다."])
+    details = [] if isinstance(parsed.get("workflow_constraints"), list) else ["workflow_constraints는 제품 요구사항과 분리된 배열로 제공해야 합니다."]
+    non_korean = []
     for key in ("mandatory_requirements", "recommended_requirements", "optional_requirements", "constraints", "non_scope"):
         items = parsed.get(key, [])
         if not isinstance(items, list) or (key == "mandatory_requirements" and not items):
-            details.append(f"{key} must be an array; mandatory_requirements must not be empty.")
+            details.append(f"{key}는 배열이어야 하며 mandatory_requirements는 비어 있을 수 없습니다.")
             continue
         for index, item in enumerate(items):
             path = f"{key}[{index}]"
-            if isinstance(item, dict) and isinstance(item.get("text"), str) and _contains_hangul(item["text"]):
-                non_english.append(f"Normalize {path}.text to English; preserve original wording in original_text.")
+            if isinstance(item, dict) and isinstance(item.get("text"), str) and not _korean_or_technical(item["text"]):
+                non_korean.append(f"{path}.text를 한국어로 정리하고 original_text의 원문을 보존하세요.")
             elif not _valid_requirement_item(item):
-                details.append(f"{path} must have a valid id, single-line English text, source, and optional original_text and sources.")
+                details.append(f"{path}에 유효한 id, 한 줄의 한국어 text, source와 선택적 original_text 및 sources가 필요합니다.")
         if key == "mandatory_requirements":
             ids = [item.get("id") for item in items if isinstance(item, dict) and isinstance(item.get("id"), str)]
             if len(ids) != len(set(ids)):
-                details.append("mandatory_requirements contains duplicate IDs.")
+                details.append("mandatory_requirements에 중복 ID가 있습니다.")
     unresolved = parsed.get("unresolved_questions", [])
     if not isinstance(unresolved, list) or unresolved:
-        details.append("unresolved_questions must be an empty array.")
-    return _normalization_error("english_normalization" if non_english else "structure", non_english + details)
+        details.append("unresolved_questions는 빈 배열이어야 합니다.")
+    return _normalization_error("korean_normalization" if non_korean else "structure", non_korean + details)
 
 
 def _normalization_error(category: str, details: list[str]) -> RequirementNormalizationError:
@@ -235,6 +235,12 @@ def _normalization_error(category: str, details: list[str]) -> RequirementNormal
 def _contains_hangul(value: str) -> bool:
     from backend.infrastructure.output_language import prose, has_hangul
     return has_hangul(prose(value))
+
+
+def _korean_or_technical(value: str) -> bool:
+    from backend.infrastructure.output_language import prose, has_hangul, technical_only
+    body = prose(value).strip()
+    return bool(body and (has_hangul(body) or technical_only(body)))
 
 
 def _valid_lock_response(value: Any) -> bool:
@@ -281,7 +287,7 @@ def _valid_requirement_item(item: Any) -> bool:
         not _REQUIREMENT_ID.match(item["id"])
         or "\n" in item["text"]
         or item["text"].lstrip().startswith("#")
-        or _contains_hangul(item["text"])
+        or not _korean_or_technical(item["text"])
     ):
         return False
     original = item.get("original_text", "")

@@ -42,7 +42,7 @@ def validate_resolutions(packet, issues, basis, records, state):
     reconfirm = set()
     for item in packet.resolutions:
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,100}", item.decision_key):
-            raise ReviewValidationError(["Use a stable English decision topic key."], stage="review_resolution", check="decision_key")
+            raise ReviewValidationError(["안정적인 영문 결정 주제 식별자를 사용하세요."], stage="review_resolution", check="decision_key")
         for name in ("resolution_reason", "required_change"):
             if not has_hangul(prose(getattr(item, name))):
                 raise ReviewValidationError(["Resolution reason and required change must explain the action in Korean."], stage="review_resolution", check="resolution_language")

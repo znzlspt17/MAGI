@@ -11,12 +11,10 @@ HTTP_STATUS = {
     "forbidden": 403,
     "configuration": 503,
     "unavailable": 503,
-    "translation_invalid": 502,
     "internal": 503,
 }
 UNCERTAIN_METHODS = {
     "job.command",
-    "document",
     "cleanup.execute",
     "knowledge.impact.analyse",
 }

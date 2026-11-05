@@ -69,9 +69,9 @@ def test_http_initialization_and_followup_preserve_boundaries_and_delta():
         client = ChatModelProvider(api_key="fake-test-value")
         ident = client.create_conversation()
         client.initialize_conversation(ident, bootstrap)
-        for stage in ("interview", "spec_translation"):
+        for stage in ("interview", "spec_compile"):
             client.complete_result([
-                {"role": "user", "content": "Original user request (immutable):\noriginal request"},
+                {"role": "user", "content": "원본 사용자 요청 (변경 불가):\noriginal request"},
                 {"role": "assistant", "content": "do not replay"},
                 {"role": "user", "content": "new input"},
             ], model=MODEL, conversation_id=ident, instructions=stage, cache_key=cache_key("job-a"))
@@ -89,7 +89,7 @@ def test_http_initialization_and_followup_preserve_boundaries_and_delta():
 def test_existing_job_bootstrap_and_restart_do_not_recreate_or_replay(store):
     docs, client = documents(store), provider()
     docs.state = {"requirement_lock_sheet": {"decisions": ["현재 확정"]}, "review_questions": ["미해결"]}
-    docs.write_text("draft/approval_candidate_spec.en.md", "current specification")
+    docs.write_text("draft/approval_candidate_spec.ko.md", "current specification")
     with job_conversation(docs, client) as ident:
         assert saved(store)["openai_conversation_state"] == "ready"
         call_started(docs, client)
@@ -139,7 +139,7 @@ def test_uncertain_initialization_never_repeats_automatically(store, monkeypatch
 def test_all_schema_paths_share_conversation_and_explicit_stage_contract(store):
     docs, client = documents(store), provider()
     stages = ("planner", "interview", "requirement_lock", "spec_compile", "checklist_critic",
-              "review_resolution", "change_review", "impact_review", "spec_translation")
+              "review_resolution", "change_review", "impact_review")
     for stage in stages:
         assert _complete_once(docs, client, [{"role": "system", "content": "stage policy"},
                                             {"role": "user", "content": "current evidence"}],
@@ -147,8 +147,8 @@ def test_all_schema_paths_share_conversation_and_explicit_stage_contract(store):
     assert {call.kwargs["conversation_id"] for call in client.complete_result.call_args_list} == {"conv_test"}
     assert len({call.kwargs["cache_key"] for call in client.complete_result.call_args_list}) == 1
     for stage, call in zip(stages, client.complete_result.call_args_list):
-        assert f"Current stage: {stage}." in call.kwargs["instructions"]
-        assert "older outputs" in call.kwargs["instructions"]
+        assert f"현재 단계: {stage}." in call.kwargs["instructions"]
+        assert "이전 출력과 대체된 초안은 과거 자료" in call.kwargs["instructions"]
 
 
 def test_uncertain_call_blocks_until_explicit_replay_and_records_response(store):

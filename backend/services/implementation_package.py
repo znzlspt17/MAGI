@@ -19,7 +19,7 @@ class PackageEntry(TypedDict):
 CHUNK = 48 * 1024
 FILE_LIMIT = 4 * 1024 * 1024
 TOTAL_LIMIT = 16 * 1024 * 1024
-NAMES = {"README.ko.md", "SPEC.en.md", "SPEC.ko.md", "TASKS.md", "CONSTRAINTS.md", "VERIFICATION.md", "manifest.json"}
+NAMES = {"README.ko.md", "SPEC.ko.md", "TASKS.md", "CONSTRAINTS.md", "VERIFICATION.md", "manifest.json"}
 
 
 def sha(value):
@@ -30,31 +30,29 @@ def serialize(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2).encode("utf-8")
 
 
-def create_package(completed_id, archive, korean=None):
+def create_package(completed_id, archive):
     content = archive["content"]
     sections = _rendered_sections(content)
     plan = archive.get("implementation_plan")
     structured = valid_plan(plan, content)
     limits = [] if structured else ["작업별 의존관계·완료 조건 연결 자료 부족"]
-    if not korean:
-        limits.append("저장된 번역 없음 · 영어 원문 포함")
-    documents = {"SPEC.en.md": [content], "TASKS.md": ["# Implementation tasks\n\n", sections.get("implementation_order", "No implementation-order section was preserved."), "\n\n"]}
+    documents = {"SPEC.ko.md": [content], "TASKS.md": ["# 구현 작업\n\n", sections.get("implementation_order", "구현 순서가 보존되지 않았습니다."), "\n\n"]}
     if structured:
         sources = {s["item_id"]: s for s in plan["sources"]}
-        documents["TASKS.md"] = ["# Approved implementation tasks\n\nRecommended and optional work remain non-mandatory.\n\n"]
+        documents["TASKS.md"] = ["# 승인된 구현 작업\n\n권장 및 선택 작업은 필수가 아닙니다.\n\n"]
         for task in plan["tasks"]:
             documents["TASKS.md"].extend([task["rendered"], "\n\n"])
-            for field, title in (("spec_item_ids", "Specification source text"), ("completion_item_ids", "Completion source text")):
+            for field, title in (("spec_item_ids", "명세 근거"), ("completion_item_ids", "완료 기준 근거")):
                 documents["TASKS.md"].extend([title + ":\n\n"])
                 for ref in task[field]:
-                    documents["TASKS.md"].extend([f'[{ref}] (SPEC.en.md / {sources[ref]["section"]})\n\n', sources[ref]["text"], "\n\n"])
+                    documents["TASKS.md"].extend([f'[{ref}] (SPEC.ko.md / {sources[ref]["section"]})\n\n', sources[ref]["text"], "\n\n"])
     else:
         documents["TASKS.md"].insert(1, "작업별 의존관계·완료 조건 연결 자료 부족\n\n")
-    documents["CONSTRAINTS.md"] = ["# Product constraints and exclusions\n\nSource: SPEC.en.md / 10. Forbidden Behaviors\n\n", sections.get("forbidden_behaviors", "No forbidden-behavior section was preserved."),
-                                  "\n\n## Out of scope\n\nSource: SPEC.en.md / 4.2 Out of Scope\n\n", sections.get("out_of_scope", "No exclusion section was preserved.")]
-    documents["VERIFICATION.md"] = ["# Verification checklist\n\n실행 전 확인 목록 · 실제 테스트 결과 미수집\n\n"]
-    for key, title in (("acceptance_criteria", "Acceptance criteria"), ("test_plan", "Test plan"), ("manual_verification_checklist", "Manual verification")):
-        documents["VERIFICATION.md"].extend([f"## {title}\n\n", sections.get(key, "No section was preserved."), "\n\n"])
+    documents["CONSTRAINTS.md"] = ["# 제품 제약과 범위 제외\n\n출처: SPEC.ko.md / 10. 금지 행동\n\n", sections.get("forbidden_behaviors", "금지 행동이 보존되지 않았습니다."),
+                                  "\n\n## 범위 제외\n\n출처: SPEC.ko.md / 4.2 범위 제외\n\n", sections.get("out_of_scope", "범위 제외가 보존되지 않았습니다.")]
+    documents["VERIFICATION.md"] = ["# 검증 확인 목록\n\n실행 전 확인 목록 · 실제 테스트 결과 미수집\n\n"]
+    for key, title in (("acceptance_criteria", "수용 기준"), ("test_plan", "테스트 계획"), ("manual_verification_checklist", "수동 검증")):
+        documents["VERIFICATION.md"].extend([f"## {title}\n\n", sections.get(key, "해당 항목이 보존되지 않았습니다."), "\n\n"])
     if structured:
         from backend.services.implementation_plan import CHECKS
         linked = {ref for task in plan["tasks"] for ref in task["completion_item_ids"]}
@@ -62,14 +60,12 @@ def create_package(completed_id, archive, korean=None):
         if unlinked:
             documents["VERIFICATION.md"].append("## 작업에 연결되지 않은 검증 본문\n\n")
             for source in unlinked:
-                documents["VERIFICATION.md"].extend([f'[{source["item_id"]}] (SPEC.en.md / {source["section"]})\n\n', source["text"], "\n\n"])
+                documents["VERIFICATION.md"].extend([f'[{source["item_id"]}] (SPEC.ko.md / {source["section"]})\n\n', source["text"], "\n\n"])
     documents["VERIFICATION.md"].append("연결되지 않은 본문도 위 원문에 포함됩니다. 문서의 통과 표현은 실제 실행 결과로 해석하지 마세요.\n")
     documents["README.ko.md"] = [f"# 구현 시작용 자료\n\n승인 완료본: {completed_id}\n\n명세 SHA-256: {sha(content.encode('utf-8'))}\n\n",
-        "SPEC.en.md를 먼저 읽고 TASKS.md의 선행 관계에 따라 구현하세요. CONSTRAINTS.md의 제품 제약·비범위를 지키고 VERIFICATION.md로 구현 후 검증을 계획하세요. 권장·선택 작업은 필수가 아닙니다.\n\n",
-        "영어 원문이 기준입니다. 한국어본은 같은 버전의 저장·검증된 번역이 있을 때만 포함됩니다. 문서 검토는 구현이나 테스트 실행을 뜻하지 않습니다.\n\n",
+        "SPEC.ko.md를 먼저 읽고 TASKS.md의 선행 관계에 따라 구현하세요. CONSTRAINTS.md의 제품 제약·비범위를 지키고 VERIFICATION.md로 구현 후 검증을 계획하세요. 권장·선택 작업은 필수가 아닙니다.\n\n",
+        "한국어 원문이 기준입니다. 문서 검토는 구현이나 테스트 실행을 뜻하지 않습니다.\n\n",
         "## 자료 범위\n\n", "\n".join("- " + v for v in limits) or "- 승인된 구조화 작업 계획 포함", "\n"]
-    if korean:
-        documents["SPEC.ko.md"] = [korean]
     files: dict[str, bytes] = {}
     entries: list[PackageEntry] = []
     for name, parts in documents.items():
@@ -83,7 +79,7 @@ def create_package(completed_id, archive, korean=None):
         if size <= FILE_LIMIT:
             files[name] = bytes(data)
     identity = {"format_version": 1, "completed_id": completed_id, "source_hash": sha(content.encode("utf-8")),
-                "files": entries, "completeness": "complete" if structured else "limited", "korean_included": bool(korean),
+                "files": entries, "completeness": "complete" if structured else "limited",
                 "task_count": len(plan["tasks"]) if structured else 0, "limitations": limits}
     bundle_id = sha(serialize(identity))
     manifest = {**identity, "bundle_id": bundle_id, "test_status": "not_collected"}

@@ -98,7 +98,7 @@ class Engine:
                     raise InvalidStateError("승인 후보가 변경되었습니다.")
                 if state.status != STATUS_PASS_PENDING_USER_APPROVAL:
                     raise InvalidStateError("검토를 통과한 승인 후보가 필요합니다.")
-                candidate = writer.read_text("draft/approval_candidate_spec.en.md")
+                candidate = writer.read_text("draft/approval_candidate_spec.ko.md")
                 from backend.services.rubric import digest
                 evaluation_hash = digest(state.rubric_evaluation)
                 if ((payload.get("evaluation_hash") is not None and payload["evaluation_hash"] != evaluation_hash)
@@ -204,7 +204,7 @@ class Engine:
         from backend.services.completed_specs import archive_completed
 
         current = State.from_dict(state)
-        content = self.documents.read_text("draft/approval_candidate_spec.en.md")
+        content = self.documents.read_text("draft/approval_candidate_spec.ko.md")
         self._validate_candidate_for_approval(content, current)
         if hashlib.sha256(content.encode()).hexdigest() != current.candidate_hash:
             raise InvalidStateError("승인 후보가 변경되었습니다.")
@@ -235,8 +235,8 @@ class Engine:
 
         from backend.services.spec_compiler import SpecCompiler
 
-        if not SpecCompiler.english_only(candidate_text):
-            raise InvalidStateError("Approval candidate must be English-only.")
+        if not SpecCompiler.korean_document(candidate_text):
+            raise InvalidStateError("Approval candidate must be Korean.")
         stored_issues = parse_issue_list(state.structured_issues)
         from backend.services.rubric import require_approval_evaluation, digest
         sheet = RequirementLockSheet.from_dict(state.requirement_lock_sheet).require_validated()

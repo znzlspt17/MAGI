@@ -26,21 +26,21 @@ class Documents:
 @pytest.fixture
 def case(monkeypatch):
     sheet = RequirementLockSheet("lock", "feature", "메모", [],
-        mandatory_requirements=[RequirementItem("REQ-001", "Store notes locally.", original_text="메모 저장")])
+        mandatory_requirements=[RequirementItem("REQ-001", "메모를 로컬에 저장합니다.", original_text="메모 저장")])
     state = {"user_request": "메모 저장", "requirement_lock_sheet": sheet.to_dict()}
     response = RubricResponse(items=[dict(rubric_id="RUB-001", requirement_id="REQ-001", category="requirement", importance="core",
-        basis=[dict(reference="REQ-001", quote="Store notes locally.")],
-        condition="Verify local note persistence is specified.", sections=["architecture", "test_plan"])])
+        basis=[dict(reference="REQ-001", quote="메모를 로컬에 저장합니다.")],
+        condition="메모의 로컬 저장이 명시되어 있는지 검증합니다.", sections=["architecture", "test_plan"])])
     complete = Mock(return_value=response)
     monkeypatch.setattr(rubric, "complete_with_usage", complete)
     docs = Documents()
     record = rubric.ensure_rubric(docs, None, "model", sheet, state)
     state["rubric"] = record
-    spec = "\n\n".join(heading + "\n\nStore notes locally. Verify local persistence on Windows."
+    spec = "\n\n".join(heading + "\n\n메모를 로컬에 저장합니다. Windows에서 로컬 저장을 검증합니다."
                          for heading in REQUIRED_FINAL_SPEC_HEADINGS)
     spec = _assemble_locked_sections(spec, sheet)
     verdict = dict(rubric_id="RUB-001", verdict="PASS", section="architecture", evidence_kind="quote",
-                   quote="Store notes locally.", reason="명세에 저장 동작이 반영되어 있습니다.", issue_checklist_id=None)
+                   quote="메모를 로컬에 저장합니다.", reason="명세에 저장 동작이 반영되어 있습니다.", issue_checklist_id=None)
     return SimpleNamespace(sheet=sheet, state=state, response=response, complete=complete, docs=docs,
                            record=record, spec=spec, verdict=verdict)
 

@@ -59,7 +59,7 @@ def model_context(messages, previous=None):
         content = message["content"]
         if isinstance(content, list):
             content = "".join(block.get("text", "") for block in content)
-        if content.startswith("Canonical context:\n"):
+        if content.startswith("확정 문맥:\n"):
             context.update(json.loads(content.split("\n", 1)[1]))
     return context
 

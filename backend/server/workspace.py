@@ -54,8 +54,8 @@ class Workspace:
     def public(self, ident):
         return self._jobs.public(ident)
 
-    def document(self, ident, step_id, language, *, meter=None):
-        return self._documents.document(ident, step_id, language, meter=meter)
+    def document(self, ident, step_id, *, meter=None):
+        return self._documents.document(ident, step_id, meter=meter)
 
     def step(self, ident: str, step_id: str):
         return self._documents.step(ident, step_id)

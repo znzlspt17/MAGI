@@ -18,7 +18,7 @@ def context():
     }))
     prepared, refs = prepare_context(None, payload, "review_resolution")
     canonical = json.loads(next(item["content"].split("\n", 1)[1] for item in prepared
-                                if item["content"].startswith("Canonical context:\n")))
+                                if item["content"].startswith("확정 문맥:\n")))
     return canonical, refs
 
 
@@ -53,7 +53,8 @@ def test_conflicting_source_does_not_accept_product_id():
     result.resolutions[0].conflicting_source = "FR-001"
     with pytest.raises(ReviewValidationError) as caught:
         refs.restore(result)
-    assert "allowed_resolution_refs.conflicting_source: []" in caught.value.validation_details[0]
+    assert caught.value.failed_checks == ["source_reference"]
+    assert "allowed_resolution_refs.conflicting_source의 값만 사용하세요: []" in caught.value.validation_details[0]
 
 
 def test_question_intent_and_final_assessment_survive_provider_context_preparation():
@@ -65,7 +66,7 @@ def test_question_intent_and_final_assessment_survive_provider_context_preparati
     }))
     prepared, _ = prepare_context(None, payload, "review_resolution")
     canonical = json.loads(next(item["content"].split("\n", 1)[1] for item in prepared
-                                if item["content"].startswith("Canonical context:\n")))
+                                if item["content"].startswith("확정 문맥:\n")))
     assert canonical["final_assessment"] is True
     assert canonical["planner_intent"] == intent
     assert canonical["execution_constraints"] == limits

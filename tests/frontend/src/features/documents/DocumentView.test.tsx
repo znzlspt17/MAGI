@@ -1,75 +1,45 @@
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
-import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
+import {cleanup,fireEvent,render,screen} from '@testing-library/react';
 import {DocumentView} from '@/features/documents/DocumentView';
 import {post,api} from '@/shared/api/api';
-vi.mock('@/shared/api/api',()=>({post:vi.fn(),api:vi.fn().mockResolvedValue({status:'unavailable',message:'기준 없음'})}));
+vi.mock('@/shared/api/api',()=>({post:vi.fn(),api:vi.fn()}));
 afterEach(()=>{cleanup();vi.restoreAllMocks();});
-beforeEach(()=>{vi.mocked(post).mockReset();vi.mocked(api).mockReset().mockResolvedValue({status:'unavailable',message:'기준 없음'});});
-const english={content:'# English document',filename:'spec.en.md',source_hash:'snapshot'};
-const korean={content:'# 한국어 문서',filename:'spec.ko.md',source_hash:'snapshot',language:'ko'};
-function deferred(){let resolve!:(v:any)=>void,reject!:(v:any)=>void;const promise=new Promise<any>((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};}
+beforeEach(()=>{vi.mocked(post).mockReset().mockResolvedValue({content:'# 번역 결과',language:'ko'});vi.mocked(api).mockReset().mockResolvedValue({status:'unavailable',message:'기준 없음'});});
+const korean={content:'# 한국어 명세\n\n😀 사용자의 기록을 보관합니다.',filename:'SPEC.ko.md',source_hash:'snapshot',language:'ko' as const};
 const click=(name:string)=>fireEvent.click(screen.getByRole('button',{name}));
 const blobText=(blob:Blob)=>new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=reject;reader.readAsText(blob);});
-const download=()=>screen.getByRole('button',{name:'Markdown 다운로드'}) as HTMLButtonElement;
-it('문서 본문은 바로 표시하고 검토 근거는 별도로 펼친다',async()=>{
- const view=render(<DocumentView jobId="job" stepId="read" initialLanguage="en" document={{...english,kind:'candidate'}}/>);
- await screen.findByRole('heading',{name:'English document'});
- const disclosure=view.container.querySelector<HTMLDetailsElement>('.document-review')!;
- expect(disclosure.open).toBe(false);
- fireEvent.click(disclosure.querySelector('summary')!);
- expect(disclosure.open).toBe(true);
- expect(await screen.findByText('기준 없음')).toBeTruthy();
- expect(post).not.toHaveBeenCalled();
-});
-it('근거표만 열면 번역 생성과 모델 호출을 시작하지 않는다',async()=>{
- const open=vi.fn();
- render(<DocumentView jobId="job" stepId="one" document={{...english,kind:'candidate'}} reviewOnly onShowDocument={open}/>);
- await screen.findByText('기준 없음');
- expect(post).not.toHaveBeenCalled();
- expect(screen.queryByRole('button',{name:'Markdown 다운로드'})).toBeNull();
- click('명세 문서 보기');expect(open).toHaveBeenCalledOnce();
-});
-it('늦게 도착한 번역은 영어 선택을 유지하고 캐시와 다운로드는 선택 언어를 따른다',async()=>{
- const pending=deferred();vi.mocked(post).mockReturnValue(pending.promise);
+it('한국어 원본을 추가 요청 없이 즉시 표시하고 원본을 다운로드한다',async()=>{
  const blobs:Blob[]=[],links:HTMLAnchorElement[]=[];
  Object.defineProperty(URL,'createObjectURL',{configurable:true,value:vi.fn((blob:Blob)=>{blobs.push(blob);return'blob:test';})});
  Object.defineProperty(URL,'revokeObjectURL',{configurable:true,value:vi.fn()});
  vi.spyOn(HTMLAnchorElement.prototype,'click').mockImplementation(function(this:HTMLAnchorElement){links.push(this);});
- const view=render(<DocumentView jobId="job" stepId="one" document={english}/>);
- expect(download().disabled).toBe(true);
- click('English');await screen.findByRole('heading',{name:'English document'});
- click('Markdown 다운로드');expect(links[0].download).toBe('spec.en.md');expect(await blobText(blobs[0])).toBe(english.content);
- await act(async()=>pending.resolve(korean));
- expect(screen.getByRole('heading',{name:'English document'})).toBeTruthy();
- click('한국어');await screen.findByRole('heading',{name:'한국어 문서'});
- expect(post).toHaveBeenCalledTimes(1);
- click('Markdown 다운로드');expect(links[1].download).toBe('spec.ko.md');expect(await blobText(blobs[1])).toBe(korean.content);
+ const view=render(<DocumentView jobId="job" stepId="read" document={{...korean,kind:'candidate'}}/>);
+ expect(screen.getByRole('heading',{name:'한국어 명세'})).toBeTruthy();
+ await screen.findByText('기준 없음');
+ expect(screen.queryByRole('button',{name:'English'})).toBeNull();
+ expect(screen.queryByRole('button',{name:'한국어'})).toBeNull();
+ expect(post).not.toHaveBeenCalled();
+ click('Markdown 다운로드');expect(links[0].download).toBe('SPEC.ko.md');expect(await blobText(blobs[0])).toBe(korean.content);
  click('Markdown 보기');expect(view.container.querySelector('pre')?.textContent).toBe(korean.content);
- click('English');await waitFor(()=>expect(view.container.querySelector('pre')?.textContent).toBe(english.content));
- click('Markdown 다운로드');expect(await blobText(blobs[2])).toBe(english.content);
- click('한국어');await waitFor(()=>expect(view.container.querySelector('pre')?.textContent).toBe(korean.content));
- view.rerender(<DocumentView jobId="job" stepId="one" document={{...english}}/>);
- expect(post).toHaveBeenCalledTimes(1);
+ const disclosure=view.container.querySelector<HTMLDetailsElement>('.document-review')!;
+ expect(disclosure.open).toBe(false);fireEvent.click(disclosure.querySelector('summary')!);
+ expect(await screen.findByText('기준 없음')).toBeTruthy();
 });
-it('이전 단계의 번역 응답이 최신 단계를 덮어쓰지 않는다',async()=>{
- const old=deferred(),latest=deferred();vi.mocked(post).mockReturnValueOnce(old.promise).mockReturnValueOnce(latest.promise);
- const view=render(<DocumentView jobId="job" stepId="old" document={english}/>);
- view.rerender(<DocumentView jobId="job" stepId="latest" document={{...english,content:'# New snapshot'}}/>);
- await act(async()=>old.resolve({...korean,content:'# 과거 명세'}));expect(download().disabled).toBe(true);expect(screen.queryByText('과거 명세')).toBeNull();
- await act(async()=>latest.resolve({...korean,content:'# 최신 명세'}));await screen.findByRole('heading',{name:'최신 명세'});
+it('근거표만 열어도 추가 문서 요청 없이 문서 보기로 전환한다',async()=>{
+ const open=vi.fn();render(<DocumentView jobId="job" stepId="one" document={{...korean,kind:'candidate'}} reviewOnly onShowDocument={open}/>);
+ await screen.findByText('기준 없음');expect(post).not.toHaveBeenCalled();
+ expect(screen.queryByRole('button',{name:'Markdown 다운로드'})).toBeNull();
+ click('명세 문서 보기');expect(open).toHaveBeenCalledOnce();
 });
-it('번역 실패, 재시도 및 원문 해시 불일치를 표시하며 다운로드를 막는다',async()=>{
- vi.mocked(post).mockRejectedValueOnce(new Error('번역 실패')).mockResolvedValueOnce(korean).mockResolvedValueOnce({...korean,source_hash:'different'});
- const view=render(<DocumentView jobId="job" stepId="failure" document={english}/>);
- await screen.findByText(/준비하지 못했습니다/);expect(download().disabled).toBe(true);
- click('English');await screen.findByRole('heading',{name:'English document'});expect(download().disabled).toBe(false);
- click('한국어');await screen.findByRole('heading',{name:'한국어 문서'});
- view.rerender(<DocumentView jobId="job" stepId="changed" document={english}/>);
- await screen.findByText(/원문이 변경되었습니다/);expect(download().disabled).toBe(true);
-});
-it('실패한 한국어본을 명시적으로 다시 생성한다',async()=>{
- vi.mocked(post).mockRejectedValueOnce(new Error('번역 실패')).mockResolvedValueOnce(korean);
- render(<DocumentView jobId="job" stepId="retry" document={english}/>);
- await screen.findByText(/준비하지 못했습니다/);click('한국어본 다시 생성');
- await screen.findByRole('heading',{name:'한국어 문서'});expect(download().disabled).toBe(false);expect(post).toHaveBeenCalledTimes(2);
+it('이모지가 앞에 있는 한국어 근거를 코드 포인트 위치로 강조한다',async()=>{
+ const quote='사용자의 기록을 보관합니다.';
+ const start=Array.from(korean.content).indexOf('사');
+ const evidence={item_id:'A',section:'architecture',quote,start,end:start+Array.from(quote).length,line:3,shared:false,provenance:'recorded_block'};
+ vi.mocked(api).mockResolvedValue({status:'ready',message:'확인',basis:{id:'basis',source_hash:'snapshot'},review_status:'pending_approval',summary:{total:1,spec_linked:1,acceptance_linked:0,verification_linked:0},rows:[{id:'REQ-1',text:'기록 보관',group:'mandatory_requirements',spec_status:'linked',acceptance_status:'unconfirmed',verification_status:'unconfirmed',test_status:'not_collected',specification:[evidence],acceptance:[],verification:[],specification_total:1,acceptance_total:0,verification_total:0}],unlinked:[],unlinked_total:0,total:1,has_more:false,offset:0});
+ const view=render(<DocumentView jobId="job" stepId="read" document={{...korean,kind:'candidate'}}/>);
+ await screen.findByText('기록 보관');click('architecture · 3행');click('명세 원문 위치로 이동');
+ expect(view.container.querySelector('mark')?.textContent).toBe(quote);
+ expect(view.container.querySelector('pre')?.textContent).toBe(korean.content);
+ expect(screen.getByLabelText('선택한 근거의 명세 원문')).toBeTruthy();
+ expect(post).not.toHaveBeenCalled();
 });

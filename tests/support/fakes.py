@@ -71,7 +71,7 @@ class DecisionProvider:
             return planner_result(messages)
         self.calls.append(schema)
         for message in messages:
-            if message["content"].startswith("Canonical context:\n"):
+            if message["content"].startswith("확정 문맥:\n"):
                 self.contexts[schema] = json.loads(message["content"].split("\n", 1)[1])
         if schema is InterviewResponse:
             parsed = schema(
@@ -96,9 +96,9 @@ class DecisionProvider:
                 else item
                 for item in answers
             ]
-            text = "Store notes locally."
+            text = "메모를 로컬에 저장합니다."
             if any(a["answer"] == "30일" for a in answers):
-                text += " Retain notes for 30 days."
+                text += " 메모를 30일 동안 보존합니다."
             parsed = schema(
                 request_summary="로컬 메모 앱",
                 workflow_constraints=[],
@@ -127,14 +127,14 @@ class DecisionProvider:
                 non_scope=[],
                 constraints=[],
                 assumptions=[],
-                acceptance_criteria_seed=["REQ-001: Verify local persistence."],
+                acceptance_criteria_seed=["REQ-001: 로컬 저장을 검증합니다."],
                 unresolved_questions=[],
             )
         elif schema is RubricResponse:
             basis = self.contexts[schema]["confirmed_basis"]
             parsed = schema(items=[dict(rubric_id="RUB-" + key, requirement_id=key,
                 category="requirement", importance="core", basis=[{"reference": key, "quote": text}],
-                condition="Verify the confirmed behavior is specified.", sections=["architecture"])
+                condition="확정된 동작이 명시되어 있는지 검증합니다.", sections=["architecture"])
                 for key, text in basis.items() if "." not in key])
         elif schema is SpecResponse:
             from tests.support.task_fixture import with_tasks
@@ -145,7 +145,7 @@ class DecisionProvider:
                         key: [
                             dict(
                                 item_id="ITEM-" + key,
-                                text="Store notes locally. Verify local persistence on Windows.",
+                                text="메모를 로컬에 저장합니다. Windows에서 로컬 저장을 검증합니다.",
                                 requirement_ids=["REQ-001"]
                                 if key == "architecture"
                                 else [],
@@ -164,7 +164,7 @@ class DecisionProvider:
                 critical_failures=[item["checklist_id"] for item in review_issues if item["severity"] in {"blocking", "major"} and not item.get("rubric_ids")],
                 revision_directives=[item["required_change"] for item in review_issues], issues=review_issues, rubric_verdicts=[dict(
                 rubric_id=item["rubric_id"], verdict="PASS", section="architecture", evidence_kind="quote",
-                quote="Store notes locally.", reason="확정 동작이 명세에 반영되어 있습니다.", issue_checklist_id=None)
+                quote="메모를 로컬에 저장합니다.", reason="확정 동작이 명세에 반영되어 있습니다.", issue_checklist_id=None)
                 for item in rubric.get("items", [])])
             self.last_issues = parsed.issues
         elif schema is ReviewResolutionResponse:
@@ -194,4 +194,4 @@ class DecisionProvider:
 
 def model_rubric(messages):
     return next((json.loads(item["content"].split("\n", 1)[1]) for item in messages
-                 if item["content"].startswith("Task-specific rubric:\n")), {})
+                 if item["content"].startswith("작업별 평가 기준:\n")), {})

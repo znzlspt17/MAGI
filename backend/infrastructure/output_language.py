@@ -5,21 +5,19 @@ import re
 from backend.errors import Error
 from backend.models import InterviewResponse, LockResponse, ReviewResponse, SpecResponse, SpecDraftResponse
 from backend.models import ReviewResolutionResponse
-from backend.models import SpecTranslationResponse
 from backend.models import QuestionFormSpec
 from backend.models import RubricResponse
 
 
-_QUESTION_LANGUAGE = " question/decision_question, option labels, impact, assumptions and recommendation explanations: Korean; preserve product/OS names."
+_QUESTION_LANGUAGE = " 질문, 선택지, 영향, 가정과 추천 설명은 한국어로 작성하고 제품명과 OS 이름은 보존하세요."
 
 LANGUAGE_RULES = {
-    "rubric_generate": "Rubric condition: English. Preserve basis quotes and identifiers verbatim.",
-    "spec_translation": "Translate specification headings and prose to Korean. Preserve code, paths, IDs, numerical values and marked original quotations verbatim. Do not add or remove requirements.",
-    "interview": "Preserve supplied user answers verbatim. Enums and IDs stay unchanged." + _QUESTION_LANGUAGE,
-    "requirement_lock": "request_summary and unresolved_questions: Korean. Requirement text, workflow_constraints text, assumption text and acceptance_criteria_seed: English. Preserve original_text and user answers verbatim; do not translate source markers or IDs.",
-    "spec_compile": "All section prose: English. Preserve code, paths, product names and necessary original quotations. Put original-language quotations in <original_quote>...</original_quote> blocks or Markdown blockquotes; code belongs in code spans or fenced blocks.",
-    "review_resolution": "resolution_reason, missing_information, required_change: Korean. Quote proposed English specification wording verbatim. Keep IDs and basis_refs unchanged." + _QUESTION_LANGUAGE,
-    "checklist_critic": "problem, required_change, resolution_reason, missing_information, score_reason, revision_directives and rubric_verdicts.reason: Korean. Proposed specification sentences: English, quoted or in code blocks. Preserve evidence.quote and identifiers verbatim." + _QUESTION_LANGUAGE,
+    "rubric_generate": "평가 조건은 한국어로 작성하고 근거 인용과 식별자는 그대로 보존하세요.",
+    "interview": "사용자 답변, enum과 ID를 그대로 보존하세요." + _QUESTION_LANGUAGE,
+    "requirement_lock": "요구사항, 제약, 가정, 수용 기준과 질문은 한국어로 작성하세요. original_text, 사용자 답변, 출처와 ID는 그대로 보존하세요.",
+    "spec_compile": "모든 섹션 본문을 한국어로 작성하고 코드, 경로, 제품명과 원문 인용을 보존하세요. 원문 인용은 <original_quote> 또는 Markdown 인용 블록으로 표시하세요.",
+    "review_resolution": "이유, 누락 정보와 수정 내용은 한국어로 작성하세요. ID와 basis_refs는 그대로 유지하세요." + _QUESTION_LANGUAGE,
+    "checklist_critic": "검토 문제, 수정 내용, 이유, 지시와 제안 문장은 한국어로 작성하세요. evidence.quote와 식별자는 보존하세요." + _QUESTION_LANGUAGE,
 }
 
 
@@ -73,7 +71,7 @@ def language_issues(value):
 
     if isinstance(value, RubricResponse):
         for index, rubric_item in enumerate(value.items):
-            field(f"items[{index}].condition", rubric_item.condition, "en")
+            field(f"items[{index}].condition", rubric_item.condition, "ko")
     elif isinstance(value, InterviewResponse):
         for name in ("blocking_questions", "additional_questions"):
             for index, item in enumerate(getattr(value, name)):
@@ -85,21 +83,21 @@ def language_issues(value):
         field("request_summary", value.request_summary, "ko")
         for name in ("mandatory_requirements", "recommended_requirements", "optional_requirements", "non_scope", "constraints", "workflow_constraints", "assumptions"):
             for index, item in enumerate(getattr(value, name)):
-                field(f"{name}[{index}].text", item.text, "en")
-        for name, language in (("acceptance_criteria_seed", "en"), ("unresolved_questions", "ko")):
+                field(f"{name}[{index}].text", item.text, "ko")
+        for name, language in (("acceptance_criteria_seed", "ko"), ("unresolved_questions", "ko")):
             for index, text in enumerate(getattr(value, name)):
                 field(f"{name}[{index}]", text, language)
     elif isinstance(value, SpecDraftResponse):
         for name in type(value).model_fields:
             if name not in {"decisions", "out_of_scope"}:
                 for index, block in enumerate(getattr(value, name)):
-                    field(f"{name}[{index}].text", block.text, "en")
+                    field(f"{name}[{index}].text", block.text, "ko")
                     if name == "implementation_order":
-                        field(f"{name}[{index}].title", block.title, "en")
+                        field(f"{name}[{index}].title", block.title, "ko")
     elif isinstance(value, SpecResponse):
         for name, text in value.model_dump().items():
             if name not in {"decisions", "spec_links"}:
-                field(name, text, "en")
+                field(name, text, "ko")
     elif isinstance(value, ReviewResolutionResponse):
         for index, item in enumerate(value.resolutions):
             guidance(item.decision_form, f"resolutions[{index}].decision_form")
@@ -125,8 +123,6 @@ def language_issues(value):
                 field(f"issues[{index}].decision_question", item.decision_question, "ko")
     elif isinstance(value, QuestionFormSpec):
         guidance(value, "form")
-    elif isinstance(value, SpecTranslationResponse):
-        field("content", value.content, "ko")
     return checks
 
 

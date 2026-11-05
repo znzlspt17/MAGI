@@ -67,7 +67,7 @@ export const decodeChangeReview = requiredObject({ status: literal("no_baseline"
   changes: array(decodeChange) });
 const detailFields = { id: text, stage: text, status: text, title: text, summary: text, recording_incomplete: boolean,
   unavailable: boolean, message: text, result: decodeResult, research,
-  document: requiredObject({ content: text, filename: optional(text), language: optional(text), kind: optional(text), source_hash: optional(text), completed_id: optional(text) }),
+  document: requiredObject({ content: text, filename: optional(text), language: literal("ko"), kind: optional(text), source_hash: optional(text), completed_id: optional(text) }),
   usage: record, change_review: decodeChangeReview };
 const decodeDetail = object(detailFields);
 export type StopDiagnosticData = ReturnType<typeof stop>;

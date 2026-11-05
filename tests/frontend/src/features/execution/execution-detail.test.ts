@@ -28,3 +28,14 @@ it("문서 기록이 훼손되어도 남은 진단은 표시한다", () => {
   expect(detail.document).toBeUndefined();
   expect(detail.result?.wait_reason).toBe("보완 한도");
 });
+
+
+it("문서 응답은 한국어 원본 언어를 엄격히 확인한다", () => {
+  const content = "# 한국어 명세";
+  expect(decodeStepDetail({ document: { content, language: "ko" } }).document).toMatchObject({ content, language: "ko" });
+  for (const language of ["en", "unknown", null]) {
+    const detail = decodeStepDetail({ document: { content, language } });
+    expect(detail.document).toBeUndefined();
+    expect(detail.recording_incomplete).toBe(true);
+  }
+});

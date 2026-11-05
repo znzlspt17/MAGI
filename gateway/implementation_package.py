@@ -6,7 +6,7 @@ import json
 import zipfile
 
 CHUNK = 48 * 1024
-NAMES = {"README.ko.md", "SPEC.en.md", "SPEC.ko.md", "TASKS.md", "CONSTRAINTS.md", "VERIFICATION.md", "manifest.json"}
+NAMES = {"README.ko.md", "SPEC.ko.md", "TASKS.md", "CONSTRAINTS.md", "VERIFICATION.md", "manifest.json"}
 
 
 def download_package(client, ident, completed_id, bundle_id):
@@ -15,7 +15,7 @@ def download_package(client, ident, completed_id, bundle_id):
         raise ValueError("묶음 자료가 변경되었거나 크기 제한을 초과했습니다. 다시 조회하세요.")
     entries = metadata.get("files", [])
     names = [e["name"] for e in entries]
-    if len(names) != len(set(names)) or set(names) - NAMES or not NAMES - {"SPEC.ko.md"} <= set(names):
+    if len(names) != len(set(names)) or set(names) != NAMES:
         raise ValueError("묶음 파일 목록을 확인할 수 없습니다.")
     if any(type(e["size"]) is not int or not 0 < e["size"] <= 4 * 1024 * 1024 for e in entries) or sum(e["size"] for e in entries) > 16 * 1024 * 1024:
         raise ValueError("묶음 크기 제한을 초과했습니다.")
@@ -43,7 +43,7 @@ def download_package(client, ident, completed_id, bundle_id):
     if (manifest.get("files") != expected or manifest.get("bundle_id") != bundle_id
             or calculated_id != bundle_id or metadata.get("source_hash") != manifest.get("source_hash")
             or manifest.get("completed_id") != metadata["completed_id"]
-            or manifest.get("source_hash") != hashlib.sha256(bodies["SPEC.en.md"]).hexdigest()):
+            or manifest.get("source_hash") != hashlib.sha256(bodies["SPEC.ko.md"]).hexdigest()):
         raise ValueError("묶음 기준 정보를 확인할 수 없습니다.")
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:

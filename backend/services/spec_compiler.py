@@ -22,35 +22,35 @@ from backend.services.skill_registry import SkillRegistry
 
 
 REQUIRED_FINAL_SPEC_HEADINGS = [
-    "# Final Agent Specification",
-    "## 1. Mission",
-    "## 2. Background",
-    "## 3. User Intent",
-    "## 4. Scope",
-    "### 4.1 In Scope",
-    "### 4.2 Out of Scope",
-    "## 5. Definitions",
-    "## 6. Evidence Summary",
-    "## 7. Mandatory Requirements",
-    "## 8. Recommended Requirements",
-    "## 9. Optional Requirements",
-    "## 10. Forbidden Behaviors",
-    "## 11. Input Contract",
-    "## 12. Output Contract",
-    "## 13. Architecture",
-    "## 14. Module Responsibilities",
-    "## 15. Data Flow",
-    "## 16. Error Handling Policy",
-    "## 17. Configuration Policy",
-    "## 18. Persistence / Artifact Policy",
-    "## 19. Implementation Order",
-    "## 20. Acceptance Criteria",
-    "## 21. Test Plan",
-    "## 22. Manual Verification Checklist",
-    "## 23. Instructions for AI Coding Agent",
+    "# 최종 에이전트 명세",
+    "## 1. 목표",
+    "## 2. 배경",
+    "## 3. 사용자 의도",
+    "## 4. 범위",
+    "### 4.1 범위 포함",
+    "### 4.2 범위 제외",
+    "## 5. 용어 정의",
+    "## 6. 근거 요약",
+    "## 7. 필수 요구사항",
+    "## 8. 권장 요구사항",
+    "## 9. 선택 요구사항",
+    "## 10. 금지 행동",
+    "## 11. 입력 계약",
+    "## 12. 출력 계약",
+    "## 13. 아키텍처",
+    "## 14. 모듈 책임",
+    "## 15. 데이터 흐름",
+    "## 16. 오류 처리 정책",
+    "## 17. 설정 정책",
+    "## 18. 저장 및 산출물 정책",
+    "## 19. 구현 순서",
+    "## 20. 수용 기준",
+    "## 21. 테스트 계획",
+    "## 22. 수동 검증 확인 목록",
+    "## 23. AI 코딩 에이전트 지침",
 ]
 
-_SECTION_7_HEADING = re.compile(r"(?m)^## 7\. Mandatory Requirements\s*$")
+_SECTION_7_HEADING = re.compile(r"(?m)^## 7\. 필수 요구사항\s*$")
 _TOP_LEVEL_HEADING = re.compile(r"(?m)^## (?!#)")
 
 
@@ -131,7 +131,7 @@ class SpecCompiler:
         writer: Documents,
         rubric: dict[str, Any] | None = None,
     ) -> str:
-        """Compile a single English Markdown specification from the lock sheet."""
+        """확정 요구사항에서 한국어 Markdown 명세를 생성한다."""
         self.skills.assert_allowed(self.agent_id, "compose_final_spec")
         route = self.config.model_routing[self.agent_id]
         provider = self.provider
@@ -156,7 +156,7 @@ class SpecCompiler:
             writer, provider, messages, model=route.model, stage="spec_compile", temperature=0.7,
         )
         if not isinstance(raw_output, SpecDraftResponse):
-            raise SpecCompilationError(["Return the complete structured SpecDraftResponse."])
+            raise SpecCompilationError(["완전한 구조의 SpecDraftResponse를 반환하세요."])
         from backend.services.implementation_plan import prepare_plan
         task_plan = prepare_plan(raw_output, sheet)
         draft_blocks = [{"section": name, **block.model_dump()} for name in type(raw_output).model_fields
@@ -175,28 +175,28 @@ class SpecCompiler:
             decisions = runtime.bind_decisions(decisions, previous_trace.get("decisions", []))
         links = [item.model_dump() for item in raw_output.spec_links]
         if runtime is not None and not links:
-            raise SpecCompilationError(["spec_links: include implementation links covering all mandatory requirement IDs."], check="spec_links")
+            raise SpecCompilationError(["spec_links: 모든 필수 요구사항 ID를 포함하는 구현 링크를 작성하세요."], check="spec_links")
         if runtime is not None and not {item.id for item in sheet.mandatory_requirements} <= {
             req for link in links for req in link["requirement_ids"]
         }:
-            raise SpecCompilationError(["spec_links.requirement_ids: cover every mandatory requirement ID in the supplied lock sheet."], check="spec_links")
+            raise SpecCompilationError(["spec_links.requirement_ids: 제공된 확정 요구사항의 모든 필수 ID를 포함하세요."], check="spec_links")
         retrieved = runtime.reusable_ids() if runtime else []
         _validate_trace(validate_decisions, decisions, sheet.to_dict(), retrieved, revision_feedback, user_request,
                            runtime.confirmed_sources({"user_request": user_request, "revision_feedback": revision_feedback}) if runtime else None,
                            previous_trace.get("decisions", []), writer.state.get("reused_decisions", []))
         if {item["id"] for item in decisions} & {item["id"] for item in sheet.decisions}:
-            raise SpecCompilationError(["decisions: reference existing lock decision IDs in spec_links without redeclaring them."], check="decision_trace")
+            raise SpecCompilationError(["decisions: 기존 확정 결정 ID를 다시 선언하지 말고 spec_links에서 참조하세요."], check="decision_trace")
         links = _anchor_links(links, raw_output.model_dump(), "response")
         _validate_trace(validate_links, links, sheet.decisions + decisions, sheet.to_dict(), raw_output.model_dump())
         from backend.services.workflow_constraints import validate_product_boundary
         try:
             validate_product_boundary(sheet, [raw_output.markdown(), json.dumps(decisions, ensure_ascii=False)])
         except ValueError:
-            raise SpecCompilationError(["Product specification and decision traces must exclude workflow instructions and WF-* references."], check="product_boundary") from None
+            raise SpecCompilationError(["제품 명세와 결정 추적에서 작업 지시와 WF-* 참조를 제외하세요."], check="product_boundary") from None
         candidate = raw_output.markdown()
         if self.has_required_headings(candidate):
             assembled = _assemble_locked_sections(candidate, sheet)
-            if self.english_only(assembled):
+            if self.korean_document(assembled):
                 rendered = _rendered_sections(assembled)
                 links = _anchor_links(links, rendered, "assembled")
                 _validate_trace(validate_links, links, sheet.decisions + decisions, sheet.to_dict(), rendered)
@@ -208,7 +208,7 @@ class SpecCompiler:
                 writer.write_json(BLOCKS, {"source_hash": digest(normalize(assembled)),
                     "blocks": draft_blocks}, overwrite=True)
                 return assembled
-        raise SpecCompilationError(["Return all required English section bodies in the supplied schema."], check="spec_structure")
+        raise SpecCompilationError(["필수 섹션의 한국어 본문을 지정된 스키마에 맞게 작성하세요."], check="spec_structure")
 
     # ── prompt ───────────────────────────────────────────────────────────────
 
@@ -248,12 +248,12 @@ class SpecCompiler:
             load_prompt("compiler"),
             user_request,
             json.dumps(manifest_summary, ensure_ascii=False, indent=2),
-            ("Resolved review issues", json.dumps(resolved_issues, ensure_ascii=False, indent=2)),
-            ("Task-specific rubric", json.dumps({"items": rubric["items"]}, ensure_ascii=False) if rubric is not None else ""),
-            ("Latest verifier feedback", json.dumps(feedback, ensure_ascii=False) if feedback else ""),
-            ("Revision feedback history", history),
-            ("Latest revision feedback", revision_feedback),
-            ("Current draft to preserve and revise", previous_spec),
+            ("검토 이슈", json.dumps(resolved_issues, ensure_ascii=False, indent=2)),
+            ("작업별 평가 기준", json.dumps({"items": rubric["items"]}, ensure_ascii=False) if rubric is not None else ""),
+            ("최신 검증 의견", json.dumps(feedback, ensure_ascii=False) if feedback else ""),
+            ("수정 의견 이력", history),
+            ("최신 수정 의견", revision_feedback),
+            ("보존하고 수정할 현재 초안", previous_spec),
             workflow_constraints=workflow,
         )
 
@@ -261,9 +261,21 @@ class SpecCompiler:
     # ── static helpers (shared contract) ─────────────────────────────────────
 
     @staticmethod
-    def english_only(text: str) -> bool:
-        from backend.infrastructure.output_language import prose, has_hangul
-        return not has_hangul(prose(text))
+    def korean_document(text: str) -> bool:
+        from backend.infrastructure.output_language import prose, has_hangul, technical_only
+        if not SpecCompiler.has_required_headings(text):
+            return False
+        # 2026-11-04: 한국어 고정 제목이 영어 본문의 검사를 통과시키지 않게 한다.
+        sections = _rendered_sections(text)
+        fields = [name for name in SpecResponse.model_fields if name not in {"decisions", "spec_links"}]
+        for name in fields:
+            section = sections.get(name, "").strip()
+            if not section:
+                return False
+            body = re.sub(r"(?m)^#{1,6}\s+.*$", "", prose(section)).strip()
+            if body and not has_hangul(body) and not technical_only(body):
+                return False
+        return True
 
     @staticmethod
     def has_required_headings(text: str) -> bool:
@@ -276,7 +288,7 @@ def _rendered_sections(spec: str) -> dict[str, str]:
     """잠금 섹션을 조립한 최종 문서에서 응답 필드별 실제 본문을 복원한다."""
     fields = [name for name in SpecResponse.model_fields if name not in {"decisions", "spec_links"}]
     headings = [heading for heading in REQUIRED_FINAL_SPEC_HEADINGS if heading not in {
-        "# Final Agent Specification", "## 4. Scope", "## 7. Mandatory Requirements"}]
+        "# 최종 에이전트 명세", "## 4. 범위", "## 7. 필수 요구사항"}]
     visible = _mask_fenced_code(spec)
     sections = {}
     for name, heading in zip(fields, headings):
@@ -308,24 +320,24 @@ def _replace_locked_body(candidate: str, heading: str, body: str) -> str:
 
 def _assemble_locked_sections(candidate: str, sheet: RequirementLockSheet) -> str:
     candidate = _assemble_locked_mandatory_section(candidate, sheet)
-    candidate = _replace_locked_body(candidate, "### 4.2 Out of Scope", "\n".join(
+    candidate = _replace_locked_body(candidate, "### 4.2 범위 제외", "\n".join(
         f"- [{item.id}] {item.text}" for item in sheet.non_scope
-    ) or "No explicit product exclusions were supplied.")
+    ) or "명시된 제품 범위 제외가 없습니다.")
     if sheet.constraints:
         # 다른 섹션의 동명 heading을 제약조건으로 오인하지 않는다.
         visible = _mask_fenced_code(candidate)
-        parent = re.search(r"(?m)^## 10\. Forbidden Behaviors[ \t]*$", visible)
+        parent = re.search(r"(?m)^## 10\. 금지 행동[ \t]*$", visible)
         if parent:
             following = _TOP_LEVEL_HEADING.search(visible, parent.end())
             end = following.start() if following else len(candidate)
             section = candidate[parent.start():end]
-            body = "Violating any of the following locked constraints is forbidden.\n\n" + "\n".join(
+            body = "다음 확정 제약을 위반해서는 안 됩니다.\n\n" + "\n".join(
                 f"- [{item.id}] {item.text}" for item in sheet.constraints
             )
-            if re.search(r"(?m)^### Locked Constraints[ \t]*$", _mask_fenced_code(section)):
-                section = _replace_locked_body(section, "### Locked Constraints", body)
+            if re.search(r"(?m)^### 확정된 제약[ \t]*$", _mask_fenced_code(section)):
+                section = _replace_locked_body(section, "### 확정된 제약", body)
             else:
-                section = section.rstrip() + "\n\n### Locked Constraints\n\n" + body + "\n\n"
+                section = section.rstrip() + "\n\n### 확정된 제약\n\n" + body + "\n\n"
             candidate = candidate[:parent.start()] + section + candidate[end:]
     return candidate
 
@@ -392,7 +404,7 @@ def _validate_trace(validator, *args):
         validator(*args)
     except ValueError as exc:
         raise SpecCompilationError(getattr(exc, "validation_details", [
-            "decisions: use valid unique IDs, known requirement/source references, and verified user provenance."
+            "decisions: 유효하고 고유한 ID, 알려진 요구사항/출처 참조와 검증된 사용자 근거를 사용하세요."
         ]), check="spec_links" if validator.__name__ == "validate_links" else "decision_trace") from None
 
 
@@ -414,9 +426,9 @@ def _anchor_links(links, sections, phase):
             link["quote"] = matches[0].group()
         else:
             error = SpecCompilationError([
-                f"spec_links[{index}].quote: {phase} validation failed; copy a short exact contiguous quote "
-                "from the named section, without paraphrasing, added Markdown, or omitted text. "
-                "For sections replaced by locked content, link to an implementation section instead."
+                f"spec_links[{index}].quote: {phase} 검증에 실패했습니다. 지정된 섹션의 짧고 정확한 연속 원문을 "
+                "바꿔 쓰거나 Markdown을 추가하거나 생략하지 말고 복사하세요. "
+                "확정 내용으로 교체되는 섹션 대신 구현 섹션에 연결하세요."
             ], check="quote_anchor")
             error.validation_phase = phase
             error.validation_location = {"index": index, "field": "quote",

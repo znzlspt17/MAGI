@@ -6,7 +6,7 @@ def with_tasks(value, requirements=None):
     value["implementation_order"] = [
         {
             **old,
-            "title": "Implement local persistence",
+            "title": "로컬 저장 구현",
             "requirement_ids": requirements or ["REQ-001"],
             "depends_on": [],
             "spec_item_ids": [value["architecture"][0]["item_id"]],

@@ -5,7 +5,7 @@ import { ImplementationPackage, type PackageMetadata } from "@/features/document
 vi.mock("@/shared/api/api", () => ({ api: vi.fn(), apiBlob: vi.fn() }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 beforeEach(() => { vi.mocked(api).mockReset(); vi.mocked(apiBlob).mockReset(); });
-const metadata: PackageMetadata = { completed_id: "a".repeat(64), bundle_id: "b".repeat(64), filename: "approved.zip", available: true, completeness: "complete", korean_included: false, task_count: 3, total_size: 1200, source_hash: "c".repeat(64), files: [{ name: "SPEC.en.md", size: 1000, sha256: "d".repeat(64) }], limitations: ["저장된 번역 없음 · 영어 원문 포함"] };
+const metadata: PackageMetadata = { completed_id: "a".repeat(64), bundle_id: "b".repeat(64), filename: "approved.zip", available: true, completeness: "complete", task_count: 3, total_size: 1200, source_hash: "c".repeat(64), files: [{ name: "SPEC.ko.md", size: 1000, sha256: "d".repeat(64) }], limitations: [] };
 const open = () => fireEvent.click(screen.getByRole("button", { name: "구현 묶음 다운로드" }));
 
 it("버전과 파일 목록을 미리 보고 고정한 승인본으로 ZIP을 받는다", async () => {
@@ -17,7 +17,7 @@ it("버전과 파일 목록을 미리 보고 고정한 승인본으로 ZIP을 �
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function(this: HTMLAnchorElement) { links.push(this); });
   render(<ImplementationPackage jobId="job" completedId={metadata.completed_id} />);
   expect(api).not.toHaveBeenCalled(); open();
-  await screen.findByText("SPEC.en.md");
+  await screen.findByText("SPEC.ko.md");
   expect(screen.getByRole("dialog", { name: "구현 시작용 파일 묶음" })).toBeTruthy();
   expect(screen.getByText("구조화 작업 3개")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "버전 전체 값과 해시" }));
@@ -33,7 +33,7 @@ it("중복 클릭을 막고 닫은 뒤의 늦은 다운로드는 전달하지 �
   let resolve!: (blob: Blob) => void;
   vi.mocked(apiBlob).mockReturnValue(new Promise(done => { resolve = done; }));
   Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn() });
-  render(<ImplementationPackage jobId="job" />); open(); await screen.findByText("SPEC.en.md");
+  render(<ImplementationPackage jobId="job" />); open(); await screen.findByText("SPEC.ko.md");
   fireEvent.click(screen.getByRole("button", { name: "ZIP 받기" }));
   fireEvent.click(screen.getByRole("button", { name: "ZIP 받기" }));
   expect(apiBlob).toHaveBeenCalledOnce();
@@ -59,13 +59,15 @@ it("작업 전환 뒤 이전 미리보기 응답을 버린다", async () => {
   await act(async () => resolve(metadata));
   expect(screen.queryByRole("dialog")).toBeNull();
   open(); await waitFor(() => expect(api).toHaveBeenCalledWith(expect.stringContaining("/new/"), expect.anything()));
-  expect(screen.queryByText("SPEC.en.md")).toBeNull();
+  expect(screen.queryByText("SPEC.ko.md")).toBeNull();
 });
 
-it("승인본 없음과 한국어 번역 포함을 구분한다", async () => {
-  vi.mocked(api).mockRejectedValueOnce({ status: 404 }).mockResolvedValue({ ...metadata, korean_included: true, limitations: [] });
+it("승인본 없음과 한국어 원문 자료를 구분한다", async () => {
+  vi.mocked(api).mockRejectedValueOnce({ status: 404 }).mockResolvedValue({ ...metadata, limitations: [] });
   render(<ImplementationPackage jobId="job" />); open();
   await screen.findByText("승인된 명세가 없습니다");
   fireEvent.click(screen.getByRole("button", { name: "포함 자료 다시 조회" }));
-  await screen.findByText("저장된 한국어 번역 포함");
+  await screen.findByText("한국어 명세 원문 기준");
+  expect(screen.getByText("승인된 한국어 명세 원문")).toBeTruthy();
+  expect(screen.queryByText(/번역/)).toBeNull();
 });

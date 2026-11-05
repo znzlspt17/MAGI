@@ -14,13 +14,11 @@ from backend.errors import (
     RequirementNormalizationError,
     ReviewValidationError,
     SpecCompilationError,
-    TranslationValidationError,
 )
 
 
 _KNOWN_REASONS = {
     "작업 상태가 바뀌었습니다. 최신 대화를 확인하세요.": "작업 상태가 바뀌었습니다. 최신 대화를 확인하세요.",
-    "문서 번역이 진행 중입니다. 번역이 끝난 뒤 다시 보내주세요.": "문서 번역이 진행 중입니다. 번역이 끝난 뒤 다시 보내주세요.",
     "이전 작업의 처리가 마무리되고 있습니다. 잠시 후 다시 시도해주세요.": "이전 작업의 처리가 마무리되고 있습니다. 잠시 후 다시 시도해주세요.",
     "공개 서비스 DB 계정은 superuser/BYPASSRLS 권한을 가질 수 없습니다.": "접속한 PostgreSQL 계정에 superuser 또는 BYPASSRLS 권한이 있습니다. DB_USER를 일반 서비스 계정으로 설정하세요. localhost 로그인도 사용자 격리를 위해 같은 조건을 적용합니다.",
     "다른 공개 백엔드 프로세스가 실행 중입니다.": "다른 공개 백엔드 프로세스가 실행 중입니다. 기존 프로세스를 확인하세요.",
@@ -29,9 +27,7 @@ _KNOWN_REASONS = {
     "Requirement lock contract is invalid. Start a new generation.": "현재 계약에 맞지 않는 잠금 자료입니다. 새 작업을 생성해주세요.",
     "Validated requirement lock is required. Start a new generation.": "유효한 확정 요구사항이 없습니다. 새 작업을 생성해주세요.",
     "Checklist review response could not be validated.": "검토 응답 형식이나 추가 질문을 확인할 수 없습니다.",
-    "Compiler returned an invalid English specification.": (
-        "명세 생성 결과가 영어 명세 형식을 충족하지 않았습니다."
-    ),
+    "Compiler returned an invalid Korean specification.": "명세 생성 결과가 한국어 명세 형식을 충족하지 않았습니다.",
     "Interview response could not be validated.": (
         "요청 분석 결과를 확인할 수 없어 작업을 중단했습니다."
     ),
@@ -42,9 +38,7 @@ _KNOWN_REASONS = {
         "요청 분석 응답에 필요한 필드가 없거나 형식이 올바르지 않습니다."
     ),
     "Approval candidate does not exist.": "승인할 검토 후보 문서를 찾을 수 없습니다.",
-    "Approval candidate must be English-only.": (
-        "승인 후보 문서가 영어 전용 규칙을 충족하지 않습니다."
-    ),
+    "Approval candidate must be Korean.": "승인 후보 문서가 한국어 규칙을 충족하지 않습니다.",
     "Approval candidate still has unresolved required review issues.": (
         "해결되지 않은 필수 검토 항목이 있어 승인할 수 없습니다."
     ),
@@ -76,10 +70,6 @@ _KNOWN_REASONS = {
 # 코드와 단계는 서버가 허용한 값만 외부 작업 메타데이터에 남긴다. 예외 원문을
 # 코드로 재사용하면 사용자 입력이나 제공자 응답이 작업 조회 API로 새어 나갈 수 있다.
 _NORMALIZATION_ERRORS = {
-    "SPEC_TRANSLATION_INVALID": {
-        "stage": "spec_translation",
-        "reason": "한국어 번역의 구조·수치·코드 보존을 검증하지 못했습니다. 영어 원문은 보존되어 있으며 영어 보기를 사용할 수 있습니다.",
-    },
     "SPEC_COMPILATION_INVALID": {
         "stage": "spec_compile",
         "reason": "명세의 섹션·인용·출처 연결을 검증하지 못했습니다. 답변은 저장되어 있습니다. 수정 의견을 제출해 다시 시도할 수 있습니다.",
@@ -113,7 +103,7 @@ def diagnose_exception(exc: BaseException) -> dict[str, Any]:
         "failed_checks": next((
             sorted(set(check for check in item.failed_checks if isinstance(check, str) and check in item.checks))
             if isinstance(item, (ReviewValidationError, SpecCompilationError)) else item.failed_checks
-            for item in chain if isinstance(item, (TranslationValidationError, ReviewValidationError, SpecCompilationError))
+            for item in chain if isinstance(item, (ReviewValidationError, SpecCompilationError))
         ), []),
         "exception_type": type(exc).__name__,
         "cause_types": [type(item).__name__ for item in chain[1:]],
@@ -155,7 +145,7 @@ def _normalization_error(chain: list[BaseException]) -> dict[str, str] | None:
                     "reason": "루브릭의 근거·완전성 또는 최신 평가를 검증하지 못해 작업을 중단했습니다. 사용자 요구사항 부족으로 판정한 결과가 아닙니다."
                     if any(check.startswith("rubric_") for check in item.failed_checks)
                     else "검토 응답의 근거·형식 또는 추가 질문을 검증하지 못해 작업을 중단했습니다."}
-        if not isinstance(item, (RequirementNormalizationError, SpecCompilationError, TranslationValidationError)):
+        if not isinstance(item, (RequirementNormalizationError, SpecCompilationError)):
             continue
         code = getattr(item, "code", None)
         details = _NORMALIZATION_ERRORS.get(code) if isinstance(code, str) else None

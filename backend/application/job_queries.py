@@ -110,7 +110,7 @@ class JobQueries:
             for n in completed_references(state)
         ]
         for name, key in [
-            ("draft/approval_candidate_spec.en.md", "candidate"),
+            ("draft/approval_candidate_spec.ko.md", "candidate"),
             ("final/FINAL_AGENT_SPEC.md", "final"),
             ("critical/CRITICAL_REPORT.ko.md", "critical"),
         ]:
