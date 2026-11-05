@@ -2,6 +2,7 @@ import { Notice, statusLabel } from "../../shared/ui/UI";
 import { ResearchResult } from "./ExecutionTimeline";
 import { questionDetails } from "../conversation/QuestionActions";
 import { StopDiagnostic } from "./StopDiagnostic";
+import { FailureDiagnostic } from "./FailureDiagnostic";
 import type { Step } from "../../shared/types";
 import type { StepDetail } from "./execution-detail";
 
@@ -12,6 +13,9 @@ export function StepResult({ node, detail, hideQuestions = false }: { node?: Ste
   const result = detail.result || {};
   const groups = requirementGroups(result);
   const content = stepContent(node, detail);
+  const summary = result.summary || node?.summary || "";
+  const misleadingFailure = ["failed", "error"].includes(node?.status || detail.status || "") &&
+    ["검토 결과를 저장했습니다.", "단계를 완료했습니다.", "재시도를 완료했습니다."].includes(summary);
   return (
     <section className="step-result">
       <span className="eyebrow">{statusLabel(node?.status)}</span>
@@ -33,17 +37,14 @@ export function StepResult({ node, detail, hideQuestions = false }: { node?: Ste
         {result.rubric_summary.status === "evaluated" && <p>충족 {result.rubric_summary.PASS} · 미충족 {result.rubric_summary.FAIL} · 판단 불가 {result.rubric_summary.UNDETERMINED}</p>}
       </section>}
       {result.wait_reason && <p><strong>중단·대기 사유: </strong>{result.wait_reason}</p>}
-      {result.diagnostic && <section aria-label="실패 진단"><h3>실패 진단</h3>
-        <p>{result.diagnostic.error_code || "분류되지 않은 실행 오류"}</p>
-        {result.diagnostic.error_stage && <p>실패 단계: {result.diagnostic.error_stage}</p>}
-        {!!result.diagnostic.failed_checks?.length && <p>검증 항목: {result.diagnostic.failed_checks.join(", ")}</p>}
-      </section>}
+      <FailureDiagnostic value={result.diagnostic} fallbackStage={node?.stage} recovered={(node?.status || detail.status) === "completed"} />
       {detail.recording_incomplete && (
         <Notice>
           일부 상세 기록이 누락되었습니다. 표시 가능한 결과만 제공합니다.
         </Notice>
       )}
-      {content.kind !== "research" && (result.summary || node?.summary || "") !== result.wait_reason && <p>{["단계를 완료했습니다.", "사용자 작업을 접수했습니다."].includes(result.summary || node?.summary || "") ? "상세 결과 기록 없음" : result.summary || node?.summary || "상세 결과 기록 없음"}</p>}
+      {detail.response_incomplete && <Notice>일부 응답을 해석하지 못했습니다. 확인 가능한 결과만 표시합니다.</Notice>}
+      {content.kind !== "research" && !misleadingFailure && summary !== result.wait_reason && <p>{["단계를 완료했습니다.", "사용자 작업을 접수했습니다."].includes(summary) ? "상세 결과 기록 없음" : summary || "상세 결과 기록 없음"}</p>}
       {content.kind === "research" && <ResearchResult research={content.research} />}
       {result.purpose && <p>{result.purpose}</p>}
       {result.request && <p>{result.request}</p>}

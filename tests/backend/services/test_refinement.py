@@ -60,12 +60,10 @@ def test_score_caps_and_critical_failure_identity(case, importance, cap, verdict
         value.issues[0].severity = "minor"
     rubric.validate_evaluation(value, record, case.spec)
     value.score = cap + 1
-    with pytest.raises(ReviewValidationError):
-        rubric.validate_evaluation(value, record, case.spec)
+    assert rubric.validate_evaluation(value, record, case.spec)["score"] == cap
     value.score = cap
     value.critical_failures = ["UNKNOWN"]
-    with pytest.raises(ReviewValidationError):
-        rubric.validate_evaluation(value, record, case.spec)
+    assert rubric.validate_evaluation(value, record, case.spec)["critical_failures"] == ([] if importance == "secondary" else ["RUB-001"])
 
 
 def test_general_defect_caps_score_even_when_all_rubric_items_pass(case):
@@ -79,8 +77,7 @@ def test_general_defect_caps_score_even_when_all_rubric_items_pass(case):
     value.revision_directives = ["명세 결함을 보완하세요."]
     rubric.validate_evaluation(value, case.record, case.spec)
     value.score = 10
-    with pytest.raises(ReviewValidationError):
-        rubric.validate_evaluation(value, case.record, case.spec)
+    assert rubric.validate_evaluation(value, case.record, case.spec)["score"] == 7
 
 
 def test_restore_keeps_matching_issues_resolution_and_trace(case):

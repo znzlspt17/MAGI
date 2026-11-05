@@ -107,6 +107,12 @@ body { font-size: 14px; -webkit-font-smoothing: antialiased; }
 .action-card { border-radius: 14px; padding: 16px; background: #fff; }
 .session-turn { border-radius: 14px; }
 .step-result:empty { display: none; }
+.failure-diagnostic { margin: .75rem 0; padding: .9rem 1rem; border: 1px solid var(--line); border-radius: .6rem; overflow-wrap: anywhere; }
+.failure-diagnostic h3 { margin: 0 0 .6rem; }
+.failure-diagnostic p { margin: .45rem 0; }
+.failure-diagnostic details { margin-top: .75rem; }
+.failure-diagnostic summary { cursor: pointer; font-weight: 600; }
+.failure-diagnostic summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; }
 .knowledge-react:not(.admin-react .knowledge-react) { --ink: #262434; }
 .knowledge-react .section-heading h2 { font-size: 23px; letter-spacing: -.7px; }
 .knowledge-react .section-heading p { color: #6d687b; }

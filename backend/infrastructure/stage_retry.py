@@ -23,7 +23,7 @@ _REVIEW_GUIDANCE = {
     "rubric_evaluation_coverage": "제공된 rubric_id를 알 수 없는 ID나 중복 없이 각각 정확히 한 번 평가하세요.",
     "rubric_evidence": "허용된 기존 섹션과 비어 있지 않은 이유를 사용하세요. 해당 섹션을 정확히 인용하고 PASS가 아닌 absence에만 빈 인용을 사용하세요.",
     "rubric_issue": "PASS가 아닌 각 판정을 checklist_id가 issue_checklist_id와 일치하고 rubric_ids에 해당 rubric_id가 포함된 정확히 하나의 이슈에 연결하세요. 요구사항, 심각도와 근거를 일치시키고 PASS는 이슈에 연결하지 마세요.",
-    "rubric_score": "제공된 결정적 상한을 포함해 적용 가능한 가장 낮은 점수 상한을 적용하세요. 비어 있지 않은 score_reason, 필요한 고유 critical_failures와 실패 시 revision_directives를 제공하세요.",
+    "rubric_score": "비어 있지 않은 score_reason과 실패 시 구체적인 revision_directives를 제공하세요. 점수 상한과 중대 실패 집계는 서버가 계산합니다.",
     "rubric_stale": "평가 기준 또는 평가가 현재 확정 입력이나 초안과 일치하지 않습니다.",
     "review_response": "제공된 스키마에 맞는 완전한 검토 응답을 반환하세요.",
     "source_reference": "적절한 필드에 제공된 출처·지식 참조 또는 확정 요구사항 ID만 사용하세요. 검토 해결에는 allowed_resolution_refs를 사용하세요.",
@@ -76,6 +76,10 @@ def retry_messages(messages, *, stage, attempt, error):
     }
     if review:
         payload["failed_checks"] = checks
+        from backend.server.diagnostics import diagnose_exception
+        diagnostic = diagnose_exception(error)
+        payload["validation_reason"] = diagnostic.get("validation_reason")
+        payload["validation_context"] = diagnostic.get("context", {})
     return [*messages, {"role": "user", "content": "단계 재시도 문맥:\n" + json.dumps(payload, ensure_ascii=False)}]
 
 

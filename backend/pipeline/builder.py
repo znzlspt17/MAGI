@@ -8,7 +8,7 @@ from protocol.logging import get_logger
 from backend.infrastructure.stage_retry import CURRENT_RETRY, MAX_RETRIES
 
 
-def _stage(name: str, node, callback):
+def _stage(name: str, node, callback, *, defer_completed: bool = False):
     def wrapped(state):
         _progress(callback, name, "started")
         error = None
@@ -35,6 +35,10 @@ def _stage(name: str, node, callback):
                         OutputLanguageError,
                     ),
                 )
+                if isinstance(exc, ReviewValidationError) and "rubric_stale" in exc.failed_checks:
+                    retryable = False
+                from backend.server.diagnostics import diagnose_exception
+                diagnostic = diagnose_exception(exc)
                 if retryable:
                     from backend.server.diagnostics import diagnose_exception
 
@@ -56,7 +60,7 @@ def _stage(name: str, node, callback):
                         callback,
                         name,
                         "failed",
-                        {"diagnostic": diagnose_exception(exc), **(
+                        {"diagnostic": diagnostic, **(
                             {"research": exc.research_record}
                             if name == "web_research" and hasattr(exc, "research_record") else {}
                         )},
@@ -69,12 +73,14 @@ def _stage(name: str, node, callback):
                     {
                         "retry_attempt": attempt + 1,
                         "max_retries": MAX_RETRIES,
+                        "diagnostic": diagnostic,
                         "summary": f"재시도 중… ({attempt + 1}/{MAX_RETRIES})",
                     },
                 )
             finally:
                 CURRENT_RETRY.reset(token)
-        _progress(callback, name, "completed", result, state)
+        if not defer_completed:
+            _progress(callback, name, "completed", result, state)
         return result
 
     return wrapped
@@ -87,7 +93,10 @@ def _progress(
         return
     event: dict[str, Any] = {"stage": stage, "state": state}
     if state == "retrying":
-        event["result"] = result
+        from backend.application.execution_history import _safe_result
+        data = result if isinstance(result, dict) else {}
+        event["result"] = {key: data[key] for key in ("retry_attempt", "max_retries", "summary") if key in data}
+        event["result"].update(_safe_result(data))
     if state in {"completed", "failed"} and isinstance(result, dict):
         # 실행 이력에는 상태 판단에 필요한 결과만 전달한다.
         from backend.application.execution_history import _safe_result

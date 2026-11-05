@@ -15,7 +15,8 @@ it("루브릭 집계만 해석하고 알 수 없는 모델 원문은 제외한�
 
 it("잘못된 진단 목록을 화면으로 전달하지 않는다", () => {
   const detail = decodeStepDetail({ id: "stop", result: { stop_diagnostic: { issues: "invalid" } } });
-  expect(detail.recording_incomplete).toBe(true);
+  expect(detail.recording_incomplete).toBe(false);
+  expect(detail.response_incomplete).toBe(true);
   expect(detail.result?.stop_diagnostic).toBeUndefined();
 });
 
@@ -24,7 +25,7 @@ it("형식이 잘못된 최상위 응답은 실패한다", () => {
 });
 it("문서 기록이 훼손되어도 남은 진단은 표시한다", () => {
   const detail = decodeStepDetail({ id: "stop", document: { content: [] }, result: { wait_reason: "보완 한도" } });
-  expect(detail.recording_incomplete).toBe(true);
+  expect(detail.response_incomplete).toBe(true);
   expect(detail.document).toBeUndefined();
   expect(detail.result?.wait_reason).toBe("보완 한도");
 });
@@ -36,6 +37,19 @@ it("문서 응답은 한국어 원본 언어를 엄격히 확인한다", () => {
   for (const language of ["en", "unknown", null]) {
     const detail = decodeStepDetail({ document: { content, language } });
     expect(detail.document).toBeUndefined();
-    expect(detail.recording_incomplete).toBe(true);
+    expect(detail.response_incomplete).toBe(true);
   }
+});
+
+it("nullable 진단 필드는 보존하고 저장 누락과 응답 해석 실패를 구분한다", () => {
+  const detail = decodeStepDetail({ recording_incomplete: false, result: { diagnostic: {
+    error_code: "REVIEW_VALIDATION_FAILED", error_stage: "checklist_critic", failed_checks: ["rubric_stale"],
+    validation_reason: "evaluation_draft_mismatch", category: "prerequisite_stale",
+    validation_section: null, validation_index: null, validation_field: null,
+    attempts: [{ attempt: 1, error_code: null, error_stage: "checklist_critic", failed_checks: ["rubric_stale"], validation_reason: "evaluation_draft_mismatch" }],
+  } } });
+  expect(detail.recording_incomplete).toBe(false);
+  expect(detail.response_incomplete).toBe(false);
+  expect(detail.result?.diagnostic?.validation_reason).toBe("evaluation_draft_mismatch");
+  expect(detail.result?.diagnostic?.attempts?.[0].attempt).toBe(1);
 });

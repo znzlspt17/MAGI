@@ -362,6 +362,8 @@ class State:
     rubric: dict[str, Any] = field(default_factory=dict)
     rubric_evaluation: dict[str, Any] = field(default_factory=dict)
     rubric_summary: dict[str, Any] = field(default_factory=dict)
+    rubric_recoveries: list[str] = field(default_factory=list)
+    rubric_recovery_pending: bool = False
     refinement: dict[str, Any] = field(default_factory=dict)
     approval_acceptance: dict[str, Any] = field(default_factory=dict)
     # critic stage
@@ -749,10 +751,18 @@ class RubricVerdict(ResponseModel):
 class ReviewResponse(ResponseModel):
     score: int = Field(ge=1, le=10, strict=True)
     score_reason: str = Field(min_length=1)
-    critical_failures: list[str]
+    critical_failures: list[str] = Field(default_factory=list)
     revision_directives: list[str]
     issues: list[IssueResponse]
     rubric_verdicts: list[RubricVerdict] = Field(default_factory=list)
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema, handler):
+        # 2026-11-05: 기존 저장 입력은 수용하되 모델에는 서버 집계를 요구하지 않는다.
+        schema = handler(core_schema)
+        schema.get("properties", {}).pop("critical_failures", None)
+        schema["required"] = [key for key in schema.get("required", []) if key != "critical_failures"]
+        return schema
 
 
 class SpecResponse(ResponseModel):
@@ -903,6 +913,8 @@ class WorkflowState(TypedDict, total=False):
     rubric: dict[str, Any]
     rubric_evaluation: dict[str, Any]
     rubric_summary: dict[str, Any]
+    rubric_recoveries: list[str]
+    rubric_recovery_pending: bool
     refinement: dict[str, Any]
     approval_acceptance: dict[str, Any]
     structured_issues: list[dict[str, Any]]

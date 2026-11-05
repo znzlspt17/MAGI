@@ -11,15 +11,17 @@ import { Button, Notice, formatTime } from "../../shared/ui/UI";
 import type { Job } from "../../shared/types";
 import { AgentPlan, AgentComposer } from "../workspace/AgentPlan";
 import { ExecutionMonitor } from "../execution/ExecutionMonitor";
+import { FailureDiagnostic } from "../execution/FailureDiagnostic";
+import type { StepDetail } from "../execution/execution-detail";
 import { useAuth } from "../auth/Auth";
 
-type ConversationProps = { job: Job; select: (stepId: string, requirements?: boolean) => void; onAction: (action: string, payload: unknown) => Promise<void>; busy: boolean };
+type ConversationProps = { job: Job; select: (stepId: string, requirements?: boolean) => void; onAction: (action: string, payload: unknown) => Promise<void>; busy: boolean; failureDetail?: StepDetail | null };
 export function Conversation(props: ConversationProps) {
   const { user } = useAuth();
   const draftKey = `draft:${user?.id || "local"}:${props.job.id}:message`;
   return <ConversationContent key={draftKey} {...props} draftKey={draftKey} />;
 }
-function ConversationContent({ job, select, onAction, busy, draftKey }: ConversationProps & { draftKey: string }) {
+function ConversationContent({ job, select, onAction, busy, draftKey, failureDetail }: ConversationProps & { draftKey: string }) {
   const [message, setMessage] = useState(() => sessionStorage.getItem(draftKey) || "");
   function updateMessage(value: string) {
     setMessage(value);
@@ -78,6 +80,12 @@ function ConversationContent({ job, select, onAction, busy, draftKey }: Conversa
             </MessageScrollerItem>)}
             <MessageScrollerItem messageId="current-plan"><AgentPlan job={job} onDocument={select} /></MessageScrollerItem>
             <MessageScrollerItem messageId="current-state"><ExecutionMonitor job={job} select={select} /></MessageScrollerItem>
+            {job.status === "error" && failureDetail && <MessageScrollerItem messageId="failure-diagnostic">
+              {failureDetail.unavailable && <Notice>실패 상세를 불러오지 못했습니다. 화면을 새로고침해 다시 확인하세요.</Notice>}
+              <FailureDiagnostic value={failureDetail.result?.diagnostic} />
+              {failureDetail.recording_incomplete && <Notice>일부 상세 기록이 누락되었습니다. 표시 가능한 결과만 제공합니다.</Notice>}
+              {failureDetail.response_incomplete && <Notice>일부 응답을 해석하지 못했습니다. 확인 가능한 결과만 표시합니다.</Notice>}
+            </MessageScrollerItem>}
             <MessageScrollerItem messageId="current-actions"><Message align="start" className="chat-turn magi"><MessageContent><QuestionActions key={job.id} job={job} onAction={onAction} busy={busy} conversational controlsTarget={controlsTarget} onAppendFeedback={appendMessage} onReview={reviewStep ? () => select(reviewStep) : undefined} onRequirementReview={reviewStep ? () => select(reviewStep, true) : undefined} /></MessageContent></Message></MessageScrollerItem>
           </MessageScrollerContent>
         </MessageScrollerViewport>

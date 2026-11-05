@@ -193,7 +193,9 @@ class ExecutionHistory:
                     message = f"재시도 중… ({attempt}/3)"
                     current["summary"] = message
                     current.setdefault("retries", []).append(
-                        {"attempt": attempt, "message": message, "started_at": _now()}
+                        {"attempt": attempt, "message": message, "started_at": _now(),
+                         **({"diagnostic": _safe_result({"diagnostic": result["diagnostic"]})["diagnostic"]}
+                            if isinstance(result.get("diagnostic"), dict) else {})}
                     )
         elif state == "started":
             if current is None:
@@ -214,7 +216,14 @@ class ExecutionHistory:
             )
             if result:
                 current["result"] = _safe_result(result)
-                current["summary"] = _summary(stage, result)
+                current["summary"] = _summary(stage, result, current["status"])
+            attempts = [{"attempt": item["attempt"], **item["diagnostic"]}
+                        for item in current.get("retries", []) if isinstance(item.get("diagnostic"), dict)]
+            diagnostic = current.get("result", {}).get("diagnostic")
+            if state == "failed" and isinstance(diagnostic, dict):
+                attempts.append({"attempt": len(attempts) + 1, **diagnostic})
+            if attempts:
+                current.setdefault("result", {}).setdefault("diagnostic", {})["attempts"] = attempts
             current["usage"] = _usage_since(self.documents, current.get("usage_start"))
         else:
             node = _node(
@@ -224,7 +233,7 @@ class ExecutionHistory:
             node["completed_at"] = _now()
             if result:
                 node["result"] = _safe_result(result)
-                node["summary"] = _summary(stage, result)
+                node["summary"] = _summary(stage, result, node["status"])
             nodes.append(node)
         self._save(data)
 
@@ -291,7 +300,7 @@ class ExecutionHistory:
                 ),
                 None,
             )
-            if isinstance(source, dict):
+            if status != "error" and isinstance(source, dict):
                 for key in (
                     "detail",
                     "result",
@@ -306,6 +315,18 @@ class ExecutionHistory:
                     **terminal.get("result", {}),
                     **_safe_result(result),
                 }
+            if status == "error":
+                failed: dict = next((item for item in reversed(data["nodes"])
+                               if item.get("execution_id") == execution_id and item.get("status") == "failed"), {})
+                diagnostic = terminal.get("result", {}).get("diagnostic")
+                failed_stage = failed.get("stage")
+                if (isinstance(diagnostic, dict) and not diagnostic.get("error_stage")
+                        and failed_stage in _STAGES and failed_stage != "workflow"):
+                    # 2026-11-05: 실패 단계가 기록된 경우에만 저장 오류의 위치를 보충한다.
+                    diagnostic["error_stage"] = failed_stage
+                prior = failed.get("result", {}).get("diagnostic", {})
+                if isinstance(prior, dict) and isinstance(prior.get("attempts"), list):
+                    terminal.setdefault("result", {}).setdefault("diagnostic", {})["attempts"] = copy.deepcopy(prior["attempts"])
             data["nodes"].append(terminal)
         self._save(data)
 

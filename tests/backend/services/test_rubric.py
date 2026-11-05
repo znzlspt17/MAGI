@@ -99,8 +99,9 @@ def test_absence_becomes_existing_required_issue_without_fake_quote(case, verdic
 
 def test_deterministic_failure_survives_all_pass(case):
     broken = case.spec.replace("## 1. 목표", "## 목표 누락")
-    with pytest.raises(ReviewValidationError):
-        ChecklistCritic().critique(broken, case.sheet, provider_messages_fn=lambda _: review(case), rubric=case.record, evaluation_sink=lambda _: None)
+    evaluations = []
+    issues = ChecklistCritic().critique(broken, case.sheet, provider_messages_fn=lambda _: review(case), rubric=case.record, evaluation_sink=evaluations.append)
+    assert issues and evaluations[0]["score"] <= 7 and evaluations[0]["proposed_score"] == 10
 
 
 def test_normal_spec_does_not_gain_required_issues(case):
@@ -373,10 +374,10 @@ def test_deterministic_issues_are_visible_and_enforce_score_cap(case, monkeypatc
         value.score = score
         return value
 
-    with pytest.raises(ReviewValidationError) as error:
-        ChecklistCritic().critique(case.spec, case.sheet, rubric=case.record,
-            provider_messages_fn=lambda messages: respond(messages, cap + 1))
-    assert error.value.failed_checks == ["rubric_score"]
+    evaluations = []
+    ChecklistCritic().critique(case.spec, case.sheet, rubric=case.record,
+        provider_messages_fn=lambda messages: respond(messages, cap + 1), evaluation_sink=evaluations.append)
+    assert evaluations[0]["score"] == cap
     payload = next(json.loads(item["content"].split("\n", 1)[1]) for item in seen[0]
                    if item["content"].startswith("결정적 검사:\n"))
     assert payload["score_cap"] == cap

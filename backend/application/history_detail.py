@@ -30,13 +30,14 @@ class HistoryNode:
                 incomplete = True
         captured = records["detail"]
         nested = captured.get("result")
-        result = dict(records["result"])
-        result.update({key: captured[key] for key in ("issues", "resolved_issues", "requirements") if key in captured})
+        result = {key: captured[key] for key in ("issues", "resolved_issues", "requirements") if key in captured}
         if nested is not None:
             if isinstance(nested, dict):
+                # 2026-11-05: 현재 단계 결과가 과거에 캡처한 상세보다 우선한다.
                 result.update(nested)
             else:
                 incomplete = True
+        result.update(records["result"])
         return cls(raw, result, captured, incomplete)
 
     @property

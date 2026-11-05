@@ -18,11 +18,19 @@ const plan = object({ goal: text, reason: text, action: text, target: text, expe
   tasks: array(object({ id: text, title: text, status: text })), input_refs: strings, affected_requirement_ids: strings });
 const research = requiredObject({ search_method: optional(text), mode: text, performed: boolean, outcome: literal("skipped", "no_results", "failed", "links_found"), reason: text, query: text,
   retrieved_at: text, result_count: number, sources: array(requiredObject({ title: text, url: text, query: text, retrieved_at: text })) });
+const diagnosticContext = object({ rubric_id: optional(text), requirement_id: optional(text), allowed_sections: optional(strings),
+  expected_count: optional(number), actual_count: optional(number) });
+const diagnosticAttempt = object({ attempt: number, error_code: optional(text), error_stage: optional(text),
+  failed_checks: optional(strings), validation_reason: optional(text), context: optional(diagnosticContext) });
+const diagnostic = object({ error_code: optional(text), error_stage: optional(text), failed_checks: optional(strings),
+  category: optional(literal("response_invalid", "prerequisite_stale", "execution_uncertain", "persistence_failed")),
+  validation_reason: optional(text), validation_section: optional(text), validation_index: optional(number), validation_field: optional(text),
+  context: optional(diagnosticContext), attempts: optional(array(diagnosticAttempt)) });
 const resultFields = {
   requirements: (value: unknown) => Array.isArray(value) ? requirements(value) : groups(value),
   mandatory_requirements: requirements, recommended_requirements: requirements, optional_requirements: requirements, constraints: requirements,
   plan, action: text, stop_diagnostic: stop, wait_reason: text, summary: text, purpose: text, request: text, feedback: text,
-  diagnostic: object({ error_code: text, error_stage: text, failed_checks: strings }),
+  diagnostic,
   rubric_summary: object({ status: literal("ready", "evaluated"), policy_version: number, item_count: number,
     PASS: number, FAIL: number, UNDETERMINED: number }),
   answers: array(object({ question: text, answer: text, question_id: text })), questions: strings, blocking_questions: strings,
@@ -65,7 +73,7 @@ export const decodeChangeReview = requiredObject({ status: literal("no_baseline"
   before_id: optional(nullable(text)), after_id: optional(text), before_hash: optional(nullable(text)), after_hash: text,
   analysed: number, remaining: nullable(number), sources: array(requiredObject({ source_id: text, text, question: optional(text) })),
   changes: array(decodeChange) });
-const detailFields = { id: text, stage: text, status: text, title: text, summary: text, recording_incomplete: boolean,
+const detailFields = { id: text, stage: text, status: text, title: text, summary: text, recording_incomplete: boolean, response_incomplete: boolean,
   unavailable: boolean, message: text, result: decodeResult, research,
   document: requiredObject({ content: text, filename: optional(text), language: literal("ko"), kind: optional(text), source_hash: optional(text), completed_id: optional(text) }),
   usage: record, change_review: decodeChangeReview };
@@ -73,6 +81,7 @@ const decodeDetail = object(detailFields);
 export type StopDiagnosticData = ReturnType<typeof stop>;
 export type IssueData = ReturnType<typeof issue>;
 export type StepResultData = ReturnType<typeof decodeResult>;
+export type FailureDiagnosticData = ReturnType<typeof diagnostic>;
 export type StepDetail = ReturnType<typeof decodeDetail>;
 
 export function decodeStepDetail(value: unknown): StepDetail {
@@ -93,5 +102,6 @@ export function decodeStepDetail(value: unknown): StepDetail {
     if (key === "result" || raw[key] === undefined) continue;
     try { captured[key] = decode(raw[key]); } catch { incomplete = true; }
   }
-  return decodeDetail({ ...captured, result, recording_incomplete: incomplete || raw.recording_incomplete === true });
+  // 2026-11-05: 저장 실패와 클라이언트 해석 실패는 원인이 다르므로 따로 전달한다.
+  return decodeDetail({ ...captured, result, recording_incomplete: raw.recording_incomplete === true, response_incomplete: incomplete });
 }

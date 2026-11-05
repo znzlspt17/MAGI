@@ -30,6 +30,30 @@ def prepare_segment(state: WorkflowState) -> WorkflowState:
               "execution_constraints": {}, "execution_diagnostic": {},
               "execution_segment": state.get("execution_segment", 0) + 1,
               "wait_reason": "", "stop_reason": ""}
+    if action == "rubric_recovery":
+        # 2026-11-05: 같은 입력의 복구는 사용자 재시도를 포함해 한 번만 허용한다.
+        from backend.services.rubric import invalid
+        pending = state.get("pending_input", {})
+        fingerprint, reason = pending.get("fingerprint"), pending.get("reason")
+        history = state.get("rubric_recoveries", [])
+        if not isinstance(fingerprint, str) or fingerprint in history:
+            raise invalid("rubric_stale", stage="checklist_critic", reason="recovery_exhausted")
+        rebuild = reason == "rubric_input_changed"
+        invalidated = {"checklist_critic", "review_resolution", "compose_candidate"}
+        if rebuild:
+            invalidated.add("spec_compile")
+        result["completed_tasks"] = [name for name in done if name not in invalidated]
+        result["rubric_recoveries"] = [*history, fingerprint]
+        result["rubric_recovery_pending"] = rebuild
+        result["rubric"] = state.get("rubric", {})
+        result["rubric_evaluation"] = {}
+        result["rubric_summary"] = {}
+        result["refinement"] = {}
+        result["approval_acceptance"] = {}
+        result["structured_issues"] = []
+        result["resolution_history"] = []
+        result.update(fresh_review_budget())
+        return result
     if action in {"answer", "revise", "message"}:
         result.update(fresh_review_budget())
         result["refinement"] = {}

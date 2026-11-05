@@ -91,6 +91,17 @@ class WorkflowTasks:
         )
         from backend.services.rubric import ensure_rubric, summary as rubric_summary, PATH as RUBRIC_PATH
         rubric = ensure_rubric(self.writer, self.provider, self.config.model_routing["critic"].model, sheet, state)
+        if state.get("rubric_recovery_pending"):
+            # 2026-11-05: 기준 복구만 필요할 때 보존된 초안을 다시 생성하지 않는다.
+            path = "draft/approval_candidate_spec.ko.md"
+            spec = self.writer.read_text(path)
+            if not spec or not self.compiler.korean_document(spec):
+                raise InvalidStateError("Reviewed candidate is missing or invalid.")
+            if RUBRIC_PATH not in created:
+                created.append(RUBRIC_PATH)
+            return {"status": STATUS_COMPILING, "approval_candidate_spec": path, "created_artifacts": created,
+                    "rubric": rubric, "rubric_evaluation": {}, "rubric_summary": rubric_summary(rubric),
+                    "rubric_recovery_pending": False}
         raw_issues = state.get("structured_issues", [])
         issues = parse_issue_list({"issues": raw_issues}) if raw_issues else None
         path = "draft/approval_candidate_spec.ko.md"
@@ -329,7 +340,7 @@ class WorkflowTasks:
         from backend.services.rubric import current_record, invalid, save_evaluation, summary as rubric_summary, EVALUATION_PATH
         rubric = state.get("rubric", {})
         if not current_record(rubric, sheet, state):
-            raise invalid("rubric_stale", stage="checklist_critic")
+            raise invalid("rubric_stale", stage="checklist_critic", reason="rubric_input_changed")
         evaluations: list[dict[str, Any]] = []
         route = self.config.model_routing[self.critic.agent_id]
         provider = self.provider

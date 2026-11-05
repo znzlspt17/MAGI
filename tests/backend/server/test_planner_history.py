@@ -68,8 +68,10 @@ def test_failed_step_keeps_diagnostic_after_later_success(store, monkeypatch):
         history.stage(execution, "spec_compile", "completed")
         restored = ExecutionHistory(Documents(store, job["id"])).detail(failed_id)
         assert restored["status"] == "failed"
-        assert restored["result"]["diagnostic"] == {
+        diagnostic = restored["result"]["diagnostic"]
+        assert {key: diagnostic[key] for key in ("error_code", "error_stage", "failed_checks")} == {
             "error_code": "SPEC_COMPILATION_INVALID", "error_stage": "spec_compile", "failed_checks": ["spec_blocks"],
         }
+        assert diagnostic["attempts"][0]["failed_checks"] == ["spec_blocks"]
     finally:
         manager.close()

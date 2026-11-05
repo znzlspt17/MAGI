@@ -162,3 +162,29 @@ def test_browser_drafts_mobile_and_keyboard():
 def test_browser_document_history_navigation():
     with gateway_server(fixture_app()) as url:
         run_browser("chat_ui.mjs", url)
+
+
+def test_browser_failure_diagnostic_across_tabs_and_reload():
+    WorkspaceClient.reset()
+
+    class FailureClient(WorkspaceClient):
+        jobs = [{**WorkspaceClient.jobs[0], "status": "error", "can_retry": True,
+                 "execution_graph": {"nodes": [
+                     {"id": "research", "stage": "web_research", "title": "조사", "status": "completed", "execution_id": "e" * 32, "detail_available": True},
+                     {"id": "spec", "stage": "spec_compile", "title": "명세 작성", "status": "completed", "execution_id": "e" * 32, "has_document": True, "detail_available": True},
+                     {"id": "failure", "stage": "workflow", "title": "실행 오류", "status": "failed", "execution_id": "e" * 32, "detail_available": True},
+                 ]}}]
+
+        def call(self, method, params=None):
+            if method == "get" and params.get("step_id") == "failure":
+                return {"id": "failure", "stage": "workflow", "status": "failed", "result": {"diagnostic": {
+                    "error_code": "REVIEW_VALIDATION_FAILED", "error_stage": "checklist_critic", "category": "response_invalid",
+                    "validation_reason": "quote_not_found", "failed_checks": ["rubric_evidence"],
+                    "context": {"rubric_id": "RUB-001", "expected_count": 2, "actual_count": 1},
+                    "attempts": [{"attempt": 1, "validation_reason": "quote_not_found", "failed_checks": ["rubric_evidence"]}],
+                }}}
+            return super().call(method, params)
+
+    app = create_app({"PUBLIC_MODE": False, "TESTING": True, "CLIENT_FACTORY": FailureClient})
+    with gateway_server(app) as url:
+        run_browser("failure_diagnostics_ui.mjs", url)

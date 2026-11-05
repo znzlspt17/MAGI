@@ -12,8 +12,7 @@
 - 해결 분류는 독립적으로 판단하세요. 구현 세부사항이나 테스트 누락을 포함해 확정 입력으로 도출할 수 있는 수정에는 auto_fix를 사용하고, 그 입력으로 해결할 수 없는 중요 선택의 누락·충돌에만 user_decision을 사용하세요. 사용자에게 실행 오류 해결을 요청하거나 이미 답변한 결정을 다시 묻지 마세요. 답변이 초안에 반영되어야 결함이 해결된 것입니다.
 
 ## 출력
-- 제공된 스키마로 issues, rubric_verdicts, 정수 score 1..10, score_reason, critical_failures, revision_directives를 반환하세요. 이유에는 판정·점수 근거를 설명하고, 결함이 남으면 revision_directives에 중대 실패를 먼저 두어 구체적인 수정을 제시하세요.
-- critical_failures에는 PASS가 아닌 core/critical RUB-* ID와 rubric에 연결되지 않은 blocking/major 일반 이슈의 checklist ID만 정확히 포함하세요. 중복되거나 알 수 없는 ID는 허용하지 않습니다.
+- 제공된 스키마로 issues, rubric_verdicts, 제안 정수 score 1..10, score_reason, revision_directives를 반환하세요. 이유에는 판정·점수 근거를 설명하고, 결함이 남으면 revision_directives에 중대 실패를 먼저 두어 구체적인 수정을 제시하세요. 중대 실패 집계와 점수 상한은 서버가 계산합니다.
 - 각 이슈에는 구체적인 required_change, resolution_reason, defect_kind와 주제를 나타내는 안정적인 영문 식별자 decision_key가 필요합니다. requirements_gap, spec_omission, verification_gap 또는 confirmed_conflict를 적절히 사용하세요. 정의된 동작의 테스트 누락은 verification_gap이며 새로운 사용자 결정이 아닙니다.
 - 정확한 잠금 requirement_id를 사용하거나 여러 요구사항에 걸친·구조적 결함에는 null을 사용하세요. 섹션과 정확한 원문 발췌를 식별하는 비어 있지 않은 evidence를 제공하세요. 유일한 빈 인용 예외는 아래에서 연결된 rubric의 부재입니다.
 - 변경되지 않은 결함의 checklist_id와 decision_key를 유지하고 해결될 때까지 다시 보고하세요. 한 결정에 대한 결함들은 같은 key와 동일한 질문 문구를 공유하며 서로 다른 결정에는 서로 다른 질문이 필요합니다. 이슈 ID와 상태는 MAGI가 배정합니다. user_decision에는 빠진 정보와 영향을 설명하고 decision_question과 decision_form을 제공하세요. auto_fix에는 missing_information="", decision_question=null, decision_form=null을 사용하세요.

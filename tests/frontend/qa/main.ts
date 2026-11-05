@@ -44,6 +44,11 @@ window.fetch = async (input, init) => {
   if (path === "/api/commands") return json(job);
   if (path === "/api/jobs" || path === "/api/admin/jobs") return json(jobs);
   if (path === `/api/jobs/${jobId}`) return json(job);
+  if (path.endsWith("/steps/failure")) return json({ id: "failure", stage: "workflow", status: "failed", result: { diagnostic: {
+    error_code: "REVIEW_VALIDATION_FAILED", error_stage: "checklist_critic", category: "response_invalid",
+    validation_reason: "quote_not_found", failed_checks: ["rubric_evidence"], context: { rubric_id: "RUB-001", expected_count: 2, actual_count: 1 },
+    attempts: [{ attempt: 1, error_code: "REVIEW_VALIDATION_FAILED", error_stage: "checklist_critic", validation_reason: "quote_not_found", failed_checks: ["rubric_evidence"] }],
+  } } });
   if (path.endsWith("/steps/research")) return json({ research: { mode: "auto", performed: true, outcome: "links_found", reason: "search_results", query: "PostgreSQL row security", retrieved_at: job.created_at, result_count: 1, sources: [{ title: "PostgreSQL documentation", url: "https://www.postgresql.org/docs/" }] } });
   if (path.includes("/steps/") || path.includes("/completed/")) return json({ document: { content: document, filename: "SPEC.ko.md", language: "ko", source_hash: sourceHash, kind: path.includes("approved") ? "final" : "candidate", completed_id: completedId }, result: { research: { mode: "auto", performed: true, outcome: "links_found", reason: "search_results", query: "PostgreSQL row security", retrieved_at: job.created_at, result_count: 1, sources: [{ title: "PostgreSQL documentation", url: "https://www.postgresql.org/docs/" }] } }, change_review: { status: "complete", after_hash: sourceHash, analysed: 1, remaining: 0, sources: [], changes: [{ id: "change", change: "added", before: null, after: { item_id: "REQ-002", section: "요구사항", text: "보고서 30일 보관", line: 6, start: 0, end: 10, requirement_ids: ["REQ-002"], decision_ids: [] }, status: "analysed", meaning: "semantic", relation: "direct", summary: "보관 정책 추가", rationale: "사용자 답변을 반영했습니다." }] } });
   if (path.endsWith("/graph")) return json({ nodes: empty ? [] : nodes, edges: empty ? [] : edges });

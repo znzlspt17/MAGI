@@ -15,7 +15,14 @@ def provider_entered():
     attempt = CURRENT_ATTEMPT.get()
     if attempt is not None:
         attempt["call_count"] += 1
-        attempt["journal"].progress(attempt["task_id"], attempt["call_count"])
+        try:
+            attempt["journal"].progress(attempt["task_id"], attempt["call_count"])
+        except Exception as exc:
+            from backend.errors import WorkflowPersistenceError
+            from backend.access.context import AccessError
+            if isinstance(exc, AccessError):
+                raise
+            raise WorkflowPersistenceError("Workflow journal progress could not be persisted.") from exc
 
 
 def pending_task(snapshot):

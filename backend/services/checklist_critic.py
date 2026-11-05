@@ -115,8 +115,10 @@ class ChecklistCritic:
         merged = merge_issue_lists(deterministic, llm_issues)
         if evaluation is not None:
             # 결정적 검사 결함을 모델 점수로 숨길 수 없다.
-            if raw.score > deterministic_cap:
-                raise ReviewValidationError(stage="checklist_critic", check="rubric_score")
+            evaluation["score"] = min(evaluation["score"], deterministic_cap)
+            evaluation["critical_failures"] = sorted(set(evaluation["critical_failures"]) | {
+                item.checklist_id for item in deterministic if item.severity in {"blocking", "major"}
+            })
             if evaluation_sink is not None:
                 evaluation_sink(evaluation)
         return merged

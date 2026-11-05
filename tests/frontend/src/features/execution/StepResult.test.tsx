@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { StepResult } from "@/features/workspace/Workspace";
 
 afterEach(cleanup);
@@ -31,13 +32,65 @@ it("과거 계획 기록이 없는 경우 명시하고 해결 판단의 다음 �
   expect(screen.getByText("초안 수정·재검토")).toBeVisible();
 });
 
-it("실패 단계의 안전한 진단 코드와 중단 사유를 표시한다", () => {
+it("실패 단계의 안전한 진단 코드와 중단 사유를 표시한다", async () => {
   render(<StepResult node={{ id: "failed", stage: "spec_compile", status: "failed" }} detail={{ result: {
     wait_reason: "초안 검증에 실패했습니다.", diagnostic: { error_code: "SPEC_COMPILATION_INVALID", error_stage: "spec_compile", failed_checks: ["spec_blocks"] },
   } }} />);
+  await userEvent.click(screen.getByText("기술 진단 상세"));
   expect(screen.getByText("SPEC_COMPILATION_INVALID")).toBeVisible();
   expect(screen.getByText("검증 항목: spec_blocks")).toBeVisible();
   expect(screen.getByText("초안 검증에 실패했습니다.")).toBeVisible();
+});
+
+it("실패 사유와 복구 정보를 표시하고 과거 성공 요약을 숨긴다", async () => {
+  const detail = { result: { diagnostic: { error_code: "REVIEW_VALIDATION_FAILED", error_stage: "checklist_critic",
+    category: "response_invalid" as const, validation_reason: "rubric_evidence", failed_checks: ["rubric_evidence"],
+    attempts: [{ attempt: 1, failed_checks: ["rubric_evidence"], validation_reason: "rubric_evidence" }] } } };
+  render(<StepResult node={{ id: "failed", stage: "checklist_critic", status: "failed", summary: "검토 결과를 저장했습니다." }} detail={detail} />);
+  expect(screen.queryByText("검토 결과를 저장했습니다.")).not.toBeInTheDocument();
+  expect(screen.getAllByText(/검토 근거가 초안의 섹션 또는 인용과 일치하는지 확인하지 못했습니다/)[0]).toBeVisible();
+  expect(screen.getByText(/검증되지 않은 검토 결과로 명세를 진행하지 않았습니다/)).toBeVisible();
+  const toggle = screen.getByText("기술 진단 상세");
+  expect(toggle.closest("details")).not.toHaveAttribute("open");
+  await userEvent.click(toggle);
+  expect(screen.getByText(/1회차/)).toBeVisible();
+  expect(screen.getByText("REVIEW_VALIDATION_FAILED")).toBeVisible();
+});
+
+it("저장 누락과 응답 해석 문제를 구분한다", () => {
+  render(<StepResult detail={{ recording_incomplete: true, response_incomplete: true }} />);
+  expect(screen.getByText(/일부 상세 기록이 누락되었습니다/)).toBeVisible();
+  expect(screen.getByText(/일부 응답을 해석하지 못했습니다/)).toBeVisible();
+});
+
+it("보정 후 성공한 단계는 과거 실패를 현재 작업 실패로 표시하지 않는다", async () => {
+  render(<StepResult node={{ id: "review", stage: "checklist_critic", status: "completed" }} detail={{ result: { diagnostic: {
+    attempts: [{ attempt: 1, failed_checks: ["rubric_evidence"], validation_reason: "quote_not_found" }],
+  } } }} />);
+  expect(screen.getByRole("region", { name: "보정 경과" })).toBeVisible();
+  expect(screen.queryByRole("region", { name: "실패 진단" })).toBeNull();
+  expect(screen.getByText("자동 보정 후 단계가 완료되었습니다.")).toBeVisible();
+  await userEvent.click(screen.getByText("기술 진단 상세"));
+  expect(screen.getByText(/1회차/)).toBeVisible();
+});
+
+it("불확실한 외부 호출에는 반복 동의 확인을 안내한다", () => {
+  render(<StepResult node={{ id: "failed", status: "failed" }} detail={{ result: { diagnostic: { category: "execution_uncertain" } } }} />);
+  expect(screen.getByText(/호출 반복에 대한 동의 여부를 확인하세요/)).toBeVisible();
+});
+
+it.each([
+  ["requirement_unknown", "검토 기준이 참조한 요구사항을 확정 목록에서 찾지 못했습니다."],
+  ["condition_missing", "검토 기준의 검사 조건을 확인하지 못했습니다."],
+  ["importance_invalid", "검토 기준의 중요도가 해당 요구사항에 맞는지 확인하지 못했습니다."],
+  ["basis_reference_invalid", "검토 기준의 근거가 해당 요구사항을 참조하는지 확인하지 못했습니다."],
+  ["basis_quote_not_found", "검토 기준의 근거 인용을 확정 요구사항에서 찾지 못했습니다."],
+  ["rubric_coverage_missing", "일부 필수 요구사항 또는 제약의 검토 기준을 찾지 못했습니다."],
+])("검토 기준 오류 %s의 확인 실패 내용을 설명한다", (reason, expected) => {
+  render(<StepResult node={{ id: "failed", status: "failed" }} detail={{ result: { diagnostic: {
+    category: "response_invalid", failed_checks: ["rubric_basis"], validation_reason: reason,
+  } } }} />);
+  expect(screen.getByText(expected, { exact: false })).toBeVisible();
 });
 
 

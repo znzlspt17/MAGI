@@ -63,8 +63,11 @@ def _safe_result(value: dict) -> dict:
             ]
     if isinstance(value.get("diagnostic"), dict):
         result["diagnostic"] = {key: copy.deepcopy(value["diagnostic"][key]) for key in (
-            "error_code", "error_stage", "failed_checks", "validation_reason", "validation_section", "validation_index", "validation_field",
+            "error_code", "error_stage", "failed_checks", "validation_reason", "validation_section", "validation_index", "validation_field", "category",
         ) if key in value["diagnostic"]}
+        if isinstance(value["diagnostic"].get("context"), dict):
+            from backend.services.diagnostic_context import safe_review_context
+            result["diagnostic"]["context"] = safe_review_context(value["diagnostic"]["context"])
     return result
 
 
@@ -137,7 +140,9 @@ def _issue_key(issue: dict) -> tuple[str, str] | None:
     ).casefold(), requirement if isinstance(requirement, str) else ""
 
 
-def _summary(stage: str, result: dict) -> str:
+def _summary(stage: str, result: dict, status: str = "completed") -> str:
+    if status == "failed":
+        return "단계 검증에 실패하여 작업을 중단했습니다."
     rubric = result.get("rubric_summary")
     if isinstance(rubric, dict):
         if stage == "spec_compile":

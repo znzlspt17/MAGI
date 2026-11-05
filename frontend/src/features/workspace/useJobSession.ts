@@ -58,6 +58,11 @@ export function useJobSession() {
   const detail = useResource<StepDetail>(id && step && node?.detail_available
     ? `/api/jobs/${encodeURIComponent(id)}/steps/${encodeURIComponent(step)}` : undefined,
     detailRevision, auth.user?.id, auth.setNotice, decodeStepDetail);
+  // 2026-11-05: 사용자가 이전 문서를 보고 있어도 현재 실행의 실패 진단을 대화에 유지한다.
+  const failureNode = job?.status === "error" ? [...(job.execution_graph?.nodes || [])].reverse().find(item =>
+    item.status === "failed" && item.detail_available && (!job.execution_id || item.execution_id === job.execution_id)) : undefined;
+  const failureDetail = useResource<StepDetail>(id && failureNode ? `/api/jobs/${encodeURIComponent(id)}/steps/${encodeURIComponent(failureNode.id)}` : undefined,
+    revision, auth.user?.id, auth.setNotice, decodeStepDetail);
 
   useEffect(() => {
     progressRef.current = undefined;
@@ -85,7 +90,7 @@ export function useJobSession() {
     if (requested && !manual.current && nodes.some(item => item.id === requested)) {
       manual.current = true; setStep(requested); setTab("document");
     } else if (!manual.current || !nodes.some(item => item.id === step)) {
-      setStep(automaticStep(nodes, job.state?.status || job.status));
+      setStep(automaticStep(nodes, job.status === "error" ? job.status : job.state?.status || job.status));
     }
     if (!["queued", "running"].includes(job.status) && ["작업을 대기열에 넣었습니다.", "새 작업을 대기열에 넣었습니다."].includes(auth.notice)) auth.setNotice("");
   }, [id, job, location.search]);
@@ -196,6 +201,7 @@ export function useJobSession() {
   for (const entry of Object.values(changes)) if (!listed.some(item => item.id === entry.job.id)) listed.unshift(entry.job);
   const removed = deletedIds.owner === auth.user?.id ? deletedIds.ids : [];
   return { jobs: listed.filter(item => !removed.includes(item.id)), job, step, tab, setTab, busy, loading: current.loading, connection, refresh, command,
+    failureDetail: failureDetail.error ? { unavailable: true, message: failureDetail.error } : failureDetail.data,
     detail: detail.error ? { unavailable: true, message: detail.error } : node?.detail_available ? detail.data : { unavailable: true, message: "이 단계의 상세 기록이 저장되지 않았습니다." },
     select: (value: string) => { manual.current = true; setStep(value); setDetailRevision(previous => previous + 1); },
   };

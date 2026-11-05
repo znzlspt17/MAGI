@@ -193,7 +193,7 @@ def test_rubric_and_review_outputs_describe_the_actual_schemas():
     generation = section_text(texts["rubric_generate"], "출력")
     assert set(RubricItem.model_fields) <= set(re.findall(r"[A-Za-z_]+", generation))
     evaluation = section_text(texts["checklist_critic"], "출력")
-    assert set(ReviewResponse.model_fields) <= set(re.findall(r"[A-Za-z_]+", evaluation))
+    assert set(ReviewResponse.model_json_schema()["properties"]) <= set(re.findall(r"[A-Za-z_]+", evaluation))
     judgment = section_text(texts["checklist_critic"], "판단")
     assert all(term in judgment for term in ("실제 심각도", "실질적인 영향", "importance", "severity", "UNDETERMINED"))
     assert {int(value) for value in re.findall(r"상한(?:은|이) (\d+)", judgment)} == {4, 7, 9}
@@ -271,7 +271,8 @@ def test_review_retry_guidance_distinguishes_safe_failed_checks():
     assert evidence["validation_failures"] and score["validation_failures"]
     assert evidence["validation_failures"] != score["validation_failures"]
     guidance = " ".join(score["validation_failures"])
-    assert all(field in guidance for field in ("score_reason", "critical_failures", "revision_directives"))
+    assert all(field in guidance for field in ("score_reason", "revision_directives"))
+    assert "서버" in guidance
 
 
 def test_review_retry_does_not_forward_untrusted_failed_check_or_details():

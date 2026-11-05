@@ -8,6 +8,21 @@ import type { Job } from "@/shared/types";
 vi.mock("@/features/auth/Auth", () => ({ useAuth: () => ({ publicMode: false, user: null, status: {} }) }));
 vi.mock("@/features/requirements/RequirementReview", () => ({ RequirementReview: () => null }));
 afterEach(cleanup);
+it("현재 실패의 동일한 구조화 진단을 대화에 표시한다", async () => {
+  const job: Job = { id: "failed-job", status: "error", execution_id: "e1", state: {},
+    execution_graph: { nodes: [{ id: "failed", execution_id: "e1", stage: "workflow", status: "failed" }] } };
+  render(<Conversation job={job} select={vi.fn()} onAction={vi.fn()} busy={false} failureDetail={{ result: { diagnostic: {
+    category: "response_invalid", error_stage: "checklist_critic", error_code: "REVIEW_VALIDATION_FAILED", validation_reason: "rubric_evidence",
+  } } }} />);
+  expect(screen.getByText(/검토 근거가 초안의 섹션 또는 인용과 일치하는지 확인하지 못했습니다/)).toBeVisible();
+  await userEvent.click(screen.getByText("기술 진단 상세"));
+  expect(screen.getByText("REVIEW_VALIDATION_FAILED")).toBeVisible();
+});
+it("실패 상세 조회 자체가 실패하면 대화에서 알린다", () => {
+  render(<Conversation job={{ id: "failure-load", status: "error" }} select={vi.fn()} onAction={vi.fn()} busy={false}
+    failureDetail={{ unavailable: true, message: "요청 실패" }} />);
+  expect(screen.getByText(/실패 상세를 불러오지 못했습니다/)).toBeVisible();
+});
 const proposalJob = (planned: boolean, id = "proposal"): Job => ({ id, status: "PASS_PENDING_USER_APPROVAL",
   state: { status: "PASS_PENDING_USER_APPROVAL", allowed_actions: ["message", "approve"], ...(planned ? { plan: { goal: "검토" } } : {}) },
   change_review: { status: "complete", after_hash: "candidate", analysed: 1, remaining: 0, sources: [], changes: [{

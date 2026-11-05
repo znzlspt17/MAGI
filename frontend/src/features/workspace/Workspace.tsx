@@ -1,5 +1,6 @@
 import { StepResult } from "../execution/StepResult";
 import { StopDiagnostic } from "../execution/StopDiagnostic";
+import { FailureDiagnostic } from "../execution/FailureDiagnostic";
 import { Issues } from "../execution/Issues";
 export { StepResult } from "../execution/StepResult";
 export { StopDiagnostic } from "../execution/StopDiagnostic";
@@ -126,6 +127,7 @@ export default function Workspace() {
   </TabsList></Tabs> : null;
   const selectedDetail = () => actualJob ? <>
     {tab !== "history" && detail?.document?.content && <StopDiagnostic value={result.stop_diagnostic} />}
+    {tab !== "history" && detail?.document?.content && ["failed", "error"].includes(node?.status || "") && <FailureDiagnostic value={result.diagnostic} fallbackStage={node?.stage} />}
     {tab === "history" && detail && !detail.unavailable && <StepResult node={node} detail={detail} />}
     {detail?.unavailable ? (
       <Notice>기록 확인 불가: {detail.message}</Notice>
@@ -250,7 +252,7 @@ export default function Workspace() {
                   {tab === "conversation" ? (
                     <>
                     {["queued", "running"].includes(actualJob.status) && <Button disabled={busy} onClick={() => void mutate("stop", undefined).catch(() => {})}>이 작업 중지</Button>}
-                  <Conversation key={actualJob.id} job={actualJob} select={selectStep} onAction={mutate} busy={busy} />
+                  <Conversation key={actualJob.id} job={actualJob} select={selectStep} onAction={mutate} busy={busy} failureDetail={session.failureDetail} />
                     </>
                   ) : (
                     <div className="document-action-layout">

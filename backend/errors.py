@@ -51,11 +51,27 @@ class ReviewValidationError(Error):
                         "rubric_schema", "rubric_identity", "rubric_basis", "rubric_boundary", "rubric_coverage",
                         "rubric_evaluation_coverage", "rubric_evidence", "rubric_issue", "rubric_stale", "rubric_score"})
 
-    def __init__(self, details=None, *, stage="checklist_critic", check="review_response"):
+    reasons = frozenset({"rubric_input_changed", "evaluation_missing", "evaluation_draft_mismatch",
+                         "stored_evaluation_invalid", "recovery_exhausted", "quote_not_found",
+                         "section_invalid", "reason_missing", "evaluation_coverage_mismatch",
+                         "issue_link_invalid", "score_invalid", "requirement_unknown", "condition_missing",
+                         "importance_invalid", "basis_reference_invalid", "basis_quote_not_found", "rubric_coverage_missing"})
+
+    def __init__(self, details=None, *, stage="checklist_critic", check="review_response", reason=None, context=None):
         super().__init__("Checklist review response could not be validated.")
         self.validation_details = details or ["Return a valid complete checklist review response."]
         self.stage = stage if isinstance(stage, str) and stage in self.stages else "checklist_critic"
         self.failed_checks = [check if isinstance(check, str) and check in self.checks else "review_response"]
+        self.validation_reason = reason if reason in self.reasons else None
+        self.validation_context = context if isinstance(context, dict) else {}
+
+
+class WorkflowPersistenceError(Error):
+    """업무 결과의 영속 저장 실패를 모델 응답 오류와 구분한다."""
+
+
+class WorkflowExecutionUncertain(Error):
+    """외부 호출의 완료 여부가 확인되지 않아 재실행 동의가 필요하다."""
 
 
 class SpecCompilationError(Error):

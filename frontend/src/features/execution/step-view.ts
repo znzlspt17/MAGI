@@ -15,6 +15,7 @@ const titles: Record<string, string> = {
     await_user: "요구사항 확인 필요",
     answer: "답변 저장",
     requirement_lock: "요구사항 확정",
+    rubric_generate: "검토 기준 생성",
     revise: "수정 의견",
     spec_compile: "명세 생성",
     checklist_critic: "명세 검토",
