@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any
 from protocol.logging import get_logger
 from backend.infrastructure.stage_retry import CURRENT_RETRY, MAX_RETRIES
+from backend.services.failure_policy import correction_retryable
 
 
 def _stage(name: str, node, callback, *, defer_completed: bool = False):
@@ -19,30 +20,10 @@ def _stage(name: str, node, callback, *, defer_completed: bool = False):
                 break
             except Exception as exc:
                 error = exc
-                from backend.errors import (
-                    RequirementNormalizationError,
-                    ReviewValidationError,
-                    SpecCompilationError,
-                )
-                from backend.infrastructure.output_language import OutputLanguageError
-
-                retryable = isinstance(
-                    exc,
-                    (
-                        RequirementNormalizationError,
-                        ReviewValidationError,
-                        SpecCompilationError,
-                        OutputLanguageError,
-                    ),
-                )
-                if isinstance(exc, ReviewValidationError) and "rubric_stale" in exc.failed_checks:
-                    retryable = False
+                retryable = correction_retryable(exc)
                 from backend.server.diagnostics import diagnose_exception
                 diagnostic = diagnose_exception(exc)
                 if retryable:
-                    from backend.server.diagnostics import diagnose_exception
-
-                    diagnostic = diagnose_exception(exc)
                     # 원문 대신 허용된 검증 코드만 남겨 반복 실패 원인을 구분한다.
                     get_logger("backend.server").warning(
                         "stage_validation_failed", stage=name, attempt=attempt + 1,
@@ -55,7 +36,6 @@ def _stage(name: str, node, callback, *, defer_completed: bool = False):
                         validation_field=diagnostic["validation_field"],
                     )
                 if not retryable or attempt == MAX_RETRIES:
-                    from backend.server.diagnostics import diagnose_exception
                     _progress(
                         callback,
                         name,

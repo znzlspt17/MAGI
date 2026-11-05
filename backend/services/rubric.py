@@ -183,6 +183,20 @@ def save_evaluation(writer, evaluation):
     writer.write_json(EVALUATION_PATH, evaluation)
 
 
+def deterministic_score_cap(issues):
+    """2026-11-05: 생성 시점과 승인 재검증에 동일한 결정적 상한을 적용한다."""
+    if any(item.severity in {"blocking", "major"} for item in issues):
+        return 7
+    return 9 if issues else 10
+
+
+def apply_deterministic_evaluation(evaluation, issues):
+    critical = set(evaluation["critical_failures"])
+    critical.update(item.checklist_id for item in issues if item.severity in {"blocking", "major"})
+    return {**evaluation, "score": min(evaluation["score"], deterministic_score_cap(issues)),
+            "critical_failures": sorted(critical)}
+
+
 def require_approval_evaluation(state, sheet, spec):
     rubric = state.get("rubric", {})
     evaluation = state.get("rubric_evaluation", {})
@@ -200,11 +214,8 @@ def require_approval_evaluation(state, sheet, spec):
         checked = validate_evaluation(response, rubric, spec)
         from backend.services.checklist_critic import run_deterministic_checks
         deterministic = run_deterministic_checks(spec, sheet)
-        cap = 7 if any(item.severity in {"blocking", "major"} for item in deterministic) else 9 if deterministic else 10
-        critical = sorted(set(checked["critical_failures"]) | {
-            item.checklist_id for item in deterministic if item.severity in {"blocking", "major"}
-        })
-        if critical != evaluation["critical_failures"] or min(checked["score"], cap) != evaluation["score"]:
+        checked = apply_deterministic_evaluation(checked, deterministic)
+        if checked["critical_failures"] != evaluation["critical_failures"] or checked["score"] != evaluation["score"]:
             raise ValueError("stored derived values invalid")
     except (KeyError, ValidationError, ReviewValidationError, ValueError):
         raise invalid("rubric_stale", stage="compose_candidate", reason="stored_evaluation_invalid") from None

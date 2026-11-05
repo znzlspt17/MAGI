@@ -23,6 +23,12 @@ it("실패 상세 조회 자체가 실패하면 대화에서 알린다", () => {
     failureDetail={{ unavailable: true, message: "요청 실패" }} />);
   expect(screen.getByText(/실패 상세를 불러오지 못했습니다/)).toBeVisible();
 });
+it("대화에서 기록 누락과 응답 해석 실패를 각각 알린다", () => {
+  render(<Conversation job={{ id: "failure-incomplete", status: "error" }} select={vi.fn()} onAction={vi.fn()} busy={false}
+    failureDetail={{ recording_incomplete: true, response_incomplete: true }} />);
+  expect(screen.getByText(/일부 상세 기록이 누락되었습니다/)).toBeVisible();
+  expect(screen.getByText(/일부 응답을 해석하지 못했습니다/)).toBeVisible();
+});
 const proposalJob = (planned: boolean, id = "proposal"): Job => ({ id, status: "PASS_PENDING_USER_APPROVAL",
   state: { status: "PASS_PENDING_USER_APPROVAL", allowed_actions: ["message", "approve"], ...(planned ? { plan: { goal: "검토" } } : {}) },
   change_review: { status: "complete", after_hash: "candidate", analysed: 1, remaining: 0, sources: [], changes: [{

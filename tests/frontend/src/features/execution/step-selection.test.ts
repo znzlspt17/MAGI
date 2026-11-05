@@ -14,3 +14,8 @@ it("오류가 나면 이전 초안보다 현재 실패 단계를 기본으로 �
   expect(automaticStep([{ id: "draft", has_document: true },
     { id: "failed", stage: "workflow", status: "failed" }], "error")).toBe("failed");
 });
+it("여러 실패 중 마지막 단계를 선택하고 없으면 최근 문서로 돌아간다", () => {
+  expect(automaticStep([{ id: "old", status: "failed" }, { id: "doc", has_document: true },
+    { id: "new", status: "failed" }], "error")).toBe("new");
+  expect(automaticStep([{ id: "doc", has_document: true }, { id: "running", status: "running" }], "error")).toBe("doc");
+});

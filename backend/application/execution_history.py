@@ -202,39 +202,36 @@ class ExecutionHistory:
                 node = _node(stage, execution_id, "running")
                 node["usage_start"] = _usage_attempt_count(self.documents)
                 nodes.append(node)
-        elif current is not None:
-            current["status"] = "completed" if state == "completed" else "failed"
-            if current.get("retries"):
-                current["summary"] = (
-                    "재시도를 완료했습니다."
-                    if state == "completed"
-                    else "재시도 중 오류로 중단했습니다."
-                )
+        else:
+            had_start = current is not None
+            finished_status = "completed" if state == "completed" else "failed"
+            if current is None:
+                current = _node(stage, execution_id, finished_status)
+                current["started_at"] = None
+                nodes.append(current)
+            else:
+                current["status"] = finished_status
+                if current.get("retries"):
+                    current["summary"] = (
+                        "재시도를 완료했습니다."
+                        if state == "completed"
+                        else "재시도 중 오류로 중단했습니다."
+                    )
             current["completed_at"] = _now()
-            current["duration_ms"] = _duration(
-                current.get("started_at"), current["completed_at"]
-            )
+            if had_start:
+                current["duration_ms"] = _duration(current.get("started_at"), current["completed_at"])
             if result:
                 current["result"] = _safe_result(result)
                 current["summary"] = _summary(stage, result, current["status"])
-            attempts = [{"attempt": item["attempt"], **item["diagnostic"]}
-                        for item in current.get("retries", []) if isinstance(item.get("diagnostic"), dict)]
-            diagnostic = current.get("result", {}).get("diagnostic")
-            if state == "failed" and isinstance(diagnostic, dict):
-                attempts.append({"attempt": len(attempts) + 1, **diagnostic})
-            if attempts:
-                current.setdefault("result", {}).setdefault("diagnostic", {})["attempts"] = attempts
-            current["usage"] = _usage_since(self.documents, current.get("usage_start"))
-        else:
-            node = _node(
-                stage, execution_id, "completed" if state == "completed" else "failed"
-            )
-            node["started_at"] = None
-            node["completed_at"] = _now()
-            if result:
-                node["result"] = _safe_result(result)
-                node["summary"] = _summary(stage, result, node["status"])
-            nodes.append(node)
+            if had_start:
+                attempts = [{"attempt": item["attempt"], **item["diagnostic"]}
+                            for item in current.get("retries", []) if isinstance(item.get("diagnostic"), dict)]
+                diagnostic = current.get("result", {}).get("diagnostic")
+                if state == "failed" and isinstance(diagnostic, dict):
+                    attempts.append({"attempt": len(attempts) + 1, **diagnostic})
+                if attempts:
+                    current.setdefault("result", {}).setdefault("diagnostic", {})["attempts"] = attempts
+                current["usage"] = _usage_since(self.documents, current.get("usage_start"))
         self._save(data)
 
     def terminal(

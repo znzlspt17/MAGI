@@ -12,6 +12,7 @@ import type { Job } from "../../shared/types";
 import { AgentPlan, AgentComposer } from "../workspace/AgentPlan";
 import { ExecutionMonitor } from "../execution/ExecutionMonitor";
 import { FailureDiagnostic } from "../execution/FailureDiagnostic";
+import { DetailNotices } from "../execution/DetailNotices";
 import type { StepDetail } from "../execution/execution-detail";
 import { useAuth } from "../auth/Auth";
 
@@ -83,8 +84,7 @@ function ConversationContent({ job, select, onAction, busy, draftKey, failureDet
             {job.status === "error" && failureDetail && <MessageScrollerItem messageId="failure-diagnostic">
               {failureDetail.unavailable && <Notice>실패 상세를 불러오지 못했습니다. 화면을 새로고침해 다시 확인하세요.</Notice>}
               <FailureDiagnostic value={failureDetail.result?.diagnostic} />
-              {failureDetail.recording_incomplete && <Notice>일부 상세 기록이 누락되었습니다. 표시 가능한 결과만 제공합니다.</Notice>}
-              {failureDetail.response_incomplete && <Notice>일부 응답을 해석하지 못했습니다. 확인 가능한 결과만 표시합니다.</Notice>}
+              <DetailNotices detail={failureDetail} />
             </MessageScrollerItem>}
             <MessageScrollerItem messageId="current-actions"><Message align="start" className="chat-turn magi"><MessageContent><QuestionActions key={job.id} job={job} onAction={onAction} busy={busy} conversational controlsTarget={controlsTarget} onAppendFeedback={appendMessage} onReview={reviewStep ? () => select(reviewStep) : undefined} onRequirementReview={reviewStep ? () => select(reviewStep, true) : undefined} /></MessageContent></Message></MessageScrollerItem>
           </MessageScrollerContent>

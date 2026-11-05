@@ -80,6 +80,24 @@ it("불확실한 외부 호출에는 반복 동의 확인을 안내한다", () =
 });
 
 it.each([
+  ["response_invalid", "검증되지 않은 검토 결과로 명세를 진행하지 않았습니다.", "실행 이력에서 자동 보정 경과와 검증 실패 항목을 확인하세요."],
+  ["prerequisite_stale", "현재 입력에 맞는 검토를 확인하기 전까지 작업을 중단했습니다.", "실행 이력에서 선행 자료와 복구 경과를 확인하세요."],
+  ["execution_uncertain", "이전 외부 호출의 완료 여부를 확인하지 못해 자동 반복을 중단했습니다.", "호출 반복에 대한 동의 여부를 확인하세요."],
+  ["persistence_failed", "처리 결과의 저장 완료 여부를 확인하지 못했습니다.", "실행 이력과 저장 상태를 확인하세요."],
+] as const)("실패 분류 %s의 영향과 다음 확인을 함께 표시한다", (category, impact, next) => {
+  render(<StepResult node={{ id: "failed", status: "failed" }} detail={{ result: { diagnostic: { category } } }} />);
+  expect(screen.getByText(impact, { exact: false })).toBeVisible();
+  expect(screen.getByText(next, { exact: false })).toBeVisible();
+});
+
+it("과거 진단에 분류가 없으면 영향은 추측하지 않고 기본 안내를 표시한다", () => {
+  render(<StepResult node={{ id: "failed", status: "failed" }} detail={{ result: { diagnostic: { failed_checks: [] } } }} />);
+  expect(screen.getByText(/상세 원인이 기록되지 않았거나 확인되지 않았습니다/)).toBeVisible();
+  expect(screen.getByText(/실행 이력에서 실패 단계와 보정 경과를 확인하세요/)).toBeVisible();
+  expect(screen.queryByText(/영향:/)).toBeNull();
+});
+
+it.each([
   ["requirement_unknown", "검토 기준이 참조한 요구사항을 확정 목록에서 찾지 못했습니다."],
   ["condition_missing", "검토 기준의 검사 조건을 확인하지 못했습니다."],
   ["importance_invalid", "검토 기준의 중요도가 해당 요구사항에 맞는지 확인하지 못했습니다."],

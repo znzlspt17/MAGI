@@ -59,8 +59,8 @@ class ChecklistCritic:
         # 1. 결정적 검사 (always authoritative, no LLM needed)
         deterministic = run_deterministic_checks(spec_md, sheet)
         # 2026-11-04: 결정적 결함은 별도 병합하므로 모델에는 안전한 요약과 점수 상한만 제공한다.
-        deterministic_cap = (7 if any(item.severity in {"blocking", "major"} for item in deterministic)
-                             else 9 if deterministic else 10)
+        from backend.services.rubric import deterministic_score_cap, apply_deterministic_evaluation
+        deterministic_cap = deterministic_score_cap(deterministic)
         checks = sorted({(
             "LOCK-COVER-001" if item.checklist_id.startswith("LOCK-COVER-") else item.checklist_id,
             item.section, item.severity,
@@ -115,10 +115,7 @@ class ChecklistCritic:
         merged = merge_issue_lists(deterministic, llm_issues)
         if evaluation is not None:
             # 결정적 검사 결함을 모델 점수로 숨길 수 없다.
-            evaluation["score"] = min(evaluation["score"], deterministic_cap)
-            evaluation["critical_failures"] = sorted(set(evaluation["critical_failures"]) | {
-                item.checklist_id for item in deterministic if item.severity in {"blocking", "major"}
-            })
+            evaluation = apply_deterministic_evaluation(evaluation, deterministic)
             if evaluation_sink is not None:
                 evaluation_sink(evaluation)
         return merged

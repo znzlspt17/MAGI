@@ -5,24 +5,30 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 import json
 
-from backend.errors import InvalidStateError
+from backend.errors import InvalidStateError, WorkflowPersistenceError
+from backend.access.context import AccessError
 
 
 CURRENT_ATTEMPT: ContextVar[dict[str, Any] | None] = ContextVar("workflow_attempt", default=None)
+
+
+@contextmanager
+def persistence_boundary(message: str, *, passthrough: tuple[type[Exception], ...] = (AccessError,)):
+    """2026-11-05: 저장 경계마다 유지해야 할 접근·상태 예외를 명시한다."""
+    try:
+        yield
+    except passthrough:
+        raise
+    except Exception as exc:
+        raise WorkflowPersistenceError(message) from exc
 
 
 def provider_entered():
     attempt = CURRENT_ATTEMPT.get()
     if attempt is not None:
         attempt["call_count"] += 1
-        try:
+        with persistence_boundary("Workflow journal progress could not be persisted."):
             attempt["journal"].progress(attempt["task_id"], attempt["call_count"])
-        except Exception as exc:
-            from backend.errors import WorkflowPersistenceError
-            from backend.access.context import AccessError
-            if isinstance(exc, AccessError):
-                raise
-            raise WorkflowPersistenceError("Workflow journal progress could not be persisted.") from exc
 
 
 def pending_task(snapshot):

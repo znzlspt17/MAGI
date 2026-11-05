@@ -2,7 +2,7 @@
 
 import re
 
-from backend.errors import Error
+from backend.errors import OutputLanguageError as OutputLanguageError
 from backend.models import InterviewResponse, LockResponse, ReviewResponse, SpecResponse, SpecDraftResponse
 from backend.models import ReviewResolutionResponse
 from backend.models import QuestionFormSpec
@@ -19,12 +19,6 @@ LANGUAGE_RULES = {
     "review_resolution": "이유, 누락 정보와 수정 내용은 한국어로 작성하세요. ID와 basis_refs는 그대로 유지하세요." + _QUESTION_LANGUAGE,
     "checklist_critic": "검토 문제, 수정 내용, 이유, 지시와 제안 문장은 한국어로 작성하세요. evidence.quote와 식별자는 보존하세요." + _QUESTION_LANGUAGE,
 }
-
-
-class OutputLanguageError(Error):
-    def __init__(self, details):
-        super().__init__("Output language validation failed.")
-        self.validation_details = details
 
 
 def prose(text):

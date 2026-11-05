@@ -9,7 +9,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
 from backend.errors import InvalidStateError
-from backend.infrastructure.workflow_store import workflow_store
+from backend.infrastructure.workflow_store import workflow_store, persistence_boundary
 from backend.models import State, WorkflowState
 from backend.pipeline.builder import _stage
 from backend.pipeline.execution_policy import (
@@ -18,6 +18,8 @@ from backend.pipeline.execution_policy import (
 from backend.pipeline.planner import (
     execution_constraints, plan_next, task_signature,
 )
+from backend.services.failure_policy import journal_failure_category
+from backend.services.review_transitions import COMPLETION_INVALIDATIONS, retry_upgrade_reason, failed_review_recovery_reason
 
 
 def digest(value):
@@ -43,28 +45,17 @@ class AgentWorkflow:
         meter = self.engine.runtime.meter
         if meter is not None:
             meter.access.check_execution(meter.uid, meter.jid, meter.generation, meter.execution_id)
-        from backend.errors import WorkflowPersistenceError
-        from backend.access.context import AccessError
-        try:
+        with persistence_boundary("Workflow state could not be persisted."):
             self.writer.write_json("evidence/evidence_registry.json", self.evidence.to_dict())
             self.writer.state = State.from_dict(state).to_dict()
             self.engine.runtime.commit(stage, self.writer.state)
-        except AccessError:
-            raise
-        except Exception as exc:
-            raise WorkflowPersistenceError("Workflow state could not be persisted.") from exc
 
     def durable(self, name, state, operation):
         ident = task_id(state,name)
         replay = ident == getattr(self, "replay_task_id", None)
-        from backend.errors import WorkflowPersistenceError
         from backend.access.context import AccessError
-        try:
+        with persistence_boundary("Workflow journal could not be read.", passthrough=(InvalidStateError, AccessError)):
             saved = self.journal.get(ident, retry_safe=name == "approve" or replay)
-        except (InvalidStateError, AccessError):
-            raise
-        except Exception as exc:
-            raise WorkflowPersistenceError("Workflow journal could not be read.") from exc
         from backend.services.rubric import POLICY_VERSION
         rubric_stage = name in {"planner", "spec_compile", "checklist_critic", "review_resolution", "compose_candidate"}
         if saved is not None and rubric_stage and saved.get("rubric_policy_version") != POLICY_VERSION:
@@ -79,12 +70,8 @@ class AgentWorkflow:
             if "knowledge_context" in result:
                 self.engine.runtime.retrieved = result["knowledge_context"]
         else:
-            try:
+            with persistence_boundary("Workflow journal could not be started."):
                 self.journal.begin(ident)
-            except AccessError:
-                raise
-            except Exception as exc:
-                raise WorkflowPersistenceError("Workflow journal could not be started.") from exc
             if replay:
                 self.replay_task_id = None
             self.writer.changed = {}
@@ -97,15 +84,9 @@ class AgentWorkflow:
             try:
                 result = operation(deepcopy(state))
             except Exception as exc:
-                from backend.errors import RequirementNormalizationError, ReviewValidationError, SpecCompilationError
-                from backend.infrastructure.output_language import OutputLanguageError
-                category = "persistence_failed" if isinstance(exc, WorkflowPersistenceError) else "validation" if isinstance(exc, (RequirementNormalizationError, ReviewValidationError, SpecCompilationError, OutputLanguageError)) else "not_called" if not attempt["call_count"] else "call_uncertain"
-                try:
+                category = journal_failure_category(exc, attempt["call_count"])
+                with persistence_boundary("Workflow journal progress could not be persisted."):
                     self.journal.progress(ident, attempt["call_count"], category=category)
-                except AccessError:
-                    raise
-                except Exception as progress_exc:
-                    raise WorkflowPersistenceError("Workflow journal progress could not be persisted.") from progress_exc
                 from protocol.logging import get_logger
                 get_logger("backend.server").warning(
                     "workflow task failed stage=%s category=%s provider_entered=%s call_count=%s",
@@ -113,12 +94,8 @@ class AgentWorkflow:
                 )
                 if category in {"validation", "not_called"}:
                     # 반환된 결과의 검증 실패는 통신 완료 여부가 불명확한 오류와 구분한다.
-                    try:
+                    with persistence_boundary("Workflow journal failure could not be persisted."):
                         self.journal.failed(ident)
-                    except AccessError:
-                        raise
-                    except Exception as failure_exc:
-                        raise WorkflowPersistenceError("Workflow journal failure could not be persisted.") from failure_exc
                 if category == "call_uncertain":
                     # 2026-11-05: 호출 기록은 미확정으로 보존하되 접근 거부 계약은 유지한다.
                     if isinstance(exc, AccessError):
@@ -130,12 +107,10 @@ class AgentWorkflow:
                 CURRENT_ATTEMPT.reset(attempt_token)
                 WORKFLOW_MESSAGES.reset(token)
             result["task_messages"] = {**state.get("task_messages", {}), **recorded}
-            try:
+            with persistence_boundary("Workflow journal could not be persisted.", passthrough=()):
                 self.journal.complete(ident, {"result": result, "evidence": self.evidence.to_dict(),
                                               "rubric_policy_version": POLICY_VERSION if rubric_stage else None,
                                               "documents": {k:v for k,v in self.writer.changed.items() if k != "state/provider_usage.json"}})
-            except Exception as exc:
-                raise WorkflowPersistenceError("Workflow journal could not be persisted.") from exc
         self.persist(name, {**state, **result})
         return result
 
@@ -148,15 +123,9 @@ class AgentWorkflow:
 
     def recover_rubric(self, graph, config, current, reason):
         """2026-11-05: checkpoint 초안과 확정 입력으로 복구 지문을 고정한다."""
-        from backend.errors import WorkflowPersistenceError
-        from backend.access.context import AccessError
         ledger_path = "state/rubric_recoveries.json"
-        try:
+        with persistence_boundary("Workflow recovery ledger could not be read."):
             ledger = self.writer.read_json(ledger_path) if self.writer.exists(ledger_path) else {"fingerprints": []}
-        except AccessError:
-            raise
-        except Exception as exc:
-            raise WorkflowPersistenceError("Workflow recovery ledger could not be read.") from exc
         fingerprints = ledger.get("fingerprints") if isinstance(ledger, dict) else None
         if (not isinstance(fingerprints, list) or any(not isinstance(x, str) or len(x) != 64
                 or any(c not in "0123456789abcdef" for c in x) for x in fingerprints)):
@@ -186,7 +155,7 @@ class AgentWorkflow:
         recovery_state = {**current, "pending_input": {"action": "rubric_recovery",
                             "reason": reason, "fingerprint": fingerprint}}
         prepared = prepare_segment(cast(WorkflowState, recovery_state))
-        try:
+        with persistence_boundary("Workflow recovery checkpoint could not be persisted."):
             # checkpoint 실패 후에도 동일 복구를 다시 소비하지 않도록 지문을 먼저 보존한다.
             self.writer.write_json(ledger_path, {"version": 1, "fingerprints": prepared["rubric_recoveries"]})
             self.persist("input", {**recovery_state, **prepared})
@@ -194,10 +163,6 @@ class AgentWorkflow:
                 # 후속 spec_compile 복구는 체크포인트가 가리키는 초안만 사용한다.
                 self.writer.write_text("draft/approval_candidate_spec.ko.md", spec, overwrite=True)
             graph.update_state(config, {**current, **prepared}, as_node="prepare")
-        except AccessError:
-            raise
-        except Exception as exc:
-            raise WorkflowPersistenceError("Workflow recovery checkpoint could not be persisted.") from exc
 
     def planner(self, state):
         safety_limit = state.get("remaining_steps", 128) <= 3
@@ -359,14 +324,7 @@ class AgentWorkflow:
                 self.progress, defer_completed=True)
         result = self.durable(action, state, operation)
         done = list(dict.fromkeys([*state.get("completed_tasks", []), action]))
-        invalidates = {
-            "interview": {"requirement_lock_stage", "spec_compile", "checklist_critic", "review_resolution", "compose_candidate"},
-            "requirement_lock_stage": {"spec_compile", "checklist_critic", "review_resolution", "compose_candidate"},
-            "checklist_critic": {"review_resolution", "compose_candidate"},
-        }
-        done = [name for name in done if name not in invalidates.get(action, set())]
-        if action == "spec_compile":
-            done = [name for name in done if name not in {"checklist_critic", "review_resolution", "compose_candidate"}]
+        done = [name for name in done if name not in COMPLETION_INVALIDATIONS.get(action, frozenset())]
         versions = list(state.get("document_versions", []))
         if action == "spec_compile":
             from backend.application.execution_history import ExecutionHistory
@@ -519,12 +477,11 @@ class AgentWorkflow:
             incoming = state.to_workflow_state()
             from backend.services.rubric import POLICY_VERSION
             old_policy = snapshot.values.get("rubric", {}).get("policy_version")
-            upgrade_recovery = (action == "retry" and old_policy is not None and old_policy != POLICY_VERSION
-                and not recovery["retry_requires_replay"]
-                and snapshot.next)
-            if upgrade_recovery:
+            upgrade_reason = retry_upgrade_reason(action, old_policy, POLICY_VERSION,
+                recovery["retry_requires_replay"] if action == "retry" else False, bool(snapshot.next))
+            if upgrade_reason:
                 # 미확정 호출은 위의 원래 재실행 보호를 유지한다. 완료 여부가 확정된 구형 단계만 새 평가로 전환한다.
-                self.recover_rubric(graph, config, dict(snapshot.values), "rubric_input_changed")
+                self.recover_rubric(graph, config, dict(snapshot.values), upgrade_reason)
                 inputs: Command | dict | None = None
             elif snapshot.values and snapshot.next:
                 if any(task.interrupts for task in snapshot.tasks):
@@ -548,11 +505,9 @@ class AgentWorkflow:
             try:
                 graph.invoke(inputs, config=config, durability="sync")
             except Exception as exc:
-                from backend.errors import ReviewValidationError
-                if (not isinstance(exc, ReviewValidationError) or exc.failed_checks != ["rubric_stale"]
-                        or exc.validation_reason == "recovery_exhausted"):
+                reason = failed_review_recovery_reason(exc)
+                if reason is None:
                     raise
-                reason = exc.validation_reason or "rubric_input_changed"
                 self.recover_rubric(graph, config, dict(graph.get_state(config).values), reason)
                 graph.invoke(None, config=config, durability="sync")
             final = State.from_workflow_state(graph.get_state(config).values)

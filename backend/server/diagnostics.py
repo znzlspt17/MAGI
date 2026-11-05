@@ -6,6 +6,7 @@ from typing import Any
 from protocol.diagnostics import traceback_frames as _traceback_frames
 from backend.server.cleanup import CleanupConflict
 from backend.services.diagnostic_context import safe_review_context
+from backend.services.failure_policy import diagnostic_category
 
 from backend.errors import (
     ArtifactError,
@@ -15,8 +16,6 @@ from backend.errors import (
     RequirementNormalizationError,
     ReviewValidationError,
     SpecCompilationError,
-    WorkflowPersistenceError,
-    WorkflowExecutionUncertain,
 )
 
 
@@ -97,19 +96,7 @@ def diagnose_exception(exc: BaseException) -> dict[str, Any]:
     normalization = _normalization_error(chain)
     review = next((item for item in chain if isinstance(item, ReviewValidationError)), None)
     reason = getattr(review, "validation_reason", None)
-    persistence = any(isinstance(item, WorkflowPersistenceError) for item in chain)
-    uncertain_messages = {
-        "이전 작업 호출의 완료 여부를 확인할 수 없습니다. 호출 반복 가능성에 동의한 뒤 미완료 단계를 다시 실행하세요.",
-        "이전 OpenAI 호출의 완료 여부를 확인할 수 없습니다. 호출 반복 가능성에 동의한 뒤 다시 실행하세요.",
-        "OpenAI 대화 생성 완료 여부를 확인할 수 없습니다. 자동 재생성을 중단했습니다.",
-        "OpenAI 대화 초기 문맥 저장 완료 여부를 확인할 수 없습니다. 자동 반복을 중단했습니다.",
-        "OpenAI 대화 초기화 완료 여부를 확인할 수 없어 자동 반복을 중단했습니다.",
-    }
-    uncertain = any(isinstance(item, WorkflowExecutionUncertain) or
-                    (isinstance(item, (InvalidStateError, Error)) and len(item.args) == 1
-                     and isinstance(item.args[0], str) and item.args[0] in uncertain_messages) for item in chain)
-    from backend.infrastructure.output_language import OutputLanguageError
-    invalid_response = any(isinstance(item, (RequirementNormalizationError, SpecCompilationError, OutputLanguageError)) for item in chain)
+    category = diagnostic_category(chain)
     return {
         "reason": (
             normalization["reason"]
@@ -128,14 +115,13 @@ def diagnose_exception(exc: BaseException) -> dict[str, Any]:
         "http_status": _http_status(chain),
         "frames": _traceback_frames(exc),
         **_block_diagnostic(chain),
-        **({"category": "response_invalid"} if invalid_response else {}),
-        **({"category": "prerequisite_stale" if "rubric_stale" in review.failed_checks else "response_invalid",
-            "validation_reason": reason or review.failed_checks[0],
+        **({"category": category} if category else {}),
+        **({"validation_reason": reason or review.failed_checks[0],
             "context": safe_review_context(review.validation_context)} if review is not None else {}),
-        **({"category": "persistence_failed", "error_code": "WORKFLOW_PERSISTENCE_FAILED",
-            "reason": "작업 결과 저장을 확인하지 못해 중단했습니다. 저장 상태를 확인한 뒤 다시 시도하세요."} if persistence else {}),
-        **({"category": "execution_uncertain", "error_code": "EXECUTION_UNCERTAIN",
-            "reason": "이전 호출의 완료 여부를 확인할 수 없습니다. 재실행 전 호출 반복 가능성을 확인하세요."} if uncertain else {}),
+        **({"error_code": "WORKFLOW_PERSISTENCE_FAILED",
+            "reason": "작업 결과 저장을 확인하지 못해 중단했습니다. 저장 상태를 확인한 뒤 다시 시도하세요."} if category == "persistence_failed" else {}),
+        **({"error_code": "EXECUTION_UNCERTAIN",
+            "reason": "이전 호출의 완료 여부를 확인할 수 없습니다. 재실행 전 호출 반복 가능성을 확인하세요."} if category == "execution_uncertain" else {}),
     }
 
 

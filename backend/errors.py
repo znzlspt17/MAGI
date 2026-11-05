@@ -22,6 +22,12 @@ class ArtifactError(Error):
     """Raised when artifact persistence fails."""
 
 
+class OutputLanguageError(Error):
+    def __init__(self, details):
+        super().__init__("Output language validation failed.")
+        self.validation_details = details
+
+
 class InvalidStateError(Error):
     """Raised when a saved run state is malformed or not ready."""
 

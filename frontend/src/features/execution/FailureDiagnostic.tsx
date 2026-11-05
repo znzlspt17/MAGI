@@ -30,17 +30,12 @@ const reasons: Record<string, string> = {
   rubric_schema: "검토 기준의 형식을 확인하지 못했습니다.",
   recovery_exhausted: "같은 상태 불일치가 복구 후에도 반복되었습니다.",
 };
-const impact: Record<string, string> = {
-  response_invalid: "검증되지 않은 검토 결과로 명세를 진행하지 않았습니다.",
-  prerequisite_stale: "현재 입력에 맞는 검토를 확인하기 전까지 작업을 중단했습니다.",
-  execution_uncertain: "이전 외부 호출의 완료 여부를 확인하지 못해 자동 반복을 중단했습니다.",
-  persistence_failed: "처리 결과의 저장 완료 여부를 확인하지 못했습니다.",
-};
-const nextCheck: Record<string, string> = {
-  response_invalid: "실행 이력에서 자동 보정 경과와 검증 실패 항목을 확인하세요.",
-  prerequisite_stale: "실행 이력에서 선행 자료와 복구 경과를 확인하세요.",
-  execution_uncertain: "호출 반복에 대한 동의 여부를 확인하세요.",
-  persistence_failed: "실행 이력과 저장 상태를 확인하세요.",
+// 2026-11-05: 분류별 영향과 다음 확인은 함께 변경되는 표시 정책이다.
+const categoryPolicy: Record<NonNullable<FailureDiagnosticData["category"]>, { impact: string; nextCheck: string }> = {
+  response_invalid: { impact: "검증되지 않은 검토 결과로 명세를 진행하지 않았습니다.", nextCheck: "실행 이력에서 자동 보정 경과와 검증 실패 항목을 확인하세요." },
+  prerequisite_stale: { impact: "현재 입력에 맞는 검토를 확인하기 전까지 작업을 중단했습니다.", nextCheck: "실행 이력에서 선행 자료와 복구 경과를 확인하세요." },
+  execution_uncertain: { impact: "이전 외부 호출의 완료 여부를 확인하지 못해 자동 반복을 중단했습니다.", nextCheck: "호출 반복에 대한 동의 여부를 확인하세요." },
+  persistence_failed: { impact: "처리 결과의 저장 완료 여부를 확인하지 못했습니다.", nextCheck: "실행 이력과 저장 상태를 확인하세요." },
 };
 
 function explanation(value: FailureDiagnosticData) {
@@ -59,13 +54,14 @@ export function FailureDiagnostic({ value, fallbackStage, recovered = false }: {
   if (!value) return null;
   const stage = value.error_stage || fallbackStage;
   const reason = explanation(value);
+  const policy = value.category ? categoryPolicy[value.category] : undefined;
   return <section aria-label={recovered ? "보정 경과" : "실패 진단"} className="failure-diagnostic">
     <h3>{recovered ? "보정 경과" : "실패 진단"}</h3>
     {recovered ? <p>자동 보정 후 단계가 완료되었습니다.</p> : <>
       {stage && <p><strong>실패 단계: </strong>{stageLabel({ id: "", stage })}</p>}
       <p><strong>확인하지 못한 내용: </strong>{reason || "상세 원인이 기록되지 않았거나 확인되지 않았습니다."}</p>
-      {value.category && impact[value.category] && <p><strong>영향: </strong>{impact[value.category]}</p>}
-      <p><strong>다음 확인: </strong>{nextCheck[value.category || ""] || "실행 이력에서 실패 단계와 보정 경과를 확인하세요."}</p>
+      {policy && <p><strong>영향: </strong>{policy.impact}</p>}
+      <p><strong>다음 확인: </strong>{policy?.nextCheck || "실행 이력에서 실패 단계와 보정 경과를 확인하세요."}</p>
     </>}
     <details><summary>기술 진단 상세</summary>
       {value.error_code && <p>{value.error_code}</p>}

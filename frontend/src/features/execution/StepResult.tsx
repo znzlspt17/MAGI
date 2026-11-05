@@ -3,6 +3,7 @@ import { ResearchResult } from "./ExecutionTimeline";
 import { questionDetails } from "../conversation/QuestionActions";
 import { StopDiagnostic } from "./StopDiagnostic";
 import { FailureDiagnostic } from "./FailureDiagnostic";
+import { DetailNotices } from "./DetailNotices";
 import type { Step } from "../../shared/types";
 import type { StepDetail } from "./execution-detail";
 
@@ -38,12 +39,7 @@ export function StepResult({ node, detail, hideQuestions = false }: { node?: Ste
       </section>}
       {result.wait_reason && <p><strong>중단·대기 사유: </strong>{result.wait_reason}</p>}
       <FailureDiagnostic value={result.diagnostic} fallbackStage={node?.stage} recovered={(node?.status || detail.status) === "completed"} />
-      {detail.recording_incomplete && (
-        <Notice>
-          일부 상세 기록이 누락되었습니다. 표시 가능한 결과만 제공합니다.
-        </Notice>
-      )}
-      {detail.response_incomplete && <Notice>일부 응답을 해석하지 못했습니다. 확인 가능한 결과만 표시합니다.</Notice>}
+      <DetailNotices detail={detail} />
       {content.kind !== "research" && !misleadingFailure && summary !== result.wait_reason && <p>{["단계를 완료했습니다.", "사용자 작업을 접수했습니다."].includes(summary) ? "상세 결과 기록 없음" : summary || "상세 결과 기록 없음"}</p>}
       {content.kind === "research" && <ResearchResult research={content.research} />}
       {result.purpose && <p>{result.purpose}</p>}

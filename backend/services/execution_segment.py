@@ -1,6 +1,7 @@
 """사용자 입력에 따른 실행 구간 상태 전환. 저장과 모델 호출은 하지 않는다."""
 from backend.models import WorkflowState
 from typing import TypedDict
+from backend.services.review_transitions import COMPILATION_REVIEW_TASKS, recovery_invalidated_tasks
 
 
 class ReviewBudget(TypedDict):
@@ -38,10 +39,8 @@ def prepare_segment(state: WorkflowState) -> WorkflowState:
         history = state.get("rubric_recoveries", [])
         if not isinstance(fingerprint, str) or fingerprint in history:
             raise invalid("rubric_stale", stage="checklist_critic", reason="recovery_exhausted")
-        rebuild = reason == "rubric_input_changed"
-        invalidated = {"checklist_critic", "review_resolution", "compose_candidate"}
-        if rebuild:
-            invalidated.add("spec_compile")
+        invalidated = recovery_invalidated_tasks(reason)
+        rebuild = "spec_compile" in invalidated
         result["completed_tasks"] = [name for name in done if name not in invalidated]
         result["rubric_recoveries"] = [*history, fingerprint]
         result["rubric_recovery_pending"] = rebuild
@@ -64,16 +63,14 @@ def prepare_segment(state: WorkflowState) -> WorkflowState:
         result["refinement"] = {**previous, "round": 0, "stale": 0,
             "cycle": previous["cycle"] + 1, "termination": "", "selected": False, "last_token": ""}
         result["approval_acceptance"] = {}
-        result["completed_tasks"] = [name for name in done if name not in {
-            "spec_compile", "checklist_critic", "review_resolution", "compose_candidate"}]
+        result["completed_tasks"] = [name for name in done if name not in COMPILATION_REVIEW_TASKS]
     if action in {"generate", "answer", "revise", "message", "retry"} and state.get("requirement_lock_sheet"):
         from backend.models import RequirementLockSheet
         from backend.services.rubric import current_record
         sheet = RequirementLockSheet.from_dict(state["requirement_lock_sheet"])
         if not current_record(state.get("rubric", {}), sheet, state):
             # 구형 작업의 완료 표시는 새 정책의 생성·검토를 대신하지 못한다.
-            result["completed_tasks"] = [name for name in done if name not in {
-                "spec_compile", "checklist_critic", "review_resolution", "compose_candidate"}]
+            result["completed_tasks"] = [name for name in done if name not in COMPILATION_REVIEW_TASKS]
             result["rubric_evaluation"] = {}
             result["rubric_summary"] = {}
             result["refinement"] = {}
