@@ -111,6 +111,7 @@ export default function Workspace() {
           : j.status === filter)),
   );
   const actualJob = job?.id === id ? job : null;
+  const retryStatus = actualJob && ["error", "interrupted"].includes(actualJob.status) && actualJob.execution_id && node?.execution_id === actualJob.execution_id ? actualJob : undefined;
   const result = detail?.result || {};
   const showConversation = () => setTab("conversation");
   const mainRef = useRef<HTMLElement>(null);
@@ -127,8 +128,8 @@ export default function Workspace() {
   </TabsList></Tabs> : null;
   const selectedDetail = () => actualJob ? <>
     {tab !== "history" && detail?.document?.content && <StopDiagnostic value={result.stop_diagnostic} />}
-    {tab !== "history" && detail?.document?.content && ["failed", "error"].includes(node?.status || "") && <FailureDiagnostic value={result.diagnostic} fallbackStage={node?.stage} />}
-    {tab === "history" && detail && !detail.unavailable && <StepResult node={node} detail={detail} />}
+    {tab !== "history" && detail?.document?.content && ["failed", "error"].includes(node?.status || "") && <FailureDiagnostic value={result.diagnostic} fallbackStage={node?.stage} retry={retryStatus} />}
+    {tab === "history" && detail && !detail.unavailable && <StepResult node={node} detail={detail} retry={retryStatus} />}
     {detail?.unavailable ? (
       <Notice>기록 확인 불가: {detail.message}</Notice>
     ) : !detail ? (
@@ -153,7 +154,7 @@ export default function Workspace() {
         }}
       />
     ) : tab !== "history" ? (
-      <StepResult node={node} detail={detail} hideQuestions={!!actualJob.session_events?.find(event => event.id === node?.execution_id)?.questions?.length && JSON.stringify(actualJob.session_events?.find(event => event.id === node?.execution_id)?.questions) === JSON.stringify(detail?.result?.questions || detail?.result?.blocking_questions || [])} />
+      <StepResult node={node} detail={detail} retry={retryStatus} hideQuestions={!!actualJob.session_events?.find(event => event.id === node?.execution_id)?.questions?.length && JSON.stringify(actualJob.session_events?.find(event => event.id === node?.execution_id)?.questions) === JSON.stringify(detail?.result?.questions || detail?.result?.blocking_questions || [])} />
     ) : null}
     {(result.issues?.length ||
       result.resolved_issues?.length ||

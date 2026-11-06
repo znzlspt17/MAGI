@@ -44,6 +44,16 @@ _REVIEW_GUIDANCE = {
 }
 _REVIEW_FALLBACK = "제공된 검토 계약을 만족하는 완전한 응답을 반환하세요."
 
+# 2026-11-06: 같은 검증 항목이라도 실제 실패한 계약을 알려 보정의 모호함을 줄인다.
+_RUBRIC_BASIS_GUIDANCE = {
+    "requirement_unknown": "requirement_id에는 제공된 확정 요구사항 목록의 ID만 사용하세요.",
+    "condition_missing": "각 condition에 비어 있지 않은 검사 조건을 작성하세요.",
+    "section_invalid": "sections에는 중복 없이 제공된 허용 섹션만 사용하세요.",
+    "importance_invalid": "optional 또는 recommended 요구사항의 importance는 secondary를 사용하세요.",
+    "basis_reference_invalid": "basis의 reference에 해당 requirement_id를 반드시 포함하고, 추가 근거는 confirmed_basis에 존재하는 같은 ID의 .original_text만 사용하세요.",
+    "basis_quote_not_found": "각 basis의 quote는 해당 reference의 confirmed_basis 값에 포함된 비어 있지 않은 정확한 부분 문자열을 사용하세요.",
+}
+
 
 def attempt_limit():
     return 1 if CURRENT_RETRY.get() is not None else MAX_RETRIES + 1
@@ -57,6 +67,9 @@ def retry_messages(messages, *, stage, attempt, error):
     checks = ([check for check in error.failed_checks if isinstance(check, str)
                and check in ReviewValidationError.checks] if review else [])
     guidance = [_REVIEW_GUIDANCE.get(check, _REVIEW_FALLBACK) for check in checks]
+    if review and "rubric_basis" in checks and error.validation_reason in _RUBRIC_BASIS_GUIDANCE:
+        guidance = [_RUBRIC_BASIS_GUIDANCE[error.validation_reason] if check == "rubric_basis"
+                    else _REVIEW_GUIDANCE.get(check, _REVIEW_FALLBACK) for check in checks]
     if review and not guidance:
         guidance = [_REVIEW_FALLBACK]
     payload = {

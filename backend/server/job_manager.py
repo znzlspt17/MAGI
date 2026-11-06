@@ -225,6 +225,10 @@ class JobManager:
                 validation_section=diagnostic["validation_section"],
                 validation_index=diagnostic["validation_index"],
                 validation_field=diagnostic["validation_field"],
+                validation_requirement_id=diagnostic.get("context", {}).get("requirement_id"),
+                validation_rubric_id=diagnostic.get("context", {}).get("rubric_id"),
+                attempt=getattr(exc, "validation_attempt", None),
+                max_attempts=getattr(exc, "validation_max_attempts", None),
             )
         with self.lock, self.knowledge.store.transaction():
             job.update(status=status, message=message, updated_at=_utc_now())

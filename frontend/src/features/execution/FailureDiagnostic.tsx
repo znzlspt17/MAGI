@@ -1,4 +1,5 @@
 import type { FailureDiagnosticData } from "./execution-detail";
+import type { Job } from "../../shared/types";
 import { stageLabel } from "./step-view";
 
 // 2026-11-05: 서버가 검증한 코드만 설명하고 알 수 없는 세부 사유는 추측하지 않는다.
@@ -50,17 +51,27 @@ function Context({ value }: { value: NonNullable<FailureDiagnosticData["context"
     {value.actual_count !== undefined && <p>확인된 개수: {value.actual_count}</p>}</>;
 }
 
-export function FailureDiagnostic({ value, fallbackStage, recovered = false }: { value?: FailureDiagnosticData; fallbackStage?: string; recovered?: boolean }) {
+type RetryStatus = Pick<Job, "can_retry" | "retry_requires_replay" | "retry_unavailable_reason">;
+
+export function FailureDiagnostic({ value, fallbackStage, recovered = false, retry }: { value?: FailureDiagnosticData; fallbackStage?: string; recovered?: boolean; retry?: RetryStatus }) {
   if (!value) return null;
   const stage = value.error_stage || fallbackStage;
   const reason = explanation(value);
   const policy = value.category ? categoryPolicy[value.category] : undefined;
+  // 2026-11-06: 이전 기록이 부분적으로 누락되면 시도 횟수를 추정하지 않는다.
+  const attempts = value.attempts;
+  const completeAttempts = attempts?.length && attempts.every((entry, index) => entry.attempt === index + 1);
   return <section aria-label={recovered ? "보정 경과" : "실패 진단"} className="failure-diagnostic">
     <h3>{recovered ? "보정 경과" : "실패 진단"}</h3>
     {recovered ? <p>자동 보정 후 단계가 완료되었습니다.</p> : <>
       {stage && <p><strong>실패 단계: </strong>{stageLabel({ id: "", stage })}</p>}
       <p><strong>확인하지 못한 내용: </strong>{reason || "상세 원인이 기록되지 않았거나 확인되지 않았습니다."}</p>
+      {value.context && <Context value={value.context} />}
+      {completeAttempts && <p><strong>처리 경과: </strong>검증 {attempts.length}회 · 자동 보정 {attempts.length - 1}회</p>}
+      {!completeAttempts && <p><strong>처리 경과: </strong>검증 및 자동 보정 횟수를 확인할 수 없습니다.</p>}
       {policy && <p><strong>영향: </strong>{policy.impact}</p>}
+      {retry?.can_retry === true && <p><strong>다시 시도: </strong>{retry.retry_requires_replay ? "호출 반복 가능성 확인 후 다시 시도할 수 있습니다." : "저장된 답변을 유지하고 다시 시도할 수 있습니다."}</p>}
+      {retry?.can_retry === false && <p><strong>다시 시도: </strong>{retry.retry_unavailable_reason || "현재 다시 시도할 수 없습니다."}</p>}
       <p><strong>다음 확인: </strong>{policy?.nextCheck || "실행 이력에서 실패 단계와 보정 경과를 확인하세요."}</p>
     </>}
     <details><summary>기술 진단 상세</summary>
@@ -72,7 +83,6 @@ export function FailureDiagnostic({ value, fallbackStage, recovered = false }: {
       {value.validation_section && <p>섹션: {value.validation_section}</p>}
       {value.validation_field && <p>필드: {value.validation_field}</p>}
       {value.validation_index !== undefined && <p>위치: {value.validation_index}</p>}
-      {value.context && <Context value={value.context} />}
       {!!value.attempts?.length && <ol aria-label="보정 시도 이력">{value.attempts.map((attempt, index) => <li key={`${attempt.attempt ?? "unknown"}-${index}`}>
         <p>{attempt.attempt !== undefined ? `${attempt.attempt}회차` : "시도 횟수 기록 없음"}{attempt.validation_reason && reasons[attempt.validation_reason] ? ` · ${reasons[attempt.validation_reason]}` : ""}</p>
         {attempt.error_code && <p>오류 코드: {attempt.error_code}</p>}

@@ -4,17 +4,18 @@ import { questionDetails } from "../conversation/QuestionActions";
 import { StopDiagnostic } from "./StopDiagnostic";
 import { FailureDiagnostic } from "./FailureDiagnostic";
 import { DetailNotices } from "./DetailNotices";
-import type { Step } from "../../shared/types";
+import type { Job, Step } from "../../shared/types";
 import type { StepDetail } from "./execution-detail";
 
 import { stageLabel, stepContent, requirementGroups } from "./step-view";
 export { stageLabel } from "./step-view";
 
-export function StepResult({ node, detail, hideQuestions = false }: { node?: Step; detail: StepDetail; hideQuestions?: boolean }) {
+export function StepResult({ node, detail, hideQuestions = false, retry }: { node?: Step; detail: StepDetail; hideQuestions?: boolean; retry?: Pick<Job, "can_retry" | "retry_requires_replay" | "retry_unavailable_reason"> }) {
   const result = detail.result || {};
   const groups = requirementGroups(result);
   const content = stepContent(node, detail);
   const summary = result.summary || node?.summary || "";
+  const genericSummary = !summary || ["단계를 완료했습니다.", "사용자 작업을 접수했습니다."].includes(summary);
   const misleadingFailure = ["failed", "error"].includes(node?.status || detail.status || "") &&
     ["검토 결과를 저장했습니다.", "단계를 완료했습니다.", "재시도를 완료했습니다."].includes(summary);
   return (
@@ -38,9 +39,9 @@ export function StepResult({ node, detail, hideQuestions = false }: { node?: Ste
         {result.rubric_summary.status === "evaluated" && <p>충족 {result.rubric_summary.PASS} · 미충족 {result.rubric_summary.FAIL} · 판단 불가 {result.rubric_summary.UNDETERMINED}</p>}
       </section>}
       {result.wait_reason && <p><strong>중단·대기 사유: </strong>{result.wait_reason}</p>}
-      <FailureDiagnostic value={result.diagnostic} fallbackStage={node?.stage} recovered={(node?.status || detail.status) === "completed"} />
+      <FailureDiagnostic value={result.diagnostic} fallbackStage={node?.stage} recovered={(node?.status || detail.status) === "completed"} retry={retry} />
       <DetailNotices detail={detail} />
-      {content.kind !== "research" && !misleadingFailure && summary !== result.wait_reason && <p>{["단계를 완료했습니다.", "사용자 작업을 접수했습니다."].includes(summary) ? "상세 결과 기록 없음" : summary || "상세 결과 기록 없음"}</p>}
+      {content.kind !== "research" && !misleadingFailure && summary !== result.wait_reason && (!genericSummary || !result.diagnostic) && <p>{genericSummary ? "상세 결과 기록 없음" : summary}</p>}
       {content.kind === "research" && <ResearchResult research={content.research} />}
       {result.purpose && <p>{result.purpose}</p>}
       {result.request && <p>{result.request}</p>}

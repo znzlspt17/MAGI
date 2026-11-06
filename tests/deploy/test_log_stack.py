@@ -37,7 +37,7 @@ def test_log_stack_persistence_and_recovery(tmp_path):
     config["services"]["victorialogs"]["ports"] = ["127.0.0.1:0:9428"]
     fixture = {"image": "busybox:1.37.0", "networks": ["logs"], "logging": {"driver": "local", "options": {"max-size": "20k", "max-file": "3"}}}
     config["services"]["app"] = {**fixture, "container_name": app, "labels": {"dev.magi.logs": "true", "dev.magi.service": "backend"},
-                                     "command": ["sh", "-c", 'while :; do echo \'{"level":"info","message":"fixture-event","validation_reason":"duplicate_item_id","validation_section":"background","validation_index":0,"validation_field":"item_id"}\'; sleep 1; done']}
+                                     "command": ["sh", "-c", 'while :; do echo \'{"level":"info","message":"fixture-event","validation_reason":"duplicate_item_id","validation_section":"background","validation_index":0,"validation_field":"item_id","validation_requirement_id":"REQ-001","validation_rubric_id":"RUB-001","attempt":4,"max_attempts":4}\'; sleep 1; done']}
     config["services"]["postgres"] = {**fixture, "container_name": postgres, "command": ["sh", "-c", "while :; do echo 'LOG: database system is ready to accept connections'; sleep 1; done"]}
     compose = tmp_path / "compose.yaml"
     compose.write_text(yaml.safe_dump(config, allow_unicode=True), encoding="utf-8")
@@ -67,6 +67,9 @@ def test_log_stack_persistence_and_recovery(tmp_path):
         first = eventually(rows)
         assert first[0]["validation_field"] == "item_id"
         assert first[0]["validation_reason"] == "duplicate_item_id"
+        assert first[0]["validation_requirement_id"] == "REQ-001"
+        assert first[0]["validation_rubric_id"] == "RUB-001"
+        assert int(first[0]["attempt"]) == int(first[0]["max_attempts"]) == 4
         first_container = first[0]["container_id"]
         run("up", "-d", "--force-recreate", "app")
         eventually(lambda: any(row.get("container_id") != first_container for row in rows()))

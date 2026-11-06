@@ -6,6 +6,43 @@ import { StepResult } from "@/features/workspace/Workspace";
 
 afterEach(cleanup);
 
+it("명세 생성 안의 검토 기준 실패와 보정 횟수를 기본 화면에 표시한다", () => {
+  render(<StepResult node={{ id: "failed", stage: "spec_compile", status: "failed" }} detail={{ result: { diagnostic: {
+    error_stage: "rubric_generate", validation_reason: "basis_quote_not_found", context: { requirement_id: "REQ-1" },
+    attempts: [1, 2, 3, 4].map(attempt => ({ attempt })),
+  } } }} />);
+  expect(screen.getByText(/실패 단계:/).parentElement).toHaveTextContent("검토 기준 생성");
+  expect(screen.getByText(/검토 기준의 근거 인용을 확정 요구사항에서 찾지 못했습니다/)).toBeVisible();
+  expect(screen.getByText("요구사항 참조: REQ-1")).toBeVisible();
+  expect(screen.getByText(/검증 4회 · 자동 보정 3회/)).toBeVisible();
+  expect(screen.queryByText("상세 결과 기록 없음")).not.toBeInTheDocument();
+});
+
+it("불완전한 과거 보정 기록의 횟수를 추측하지 않는다", () => {
+  render(<StepResult node={{ id: "failed", status: "failed" }} detail={{ result: { diagnostic: {
+    attempts: [{ attempt: 2 }],
+  } } }} />);
+  expect(screen.queryByText(/검증 \d+회 · 자동 보정/)).not.toBeInTheDocument();
+  expect(screen.getByText(/검증 및 자동 보정 횟수를 확인할 수 없습니다/)).toBeVisible();
+});
+
+it("현재 실행의 서버 재시도 판정과 호출 반복 가능성을 표시한다", () => {
+  const detail = { result: { diagnostic: { validation_reason: "basis_reference_invalid" } } };
+  const view = render(<StepResult node={{ id: "failed", status: "failed" }} detail={detail} retry={{ can_retry: true }} />);
+  expect(screen.getByText(/저장된 답변을 유지하고 다시 시도할 수 있습니다/)).toBeVisible();
+  view.rerender(<StepResult node={{ id: "failed", status: "failed" }} detail={detail} retry={{ can_retry: true, retry_requires_replay: true }} />);
+  expect(screen.getByText(/호출 반복 가능성 확인 후 다시 시도할 수 있습니다/)).toBeVisible();
+  view.rerender(<StepResult node={{ id: "failed", status: "failed" }} detail={detail} retry={{ can_retry: false, retry_unavailable_reason: "저장된 기록이 없습니다." }} />);
+  expect(screen.getByText(/저장된 기록이 없습니다/)).toBeVisible();
+});
+
+it("진단이 있는 실패에 관례적인 요약이 있더라도 빈 결과 문구를 표시하지 않는다", () => {
+  render(<StepResult node={{ id: "failed", status: "failed", summary: "사용자 작업을 접수했습니다." }} detail={{ result: {
+    diagnostic: { validation_reason: "basis_quote_not_found" },
+  } }} />);
+  expect(screen.queryByText("상세 결과 기록 없음")).not.toBeInTheDocument();
+});
+
 it("루브릭 생성 상태와 항목별 판정 집계를 표시한다", () => {
   render(<StepResult node={{ id: "review", stage: "checklist_critic" }} detail={{ result: {
     rubric_summary: { status: "evaluated", policy_version: 1, item_count: 4, PASS: 2, FAIL: 1, UNDETERMINED: 1 },

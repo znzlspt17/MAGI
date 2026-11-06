@@ -101,6 +101,16 @@ def test_shared_question_advice_does_not_become_confirmation():
     assert "질문과 decision_form" in text
 
 
+def test_interview_instructions_focus_on_agent_implementation_decisions():
+    text = assembled_instructions()["interview"]
+    assert "코딩 에이전트가 개발을 진행할 구현 명세" in text
+    assert "팀 규모·개발 경험·개발 일정·제작 예산" in text
+    assert "일반적인 필수 질문으로 묻거나 명세 작성을 막지 마세요" in text
+    assert "기능·품질·배포·완료 기준" in text
+    assert "사용자가 명시한" in text and "운영 비용" in text
+    assert "AI 제품이라고 가정하지 말고" in text
+
+
 def test_retry_keeps_one_language_contract_without_changing_retry_budget():
     from backend.infrastructure.output_language import LANGUAGE_RULES, OutputLanguageError
     from backend.infrastructure.stage_retry import retry_messages, MAX_RETRIES

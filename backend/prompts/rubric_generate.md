@@ -10,5 +10,7 @@
 ## 출력
 제공된 items 스키마만 반환하세요. 각 항목은 고유하고 안정적인 RUB-* rubric_id, requirement_id, importance, category, condition, basis와 sections를 가집니다. condition은 한국어로 작성한 하나의 검사 조건입니다. basis는 해당 요구사항 ID를 직접 인용하는 reference/quote 쌍을 포함하며 연결된 원문 인용은 보조 근거로 사용합니다. sections에는 제공된 명세의 해당 섹션 필드 이름을 나열하세요.
 
+각 basis의 reference는 confirmed_basis에 존재해야 합니다. requirement_id 자체를 reference로 반드시 포함하고 보조 근거는 동일 ID의 .original_text만 사용하세요. quote는 해당 reference의 confirmed_basis 값에 그대로 포함된 비어 있지 않은 정확한 부분 문자열이어야 합니다. 내용을 바꾸거나 요약하지 마세요.
+
 ## 예외
 의무나 선호 아키텍처를 추가하거나, 명시되지 않은 중요한 결정을 선택하거나, 가정을 요구사항으로 승격하지 마세요. MAGI workflow, 정책과 WF-* 참조를 제외하세요. 검사 조건만 반환하고 점수, 판정, 명세 초안, 질문 또는 실행 결과는 반환하지 마세요.

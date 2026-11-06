@@ -88,5 +88,5 @@ def test_workflows_call_release_api_without_cli():
             elif body is not None:
                 body.append(line)
         assert body is None
-    assert blocks == 5
+    assert blocks == 6
     assert imported == {"release_inputs", "smoke", "summarize_scans", "publish"}

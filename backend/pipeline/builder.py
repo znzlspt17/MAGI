@@ -24,6 +24,9 @@ def _stage(name: str, node, callback, *, defer_completed: bool = False):
                 from backend.server.diagnostics import diagnose_exception
                 diagnostic = diagnose_exception(exc)
                 if retryable:
+                    # 2026-11-06: 최종 오류 로그에도 실제 보정 시도 횟수를 전파한다.
+                    setattr(exc, "validation_attempt", attempt + 1)
+                    setattr(exc, "validation_max_attempts", MAX_RETRIES + 1)
                     # 원문 대신 허용된 검증 코드만 남겨 반복 실패 원인을 구분한다.
                     get_logger("backend.server").warning(
                         "stage_validation_failed", stage=name, attempt=attempt + 1,
@@ -34,6 +37,8 @@ def _stage(name: str, node, callback, *, defer_completed: bool = False):
                         validation_section=diagnostic["validation_section"],
                         validation_index=diagnostic["validation_index"],
                         validation_field=diagnostic["validation_field"],
+                        validation_requirement_id=diagnostic.get("context", {}).get("requirement_id"),
+                        validation_rubric_id=diagnostic.get("context", {}).get("rubric_id"),
                     )
                 if not retryable or attempt == MAX_RETRIES:
                     _progress(

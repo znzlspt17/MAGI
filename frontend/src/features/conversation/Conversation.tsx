@@ -83,7 +83,7 @@ function ConversationContent({ job, select, onAction, busy, draftKey, failureDet
             <MessageScrollerItem messageId="current-state"><ExecutionMonitor job={job} select={select} /></MessageScrollerItem>
             {job.status === "error" && failureDetail && <MessageScrollerItem messageId="failure-diagnostic">
               {failureDetail.unavailable && <Notice>실패 상세를 불러오지 못했습니다. 화면을 새로고침해 다시 확인하세요.</Notice>}
-              <FailureDiagnostic value={failureDetail.result?.diagnostic} />
+              <FailureDiagnostic value={failureDetail.result?.diagnostic} retry={job} />
               <DetailNotices detail={failureDetail} />
             </MessageScrollerItem>}
             <MessageScrollerItem messageId="current-actions"><Message align="start" className="chat-turn magi"><MessageContent><QuestionActions key={job.id} job={job} onAction={onAction} busy={busy} conversational controlsTarget={controlsTarget} onAppendFeedback={appendMessage} onReview={reviewStep ? () => select(reviewStep) : undefined} onRequirementReview={reviewStep ? () => select(reviewStep, true) : undefined} /></MessageContent></Message></MessageScrollerItem>
