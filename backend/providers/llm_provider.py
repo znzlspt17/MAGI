@@ -16,7 +16,7 @@ from pydantic import BaseModel, ValidationError
 from backend.errors import Error, MissingCredentialError, ReviewValidationError
 from backend.infrastructure.cache_diagnostics import safe_response_id, safe_diagnostics
 from backend.models import CompletionResult, RubricResponse, ReviewResponse
-from backend.model_policy import require_model, MAX_OUTPUT_TOKENS, SERVICE_TIER
+from backend.model_policy import require_model, MAX_OUTPUT_TOKENS, SERVICE_TIER, request_settings
 from backend.infrastructure.model_usage import UsageObservation
 from backend.infrastructure.conversation_state import valid_conversation_id
 
@@ -60,6 +60,9 @@ class ChatModelProvider:
         cache_key: str | None = None,
         conversation_id: str,
         before_request=None,
+        stage: str = "unknown",
+        tools: list[dict] | None = None,
+        tool_choice: str = "auto",
     ) -> CompletionResult:
         require_model(model)
         if not valid_conversation_id(conversation_id):
@@ -71,6 +74,9 @@ class ChatModelProvider:
             "timeout": 300, "max_tokens": MAX_OUTPUT_TOKENS,
             "service_tier": SERVICE_TIER, "truncation": "disabled",
         }
+        settings = request_settings(stage)
+        options["reasoning"] = settings["reasoning"]
+        options["verbosity"] = settings["verbosity"]
         if self.api_key is not None:
             options["api_key"] = self.api_key
         if temperature is not None and not re.match(r"^gpt-(?:5|6)(?:[.-]|$)", model, re.I):
@@ -97,8 +103,10 @@ class ChatModelProvider:
                     data["original_user_request_from"] = "Initial conversation user message (immutable)"
                     item["content"] = json.dumps(data, ensure_ascii=False)
         if instructions is not None:
-            inputs = [{"role": "developer", "content": instructions},
-                      *(item for item in inputs if item.get("role") not in {"system", "developer"})]
+            # 2026-11-07: 저장된 함수 호출에는 다음 일반 메시지보다 결과를 먼저 연결한다.
+            tool_outputs = [item for item in inputs if item.get("role") == "tool"]
+            inputs = [*tool_outputs, {"role": "developer", "content": instructions},
+                      *(item for item in inputs if item.get("role") not in {"system", "developer", "tool"})]
         reservation = meter.reserve(model) if meter else None
         result = None
         parsing_error = None
@@ -109,7 +117,21 @@ class ChatModelProvider:
             options["http_client"] = client
             llm = init_chat_model(model, **options)
             from backend.infrastructure.workflow_store import provider_entered
-            if text_format is not None:
+            if tools is not None:
+                # 2026-11-07: 도구 호출은 최종 구조화 응답이 없는 정상 중간 결과다.
+                from langchain_core.utils.function_calling import convert_to_openai_tool
+                formatted = convert_to_openai_tool(text_format, strict=True)["function"] if text_format else None
+                response_format = ({"type": "json_schema", "json_schema": {
+                    "name": formatted["name"], "schema": {**formatted["parameters"], "title": formatted["name"]}, "strict": True,
+                }} if formatted else None)
+                bound = llm.bind_tools(tools, tool_choice=tool_choice, parallel_tool_calls=False,
+                                       response_format=response_format)
+                if before_request is not None:
+                    before_request()
+                provider_entered()
+                raw = bound.invoke(inputs)
+                parsed = raw.additional_kwargs.get("parsed")
+            elif text_format is not None:
                 structured = llm.with_structured_output(
                     text_format, method="json_schema", include_raw=True, strict=True,
                 )
@@ -129,10 +151,16 @@ class ChatModelProvider:
             result = completion_result(raw, parsed)
             if observation.values is not None:
                 result = replace(result, **observation.values)
-            if (parsing_error is not None or (text_format is not None and not isinstance(parsed, text_format))
+            if tools is not None and text_format is not None and not result.tool_calls:
+                if isinstance(parsed, dict):
+                    parsed = text_format.model_validate(parsed)
+                elif parsed is None and raw.text:
+                    parsed = text_format.model_validate_json(raw.text)
+                result = replace(result, parsed=parsed)
+            if (parsing_error is not None or (text_format is not None and not isinstance(parsed, text_format) and not (tools is not None and result.tool_calls))
                     or raw.response_metadata.get("status") in {"failed", "incomplete", "cancelled"}
                     or raw.response_metadata.get("finish_reason") in {"length", "content_filter"}
-                    or (text_format is None and not result.text)):
+                    or (text_format is None and not result.text and not result.tool_calls)):
                 raise Error("모델 응답이 거부되었거나 완전한 결과를 반환하지 않았습니다.")
         except Exception as exc:
             if result is None and observation.values is not None:
@@ -173,6 +201,9 @@ def completion_result(message: AIMessage, parsed=None) -> CompletionResult:
     raw_usage = metadata.get("token_usage") or metadata.get("usage") or {}
     raw_details = raw_usage.get("input_tokens_details") or {}
     writes = raw_details.get("cache_write_tokens_details") or {}
+    output_details = usage.get("output_token_details") or {}
+    raw_output_details = raw_usage.get("output_tokens_details") or {}
+    summary, truncated = _reasoning_summary(message.content)
     return CompletionResult(
         text=message.text.strip(), parsed=parsed,
         input_tokens=_count(usage.get("input_tokens")),
@@ -183,7 +214,28 @@ def completion_result(message: AIMessage, parsed=None) -> CompletionResult:
         cache_write_tokens=_count(details.get("cache_creation", raw_details.get("cache_write_tokens"))),
         cache_write_30m_tokens=_count(writes.get("ttl_30m_tokens")),
         cache_write_12h_tokens=_count(writes.get("ttl_12h_tokens")),
+        reasoning_tokens=_count(output_details.get("reasoning", raw_output_details.get("reasoning_tokens"))),
+        reasoning_summary=summary, summary_truncated=truncated,
+        tool_calls=[{key: item.get(key) for key in ("id", "name", "args")}
+                    for item in [*message.tool_calls, *message.invalid_tool_calls]],
     )
+
+
+def _reasoning_summary(content):
+    """2026-11-07: 모델 출력 전체나 암호화 추론 대신 요약 텍스트만 보관한다."""
+    parts = []
+    if isinstance(content, list):
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") != "reasoning":
+                continue
+            if isinstance(block.get("reasoning"), str):
+                parts.append(block["reasoning"])
+                continue
+            for entry in block.get("summary", []) if isinstance(block.get("summary"), list) else []:
+                if isinstance(entry, dict) and entry.get("type") == "summary_text" and isinstance(entry.get("text"), str):
+                    parts.append(entry["text"])
+    value = "\n".join(parts)
+    return (value[:8000], len(value) > 8000) if value else (None, False)
 
 
 def _count(value):

@@ -1,0 +1,8 @@
+.model-call-summary { margin-block: 1rem; min-width: 0; }
+.model-call-summary-trigger { border: 1px solid var(--line); border-radius: .5rem; background: transparent; color: inherit; padding: .5rem .75rem; cursor: pointer; font-weight: 600; text-align: left; }
+.model-call-summary-trigger:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.model-call-summary ol { list-style: none; padding: 0; }
+.model-call-summary li { border: 1px solid var(--line); border-radius: .5rem; margin-block: .75rem; padding: .75rem; min-width: 0; }
+.model-call-summary h3 { font-size: .9rem; margin: 0 0 .5rem; }
+.model-call-summary p { margin: .35rem 0; overflow-wrap: anywhere; }
+.model-call-summary-text { white-space: pre-wrap; }

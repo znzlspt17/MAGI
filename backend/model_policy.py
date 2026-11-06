@@ -17,6 +17,15 @@ SERVICE_TIER = 'default'
 COST_POLICY = 'luna-standard-2026-10-22-v1'
 
 
+def request_settings(stage: str) -> dict:
+    """단계별 출력 상세도와 공통 추론 정책을 독립된 값으로 제공한다."""
+    return {
+        'reasoning': {'mode': 'standard', 'effort': 'medium', 'summary': 'auto'},
+        'verbosity': 'high' if stage == 'spec_compile' else 'medium',
+        'max_output_tokens': MAX_OUTPUT_TOKENS,
+    }
+
+
 def require_model(model: str) -> None:
     if model != MODEL:
         raise Error('MAGI는 gpt-6-luna 모델만 지원합니다.')

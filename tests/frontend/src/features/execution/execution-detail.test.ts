@@ -1,6 +1,32 @@
 import { expect, it } from "vitest";
 import { decodeStepDetail } from "@/features/execution/execution-detail";
 
+const modelCall = {
+  id: "call-1", stage: "spec_compile", attempt: 1, status: "success",
+  request_settings: { reasoning: { mode: "standard", effort: "medium", summary: "auto" }, verbosity: "high", max_output_tokens: 128000 },
+  input_tokens: 42, output_tokens: 17, reasoning_tokens: 0, reasoning_summary: "확정 요구사항을 비교했습니다.\n다음 문장.", summary_truncated: false,
+};
+
+it("모델 호출별 설정과 nullable 추론 요약을 원형으로 보존한다", () => {
+  const detail = decodeStepDetail({ model_calls: [modelCall, { ...modelCall, id: "call-2", attempt: 2,
+    status: "failed", input_tokens: null, output_tokens: null, reasoning_tokens: null, reasoning_summary: null, summary_truncated: true }] });
+  expect(detail.model_calls).toEqual([modelCall, { ...modelCall, id: "call-2", attempt: 2,
+    status: "failed", input_tokens: null, output_tokens: null, reasoning_tokens: null, reasoning_summary: null, summary_truncated: true }]);
+  expect(decodeStepDetail({}).model_calls).toBeUndefined();
+  expect(decodeStepDetail({ model_calls: [] }).model_calls).toEqual([]);
+});
+
+it.each([
+  { ...modelCall, reasoning_tokens: -1 }, { ...modelCall, attempt: 0 },
+  { ...modelCall, reasoning_summary: { raw: "untrusted" } }, { ...modelCall, input_tokens: undefined },
+  { ...modelCall, request_settings: { ...modelCall.request_settings, verbosity: "unknown" } },
+])("잘못된 모델 호출을 해석 실패로 보고 다른 기록은 보존한다", invalid => {
+  const detail = decodeStepDetail({ model_calls: [invalid], result: { wait_reason: "기존 기록" } });
+  expect(detail.model_calls).toBeUndefined();
+  expect(detail.response_incomplete).toBe(true);
+  expect(detail.result?.wait_reason).toBe("기존 기록");
+});
+
 it("과거 단계는 유지하고 누락된 선택 필드를 허용한다", () => {
   expect(decodeStepDetail({ id: "old", stage: "legacy" })).toMatchObject({ id: "old", stage: "legacy" });
 });

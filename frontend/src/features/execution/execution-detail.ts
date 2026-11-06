@@ -37,6 +37,25 @@ const resultFields = {
   issues: array(issue), resolved_issues: array(issue), report: text, research,
 };
 const decodeResult = object(resultFields);
+const count = (value: unknown) => {
+  const parsed = number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error("유효한 사용량이 필요합니다.");
+  return parsed;
+};
+const positiveCount = (value: unknown) => {
+  const parsed = count(value);
+  if (parsed === 0) throw new Error("유효한 호출 순서가 필요합니다.");
+  return parsed;
+};
+const modelCall = requiredObject({
+  id: text, stage: text, attempt: positiveCount, status: literal("attempt", "success", "failed"),
+  request_settings: requiredObject({
+    reasoning: requiredObject({ mode: literal("standard"), effort: literal("medium"), summary: literal("auto") }),
+    verbosity: literal("medium", "high"), max_output_tokens: positiveCount,
+  }),
+  input_tokens: nullable(count), output_tokens: nullable(count), reasoning_tokens: nullable(count),
+  reasoning_summary: nullable(text), summary_truncated: boolean,
+});
 const location = requiredObject({ item_id: text, section: text, text, start: number, end: number, line: number, requirement_ids: strings, decision_ids: strings });
 const changeQuestionForm = requiredObject({ question_id: text, question: text, form_version: text,
   input_type: literal("text", "single_choice", "multiple_choice"),
@@ -76,7 +95,7 @@ export const decodeChangeReview = requiredObject({ status: literal("no_baseline"
 const detailFields = { id: text, stage: text, status: text, title: text, summary: text, recording_incomplete: boolean, response_incomplete: boolean,
   unavailable: boolean, message: text, result: decodeResult, research,
   document: requiredObject({ content: text, filename: optional(text), language: literal("ko"), kind: optional(text), source_hash: optional(text), completed_id: optional(text) }),
-  usage: record, change_review: decodeChangeReview };
+  usage: record, change_review: decodeChangeReview, model_calls: array(modelCall) };
 const decodeDetail = object(detailFields);
 export type StopDiagnosticData = ReturnType<typeof stop>;
 export type IssueData = ReturnType<typeof issue>;

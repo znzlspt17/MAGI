@@ -4,8 +4,10 @@ import { questionDetails } from "../conversation/QuestionActions";
 import { StopDiagnostic } from "./StopDiagnostic";
 import { FailureDiagnostic } from "./FailureDiagnostic";
 import { DetailNotices } from "./DetailNotices";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../shared/ui/collapsible";
 import type { Job, Step } from "../../shared/types";
 import type { StepDetail } from "./execution-detail";
+import "./model-call-summary.css";
 
 import { stageLabel, stepContent, requirementGroups } from "./step-view";
 export { stageLabel } from "./step-view";
@@ -41,6 +43,7 @@ export function StepResult({ node, detail, hideQuestions = false, retry }: { nod
       {result.wait_reason && <p><strong>중단·대기 사유: </strong>{result.wait_reason}</p>}
       <FailureDiagnostic value={result.diagnostic} fallbackStage={node?.stage} recovered={(node?.status || detail.status) === "completed"} retry={retry} />
       <DetailNotices detail={detail} />
+      <ModelCallSummary calls={detail.model_calls} />
       {content.kind !== "research" && !misleadingFailure && summary !== result.wait_reason && (!genericSummary || !result.diagnostic) && <p>{genericSummary ? "상세 결과 기록 없음" : summary}</p>}
       {content.kind === "research" && <ResearchResult research={content.research} />}
       {result.purpose && <p>{result.purpose}</p>}
@@ -58,4 +61,26 @@ export function StepResult({ node, detail, hideQuestions = false, retry }: { nod
 
     </section>
   );
+}
+
+function ModelCallSummary({ calls }: { calls: StepDetail["model_calls"] }) {
+  const token = (value: number | null) => value === null ? "알 수 없음" : value.toLocaleString("ko-KR");
+  const status = { attempt: "진행 중", success: "호출 완료", failed: "호출 실패" } as const;
+  // 2026-11-07: 모델 응답은 신뢰하지 않고 텍스트로만 표시하며 과거 기록의 부재를 구분한다.
+  return <Collapsible className="model-call-summary">
+    <CollapsibleTrigger className="model-call-summary-trigger">모델 판단 요약</CollapsibleTrigger>
+    <CollapsibleContent>
+    {calls === undefined ? <p>모델 호출 기록 없음</p> : calls.length === 0 ? <p>이 단계의 모델 호출이 없습니다.</p> :
+      <ol>{calls.map(call => {
+        const title = stageLabel({ id: call.id, stage: call.stage });
+        return <li key={call.id}>
+          <h3>{title === "실행 단계" ? call.stage : title} · {call.attempt}회차 · {status[call.status]}</h3>
+          <p>추론 {call.request_settings.reasoning.mode} · {call.request_settings.reasoning.effort} · 상세도 {call.request_settings.verbosity} · 최대 출력 {token(call.request_settings.max_output_tokens)}</p>
+          <p>입력 {token(call.input_tokens)} · 출력 {token(call.output_tokens)} · 추론 {token(call.reasoning_tokens)} 토큰</p>
+          {call.reasoning_summary === null ? <p>요약 미제공</p> : <p className="model-call-summary-text">{call.reasoning_summary}</p>}
+          {call.summary_truncated && <p>요약 일부가 생략되었습니다.</p>}
+        </li>;
+      })}</ol>}
+    </CollapsibleContent>
+  </Collapsible>;
 }

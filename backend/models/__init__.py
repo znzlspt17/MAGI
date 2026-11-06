@@ -138,6 +138,10 @@ class CompletionResult:
     cache_write_tokens: int | None = None
     cache_write_30m_tokens: int | None = None
     cache_write_12h_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    reasoning_summary: str | None = None
+    summary_truncated: bool = False
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(slots=True)

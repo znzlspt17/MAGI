@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from backend.infrastructure.call_usage import CallUsage
 from contextvars import ContextVar
+import re
 from backend.infrastructure.provider_request import stage_instructions
 from typing import Any
 
@@ -17,10 +18,11 @@ from backend.providers.llm_provider import ChatModelProvider
 from backend.infrastructure.stage_retry import attempt_limit, current_messages, retry_messages
 from backend.infrastructure.prompt_context import prepare_context
 from backend.infrastructure.conversation_state import cache_key, call_started, call_finished, job_conversation
-from backend.errors import RequirementNormalizationError, ReviewValidationError, SpecCompilationError
+from backend.errors import InvalidStateError, RequirementNormalizationError, ReviewValidationError, SpecCompilationError
 
 
 WORKFLOW_MESSAGES: ContextVar[dict[str, list[dict]] | None] = ContextVar("workflow_messages", default=None)
+_SENT_TOOL_RESULTS = "state/mcp_tool_results_sent.json"
 
 
 def complete_with_usage(writer, provider, messages, *, model, stage, temperature=0):
@@ -54,15 +56,26 @@ def _complete_once(
     stage: str,
     temperature: float | None = 0,
     isolated_schema: type | None = None,
+    tools: list[dict] | None = None,
+    tool_choice: str = "auto",
+    tool_result: dict | list[dict] | None = None,
+    return_completion: bool = False,
 ) -> Any:
     with job_conversation(writer, provider) as conversation_id:
+        results = _filter_tool_results(writer, tool_result)
+        if results:
+            messages = [{"role": "tool", "tool_call_id": item["call_id"], "content": item["content"]}
+                        for item in results] + messages
         return _complete_connected(writer, provider, messages, model=model, stage=stage,
                                    temperature=temperature, isolated_schema=isolated_schema,
-                                   conversation_id=conversation_id)
+                                   conversation_id=conversation_id, tools=tools,
+                                   tool_choice=tool_choice, return_completion=return_completion,
+                                   tool_result_ids=[item["call_id"] for item in results])
 
 
 def _complete_connected(writer, provider, messages, *, model, stage, temperature,
-                        isolated_schema, conversation_id):
+                        isolated_schema, conversation_id, tools=None, tool_choice="auto", return_completion=False,
+                        tool_result_ids=()):
     """사용량과 작업별 메시지를 저장하고 단계별 구조화 결과를 전달한다."""
     # 별도 스키마의 전처리 경계와 원격 대화 수명주기는 독립적이다.
     references = None
@@ -90,6 +103,9 @@ def _complete_connected(writer, provider, messages, *, model, stage, temperature
         if isinstance(provider, ChatModelProvider):
             # 비용 예약·입력 준비 실패를 원격 호출 불확실성으로 기록하지 않는다.
             callbacks["before_request"] = lambda: call_started(writer, provider)
+            callbacks["stage"] = stage
+            if tools is not None:
+                callbacks.update(tools=tools, tool_choice=tool_choice)
         else:
             from backend.infrastructure.workflow_store import provider_entered
             call_started(writer, provider)
@@ -101,8 +117,8 @@ def _complete_connected(writer, provider, messages, *, model, stage, temperature
             **callbacks,
         )
         if isinstance(result, CompletionResult):
-            call_finished(writer, provider, result)
-        if schema is not None and not isinstance(result.parsed, schema):
+            _finish_with_tool_results(writer, provider, result, tool_result_ids)
+        if schema is not None and not isinstance(result.parsed, schema) and not (tools is not None and result.tool_calls):
             if stage in {"rubric_generate", "checklist_critic"}:
                 raise ReviewValidationError(stage=stage, check="rubric_schema" if stage == "rubric_generate" else "review_response")
             raise TypeError("Provider structured result is invalid.")
@@ -112,7 +128,7 @@ def _complete_connected(writer, provider, messages, *, model, stage, temperature
         failed_result = getattr(exc, "completion", None)
         if isinstance(failed_result, CompletionResult):
             if safe_response_id(failed_result.response_id):
-                call_finished(writer, provider, failed_result)
+                _finish_with_tool_results(writer, provider, failed_result, tool_result_ids)
             usage.record_failed_completion(failed_result)
         usage.failed()
         raise
@@ -120,9 +136,44 @@ def _complete_connected(writer, provider, messages, *, model, stage, temperature
     usage.succeeded(result)
     if mcp_fingerprint:
         writer.write_json('state/mcp_context_sent.json', {'fingerprint': mcp_fingerprint})
+    if return_completion:
+        return result
     if isolated_schema is not None:
         return result.parsed
     if schema is not None:
         assert references is not None  # 일반 구조화 호출은 prepare_context를 반드시 거친다.
         return references.restore(result.parsed)
     return result.text
+
+
+def _filter_tool_results(writer, tool_result):
+    """2026-11-07: 완료된 결과를 재전송하지 않아 원격 대화의 호출 순서를 보존한다."""
+    if tool_result is None:
+        return []
+    entries = tool_result if isinstance(tool_result, list) else [tool_result]
+    if any(not isinstance(item, dict) or not isinstance(item.get("call_id"), str)
+           or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", item["call_id"])
+           or not isinstance(item.get("content"), str) for item in entries):
+        raise InvalidStateError("도구 결과 식별자를 확인할 수 없습니다.")
+    sent = writer.read_json(_SENT_TOOL_RESULTS) if writer.exists(_SENT_TOOL_RESULTS) else {"call_ids": []}
+    if not isinstance(sent, dict) or not isinstance(sent.get("call_ids"), list) or not all(
+        isinstance(item, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", item) for item in sent["call_ids"]
+    ):
+        raise InvalidStateError("도구 결과 전송 기록을 확인할 수 없습니다.")
+    return [item for item in entries if item["call_id"] not in sent["call_ids"]]
+
+
+def _finish_with_tool_results(writer, provider, result, tool_result_ids):
+    if not tool_result_ids:
+        call_finished(writer, provider, result)
+        return
+    if not safe_response_id(result.response_id):
+        raise InvalidStateError("도구 결과가 포함된 모델 응답의 완료 여부를 확인할 수 없습니다.")
+    # 대화 완료 상태와 전송 기록을 함께 확정해야 재시도 시 중복을 피할 수 있다.
+    with writer.store.transaction():
+        sent = writer.read_json(_SENT_TOOL_RESULTS) if writer.exists(_SENT_TOOL_RESULTS) else {"call_ids": []}
+        if not isinstance(sent, dict) or not isinstance(sent.get("call_ids"), list):
+            raise InvalidStateError("도구 결과 전송 기록을 확인할 수 없습니다.")
+        sent["call_ids"] = list(dict.fromkeys([*sent["call_ids"], *tool_result_ids]))
+        writer.write_json(_SENT_TOOL_RESULTS, sent)
+        call_finished(writer, provider, result)

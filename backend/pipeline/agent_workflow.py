@@ -3,6 +3,7 @@
 from copy import deepcopy
 import hashlib
 import json
+import re
 from typing import Literal, cast
 
 from langgraph.graph import END, START, StateGraph
@@ -191,7 +192,9 @@ class AgentWorkflow:
     def mcp_decide(self, state):
         """2026-11-03: 판단과 외부 호출을 분리해 각각 독립 복구 경계를 둔다."""
         from backend.mcp_client.service import MCPService
-        from backend.mcp_client.workflow import MCPDecision, interview_messages, model_messages
+        from backend.mcp_client.workflow import interview_messages, model_messages, native_tools
+        from backend.mcp_client.security import validate_arguments
+        from backend.models import InterviewResponse
         from backend.infrastructure.prompt_context import prepare_context
         from backend.infrastructure.provider_call import _complete_once
         from backend.infrastructure.output_language import language_issues, OutputLanguageError
@@ -200,27 +203,60 @@ class AgentWorkflow:
             info = current.get("mcp", {})
             owner = self.engine.runtime.job.get("owner_id")
             available = MCPService(self.writer.store).available(owner, info.get("snapshot", [])) if owner else []
-            if not available and not info.get("results"):
+            if not available and not info.get("results") and not info.get("pending_tool_results"):
                 return {"mcp": {**info, "bypass": True}}
             messages = interview_messages(self.nodes, self.writer, current)
             projected, references = prepare_context(self.writer, messages, "interview")
-            projected = model_messages(projected, available, info.get("results", []), allow_tools=info.get("round", 0) < 3)
+            may_call = info.get("round", 0) < 3
+            projected = model_messages(projected, available, info.get("results", []), allow_tools=may_call)
+            definitions, mapping = native_tools(available if may_call else [])
+            # 2026-11-07: 서버 대화에 도구 호출은 이미 있으므로 결과만 한 번 이어 붙인다.
+            last = (info.get("results") or [None])[-1]
+            tool_result = info.get("pending_tool_results")
+            if tool_result is None and isinstance(last, dict) and last.get("tool_call_id"):
+                tool_result = [{"call_id": last["tool_call_id"], "content": json.dumps(
+                    {"status": last.get("status"), "text": last.get("text", "")}, ensure_ascii=False)}]
             choice = _complete_once(self.writer, self.nodes.provider, projected,
                 model=self.nodes.config.model_routing["interviewer"].model, stage="interview",
-                isolated_schema=MCPDecision)
-            if choice.action == "finish":
-                if choice.interview is None:
+                isolated_schema=InterviewResponse, tools=definitions,
+                tool_choice="auto" if definitions else "none", tool_result=tool_result,
+                return_completion=True)
+            calls = choice.tool_calls
+            if not isinstance(calls, list):
+                raise InvalidStateError("도구 응답을 확인할 수 없습니다.")
+            updated = {key: value for key, value in info.items() if key != "pending_tool_results"}
+            if not calls:
+                if not isinstance(choice.parsed, InterviewResponse):
                     raise InvalidStateError("인터뷰 결과를 확인할 수 없습니다.")
-                answer = references.restore(choice.interview)
+                answer = references.restore(choice.parsed)
                 issues = language_issues(answer)
                 if issues:
                     raise OutputLanguageError(issues)
-                return {"mcp": {**info, "response": answer.model_dump(), "bypass": False}}
-            if (info.get("round", 0) >= 3 or choice.interview is not None or not choice.connection_id
-                    or not choice.tool_name or not isinstance(choice.arguments_json, str)):
-                raise InvalidStateError("도구 요청을 확인할 수 없습니다.")
-            return {"mcp": {**info, "request": {"connection_id": choice.connection_id,
-                    "tool_name": choice.tool_name, "arguments_json": choice.arguments_json}}}
+                return {"mcp": {**updated, "response": answer.model_dump(), "bypass": False}}
+            call_ids = [item.get("id") for item in calls if isinstance(item, dict)]
+            if (len(call_ids) != len(calls) or any(not isinstance(item, str) or
+                    not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", item) for item in call_ids)
+                    or len(set(call_ids)) != len(call_ids)):
+                raise InvalidStateError("도구 호출 식별자를 확인할 수 없어 대화를 재개할 수 없습니다.")
+            def reject_calls():
+                # 2026-11-07: 거부된 호출에도 대응하는 결과를 남겨 원격 대화를 이어갈 수 있다.
+                if info.get("round", 0) > 3:
+                    raise InvalidStateError("도구 호출 한도를 초과했습니다.")
+                return {"mcp": {**updated, "request": {"rejected_call_ids": call_ids}}}
+            if len(calls) != 1 or not may_call or choice.parsed is not None:
+                return reject_calls()
+            call = calls[0]
+            call_id, name, arguments = call.get("id"), call.get("name"), call.get("args")
+            selected = mapping.get(name) if isinstance(name, str) else None
+            if selected is None:
+                return reject_calls()
+            try:
+                validate_arguments(selected[1]["schema"], arguments)
+                encoded = json.dumps(arguments, ensure_ascii=False)
+            except (ValueError, TypeError, RecursionError):
+                return reject_calls()
+            return {"mcp": {**updated, "request": {"connection_id": selected[0]["id"],
+                    "tool_name": selected[1]["name"], "arguments_json": encoded, "tool_call_id": call_id}}}
 
         return self.durable("mcp_decide", state, operation)
 
@@ -232,6 +268,11 @@ class AgentWorkflow:
         def operation(current):
             info = current.get("mcp", {})
             request = info.get("request", {})
+            if "rejected_call_ids" in request:
+                pending = [{"call_id": call_id, "content": "허용되지 않은 도구 요청을 실행하지 않았습니다."}
+                           for call_id in request["rejected_call_ids"]]
+                return {"mcp": {**{key: value for key, value in info.items() if key != "request"},
+                                "pending_tool_results": pending, "round": info.get("round", 0) + 1}}
             owner = self.engine.runtime.job.get("owner_id")
             service = MCPService(self.writer.store)
             available = service.available(owner, info.get("snapshot", [])) if owner else []
@@ -259,6 +300,8 @@ class AgentWorkflow:
                 else:
                     result = {"status": cached["status"], "text": cached["text"]}
             entry = {"connection_id": request.get("connection_id"), "tool_name": request.get("tool_name"), **result}
+            if isinstance(request.get("tool_call_id"), str):
+                entry["tool_call_id"] = request["tool_call_id"]
             if selected is not None and result.get("status") != "invalid":
                 entry.update(arguments_hash=argument_hash, schema_hash=selected[1]["schema_hash"], connection_version=selected[0]["version"])
             results = [*info.get("results", []), entry]
@@ -269,7 +312,11 @@ class AgentWorkflow:
             if result.get("status") == "ok":
                 self.evidence.add("MCP_SOURCE", "외부 도구 결과", request.get("connection_id", ""),
                                   metadata={"tool": request.get("tool_name", "")})
-            return {"mcp": {key: value for key, value in {**info, "results": results, "round": info.get("round", 0) + 1}.items() if key != "request"}}
+            next_info = {key: value for key, value in {**info, "results": results, "round": info.get("round", 0) + 1}.items() if key != "request"}
+            if entry.get("tool_call_id"):
+                next_info["pending_tool_results"] = [{"call_id": entry["tool_call_id"], "content": json.dumps(
+                    {"status": result.get("status"), "text": result.get("text", "")}, ensure_ascii=False)}]
+            return {"mcp": next_info}
 
         return self.durable("mcp_execute", state, operation)
 

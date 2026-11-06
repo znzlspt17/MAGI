@@ -232,6 +232,8 @@ class ExecutionHistory:
                 if attempts:
                     current.setdefault("result", {}).setdefault("diagnostic", {})["attempts"] = attempts
                 current["usage"] = _usage_since(self.documents, current.get("usage_start"))
+                # 2026-11-07: 호출 범위와 실행 ID를 끝난 시점에 고정해 이후 이력과 섞지 않는다.
+                current["model_calls"] = _model_calls_since(self.documents, current.get("usage_start"), execution_id)
         self._save(data)
 
     def terminal(
@@ -657,6 +659,18 @@ def _usage_since(documents, start):
     return provider_usage_summary(
         {"attempts": value.get("attempts", [])[start:], "recording_incomplete": False}
     )
+
+
+def _model_calls_since(documents, start, execution_id):
+    if not isinstance(start, int):
+        return []
+    from backend.infrastructure.call_usage import public_model_calls
+    value = documents.usage()
+    attempts = value.get("attempts", [])
+    if not isinstance(attempts, list):
+        return []
+    return public_model_calls([item for item in attempts[start:] if isinstance(item, dict)
+                               and item.get("execution_id") == execution_id])
 
 
 def _now() -> str:

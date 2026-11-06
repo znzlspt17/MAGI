@@ -32,9 +32,12 @@ class UsageObservation:
         details = details if isinstance(details, dict) else {}
         writes = details.get("cache_write_tokens_details")
         writes = writes if isinstance(writes, dict) else {}
+        output_details = usage.get("output_tokens_details")
+        output_details = output_details if isinstance(output_details, dict) else {}
         self.values = {
             "input_tokens": count(usage.get("input_tokens")),
             "output_tokens": count(usage.get("output_tokens")),
+            "reasoning_tokens": count(output_details.get("reasoning_tokens")),
             "cached_tokens": count(details.get("cached_tokens")),
             "cache_write_tokens": count(details.get("cache_write_tokens")),
             "cache_write_30m_tokens": count(writes.get("ttl_30m_tokens")),

@@ -97,6 +97,12 @@ def detail_payload(nodes: list[dict[str, Any]], step_id: str, *,
             payload[key] = source[key]
         else:
             incomplete = True
+    if "model_calls" in raw:
+        if isinstance(raw["model_calls"], list):
+            from backend.infrastructure.call_usage import public_model_calls
+            payload["model_calls"] = public_model_calls(raw["model_calls"])
+        else:
+            incomplete = True
     document = node.captured.get("document")
     if document is not None:
         if isinstance(document, dict):

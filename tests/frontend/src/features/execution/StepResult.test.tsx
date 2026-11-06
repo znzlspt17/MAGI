@@ -6,6 +6,38 @@ import { StepResult } from "@/features/workspace/Workspace";
 
 afterEach(cleanup);
 
+it("모델 호출 요약을 키보드로 열어 단계별 설정과 추론 사용량을 텍스트로 표시한다", async () => {
+  const malicious = '<img src=x onerror=alert(1)>\n두 번째 줄';
+  render(<StepResult node={{ id: "spec", stage: "spec_compile" }} detail={{ model_calls: [
+    { id: "call-1", stage: "spec_compile", attempt: 1, status: "success", request_settings: {
+      reasoning: { mode: "standard", effort: "medium", summary: "auto" }, verbosity: "high", max_output_tokens: 128000,
+    }, input_tokens: 42, output_tokens: 17, reasoning_tokens: 0, reasoning_summary: malicious, summary_truncated: true },
+    { id: "call-2", stage: "checklist_critic", attempt: 2, status: "failed", request_settings: {
+      reasoning: { mode: "standard", effort: "medium", summary: "auto" }, verbosity: "medium", max_output_tokens: 128000,
+    }, input_tokens: null, output_tokens: null, reasoning_tokens: null, reasoning_summary: null, summary_truncated: false },
+  ] }} />);
+  const toggle = screen.getByRole("button", { name: "모델 판단 요약" });
+  expect(toggle).toHaveAttribute("aria-expanded", "false");
+  toggle.focus();
+  await userEvent.keyboard("{Enter}");
+  expect(toggle).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByText((_, element) => element?.textContent === malicious, { selector: "p" })).toBeVisible();
+  expect(document.querySelector("img")).toBeNull();
+  expect(screen.getByText(/입력 42 · 출력 17 · 추론 0/)).toBeVisible();
+  expect(screen.getByText(/입력 알 수 없음 · 출력 알 수 없음 · 추론 알 수 없음/)).toBeVisible();
+  expect(screen.getByText(/요약 일부가 생략되었습니다/)).toBeVisible();
+  expect(screen.getByText("요약 미제공")).toBeVisible();
+  expect(screen.getByText(/2회차/)).toBeVisible();
+});
+
+it("이전 기록과 모델 호출이 없었던 단계를 구분한다", async () => {
+  const view = render(<StepResult detail={{}} />);
+  await userEvent.click(screen.getByText("모델 판단 요약"));
+  expect(screen.getByText("모델 호출 기록 없음")).toBeVisible();
+  view.rerender(<StepResult detail={{ model_calls: [] }} />);
+  expect(screen.getByText("이 단계의 모델 호출이 없습니다.")).toBeVisible();
+});
+
 it("명세 생성 안의 검토 기준 실패와 보정 횟수를 기본 화면에 표시한다", () => {
   render(<StepResult node={{ id: "failed", stage: "spec_compile", status: "failed" }} detail={{ result: { diagnostic: {
     error_stage: "rubric_generate", validation_reason: "basis_quote_not_found", context: { requirement_id: "REQ-1" },
