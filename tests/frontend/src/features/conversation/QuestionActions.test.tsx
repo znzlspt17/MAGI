@@ -202,6 +202,7 @@ it('남은 결함 수락 전에는 저점 후보를 승인할 수 없고 후보 
  const current:Job={id:'low',status:'PASS_PENDING_USER_APPROVAL',state:{status:'PASS_PENDING_USER_APPROVAL',candidate_hash:'a',rubric_review:rubricReview}};
  const view=render(<QuestionActions job={current} onAction={action} busy={false}/>);
  expect(screen.getByText('명세 평가 7/10')).toBeTruthy();
+ fireEvent.click(screen.getByRole('button',{name:/평가 항목 1개 보기/}));
  expect(screen.getByText('Specify failure behavior.')).toBeTruthy();
  expect((screen.getByRole('button',{name:'이 명세 승인'}) as HTMLButtonElement).disabled).toBe(true);
  fireEvent.click(screen.getByRole('checkbox'));
