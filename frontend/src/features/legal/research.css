@@ -2,14 +2,32 @@
 .research-page > header { padding: 16px 0; }
 .research-page h1 { display: flex; align-items: center; gap: 10px; font-size: 26px; letter-spacing: -.7px; line-height: 1.5; }
 .research-page h1 svg { flex-shrink: 0; }
-.research-page h2 { font-size: 19px; margin: 0 0 12px; }
+.research-page h2 { font-size: 19px; margin: 0 0 12px; scroll-margin-top: 24px; }
+.research-page h3 { font-size: 16px; margin: 22px 0 8px; }
 .research-page p { margin: 10px 0; color: #51495d; }
-.research-page section { margin: 16px 0; padding: 24px; background: #fff; border: 1px solid #e7e4ec; border-radius: 12px; }
+.research-page .research-lead { font-size: 19px; font-weight: 650; color: #2c2338; }
+.research-source { border-left: 3px solid #a995bd; padding: 3px 16px; margin: 24px 0 8px; }
+.research-source p { margin: 4px 0; }
+.research-page section, .research-toc { margin: 16px 0; padding: 24px; background: #fff; border: 1px solid #e7e4ec; border-radius: 12px; }
 .research-page li { margin: 12px 0; }
 .research-page li p { margin: 4px 0; }
 .research-page ol, .research-page ul { padding-left: 24px; }
+.research-toc ol { columns: 2; column-gap: 32px; }
+.research-toc li { break-inside: avoid; margin: 6px 0; }
+.research-page a:focus-visible, .research-table:focus-visible { outline: 3px solid #6b4386; outline-offset: 3px; }
+.research-table { max-width: 100%; overflow-x: auto; margin: 20px 0; border: 1px solid #e7e4ec; border-radius: 8px; }
+.research-table table { width: 100%; min-width: 570px; border-collapse: collapse; text-align: left; font-size: 14px; line-height: 1.65; }
+.research-table caption { padding: 12px 14px; background: #f7f5f9; text-align: left; font-weight: 700; }
+.research-table th, .research-table td { padding: 11px 14px; border-top: 1px solid #e7e4ec; vertical-align: top; }
+.research-table thead th { background: #faf9fb; }
+.research-table tbody th { width: 20%; }
+.research-page pre { overflow-x: auto; padding: 18px; border-radius: 8px; background: #f5f3f8; color: #342b41; line-height: 1.7; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.research-example { margin: 20px 0; padding: 2px 16px 10px; border-left: 3px solid #8a6ca5; background: #f8f6fa; }
+.research-glossary dt { margin-top: 12px; font-weight: 700; }
+.research-glossary dd { margin: 2px 0 0; color: #51495d; }
 @media (max-width: 767px) {
   .research-page { padding: 30px 18px; }
   .research-page h1 { font-size: 24px; }
-  .research-page section { padding: 20px 16px; }
+  .research-page section, .research-toc { padding: 20px 16px; }
+  .research-toc ol { columns: 1; }
 }
