@@ -2,7 +2,7 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 from time import perf_counter
-from typing import Any, TypedDict
+from typing import Any, TypeGuard, TypedDict
 import re
 from uuid import uuid4
 from backend.model_policy import request_settings
@@ -183,7 +183,7 @@ def public_model_calls(attempts):
     return result
 
 
-def _valid_settings(value):
+def _valid_settings(value: object) -> TypeGuard[dict[str, Any]]:
     if not isinstance(value, dict) or not isinstance(value.get("reasoning"), dict):
         return False
     reasoning = value["reasoning"]
