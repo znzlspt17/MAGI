@@ -206,6 +206,24 @@ const rubricReview = {
  basis: [{ reference: "REQ-1", quote: "Store notes." }], verdict: "FAIL" as const, section: "architecture", quote: "",
  reason: "실패 시 동작이 없습니다.", evidence_kind: "absence" as const }],
 };
+it('검토 패널 하단의 하나의 승인 동작은 결함 수락을 유지하고 중복 제출을 막는다', async()=>{
+ const footer=document.createElement('div'); document.body.appendChild(footer);
+ let resolve!:()=>void;
+ const action=vi.fn(()=>new Promise<void>(done=>{resolve=done;}));
+ const current:Job={id:'footer-approval',status:'PASS_PENDING_USER_APPROVAL',state:{status:'PASS_PENDING_USER_APPROVAL',candidate_hash:'a',rubric_review:rubricReview}};
+ try {
+  render(<QuestionActions job={current} onAction={action} busy={false} conversational controlsTarget={footer}/>);
+  const button=within(footer).getByRole('button',{name:'이 명세 승인'});
+  expect(screen.getAllByRole('button',{name:'이 명세 승인'})).toHaveLength(1);
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(within(footer).getByRole('checkbox',{name:/남은 결함/}));
+  expect((button as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(button); fireEvent.click(button);
+  expect(action).toHaveBeenCalledExactlyOnceWith('approve',{accept_remaining_issues:true});
+  await act(async()=>resolve());
+ } finally { cleanup(); footer.remove(); }
+});
+
 it('남은 결함 수락 전에는 저점 후보를 승인할 수 없고 후보 변경 시 다시 확인한다', async()=>{
  const action=vi.fn().mockResolvedValue(undefined);
  const current:Job={id:'low',status:'PASS_PENDING_USER_APPROVAL',state:{status:'PASS_PENDING_USER_APPROVAL',candidate_hash:'a',rubric_review:rubricReview}};

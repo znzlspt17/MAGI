@@ -12,20 +12,21 @@ const { id: _id, version: _version, active: _active, ...candidate } = item;
 const { active: _snapshotActive, ...snapshot } = item;
 const candidatePacket = { ...packet, rows: [candidate] };
 const reusedPacket = { rows: [snapshot], total: 1, next_offset: null };
+async function chooseProject(name: string) { fireEvent.click(screen.getByRole("combobox", { name: "프로젝트" })); fireEvent.click(await screen.findByRole("option", { name })); }
 function Harness() { const [project, setProject] = useState(""), [selections, setSelections] = useState<DecisionSelection[]>([]); return <MemoryRouter><ProjectDecisionPicker projectId={project} onProject={setProject} selections={selections} onSelections={setSelections} /><output data-testid="selection">{JSON.stringify(selections)}</output></MemoryRouter>; }
 
 it("등록된 결정을 기본 선택하지 않고 ID·버전·해시만 선택한다", async () => {
   vi.mocked(api).mockImplementation(async path => path === "/api/projects" ? [{ id: "project", name: "기록 서비스" }] : packet);
   render(<Harness />);
-  await screen.findByRole("option", { name: "기록 서비스" });
-  fireEvent.change(screen.getByLabelText("프로젝트"), { target: { value: "project" } });
+  await screen.findByRole("combobox", { name: "프로젝트" });
+  await chooseProject("기록 서비스");
   fireEvent.click(screen.getByRole("button", { name: "공통 결정 선택 0개" }));
   const checkbox = await screen.findByRole("checkbox", { name: item.text });
   expect((checkbox as HTMLInputElement).checked).toBe(false);
   expect(screen.getByText("적용 조건: A server is operated.")).toBeTruthy();
   fireEvent.click(checkbox);
   expect(screen.getByTestId("selection").textContent).toBe(JSON.stringify([{ id: item.id, version: 1, source_hash: item.source_hash }]));
-  fireEvent.change(screen.getByLabelText("프로젝트"), { target: { value: "" } });
+  await chooseProject("별도 프로젝트로 시작");
   expect(screen.getByTestId("selection").textContent).toBe("[]");
   expect(post).not.toHaveBeenCalled();
 });
@@ -33,10 +34,10 @@ it("등록된 결정을 기본 선택하지 않고 ID·버전·해시만 선택�
 it("이전 프로젝트의 늦은 응답을 폐기하고 출처가 없는 결정은 선택하지 못한다", async () => {
   let resolve!: (value: unknown) => void;
   vi.mocked(api).mockImplementation(async path => path === "/api/projects" ? [{ id: "project", name: "첫 프로젝트" }, { id: "second", name: "다음 프로젝트" }] : path.includes("/project/") ? new Promise(r => { resolve = r; }) : { ...packet, rows: [{ ...item, source_available: false }] });
-  render(<Harness />); await screen.findByRole("option", { name: "첫 프로젝트" });
-  fireEvent.change(screen.getByLabelText("프로젝트"), { target: { value: "project" } });
+  render(<Harness />); await screen.findByRole("combobox", { name: "프로젝트" });
+  await chooseProject("첫 프로젝트");
   fireEvent.click(screen.getByRole("button", { name: "공통 결정 선택 0개" }));
-  fireEvent.change(screen.getByLabelText("프로젝트"), { target: { value: "second" } });
+  await chooseProject("다음 프로젝트");
   fireEvent.click(screen.getByRole("button", { name: "공통 결정 선택 0개" }));
   await screen.findByRole("checkbox");
   expect((screen.getByRole("checkbox") as HTMLInputElement).disabled).toBe(true);
@@ -53,8 +54,8 @@ it("개인 프로젝트 생성 후 해당 프로젝트로 이동한다", async (
   fireEvent.change(within(dialog).getByLabelText("프로젝트 이름"), { target: { value: "새 프로젝트" } });
   fireEvent.click(within(dialog).getByRole("button", { name: "프로젝트 생성" }));
   await waitFor(() => expect(post).toHaveBeenCalledWith("/api/projects", { name: "새 프로젝트" }));
-  await screen.findByRole("option", { name: "새 프로젝트" });
-  expect((screen.getByLabelText("프로젝트") as HTMLSelectElement).value).toBe("created");
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "프로젝트" }).textContent).toContain("새 프로젝트"));
+  expect(screen.getByRole("combobox", { name: "프로젝트" }).textContent).toContain("새 프로젝트");
 });
 
 it("출처를 확인한 등록만 제출하고 연속 클릭을 중복 전송하지 않는다", async () => {
@@ -76,8 +77,8 @@ it("출처를 확인한 등록만 제출하고 연속 클릭을 중복 전송하
 it("등록 해제 후 선택을 지우고 과거 재사용 사본을 별도로 조회한다", async () => {
   vi.mocked(api).mockImplementation(async path => path === "/api/projects" ? [{ id: "project", name: "기록 서비스" }] : packet);
   vi.mocked(post).mockResolvedValue({ active: false, version: 2 });
-  const view = render(<Harness />); await screen.findByRole("option", { name: "기록 서비스" });
-  fireEvent.change(screen.getByLabelText("프로젝트"), { target: { value: "project" } });
+  const view = render(<Harness />); await screen.findByRole("combobox", { name: "프로젝트" });
+  await chooseProject("기록 서비스");
   fireEvent.click(screen.getByRole("button", { name: "공통 결정 선택 0개" }));
   fireEvent.click(await screen.findByRole("checkbox"));
   fireEvent.click(screen.getByRole("button", { name: "등록 해제" }));
@@ -103,8 +104,8 @@ it("프로젝트 필드가 없는 빈 재사용 페이지도 오류 없이 표�
 
 it("조회 실패를 표시하고 다시 조회할 수 있다", async () => {
   vi.mocked(api).mockImplementation(async path => { if (path === "/api/projects") return [{ id: "project", name: "기록 서비스" }]; throw new Error("조회 실패"); });
-  render(<Harness />); await screen.findByRole("option", { name: "기록 서비스" });
-  fireEvent.change(screen.getByLabelText("프로젝트"), { target: { value: "project" } });
+  render(<Harness />); await screen.findByRole("combobox", { name: "프로젝트" });
+  await chooseProject("기록 서비스");
   fireEvent.click(screen.getByRole("button", { name: "공통 결정 선택 0개" }));
   await screen.findByRole("alert");
   vi.mocked(api).mockResolvedValue({ ...packet, rows: [] });
@@ -123,7 +124,7 @@ it("프로젝트 생성 중 닫으면 늦은 응답으로 프로젝트를 자동
   fireEvent.click(within(dialog).getByRole("button", { name: "프로젝트 생성" }));
   fireEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
   await act(async () => resolve({ id: "late", name: "비동기 프로젝트" }));
-  expect((screen.getByLabelText("프로젝트") as HTMLSelectElement).value).toBe("");
+  expect(screen.getByRole("combobox", { name: "프로젝트" }).textContent).toContain("별도 프로젝트로 시작");
 });
 
 it("등록 중 닫은 대화상자를 늦은 응답으로 다시 열거나 완료 안내로 바꾸지 않는다", async () => {

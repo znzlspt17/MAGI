@@ -1,3 +1,5 @@
+import { VStack } from "@astryxdesign/core/VStack";
+import { HStack } from "@astryxdesign/core/HStack";
 import { decodeImpactPage, decodeImpactReport } from "../requirements/review-response";
 import { useEffect, useId, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -6,7 +8,7 @@ import { api, post } from "../../shared/api/api";
 import { useAuth } from "../auth/Auth";
 import { PromptInput } from "../../shared/ui/PromptInput";
 import { Button } from "../../shared/ui/button";
-import { Badge } from "../../shared/ui/badge";
+import { Text } from "@astryxdesign/core/Text";
 import { Field, FieldLabel, FieldDescription, FieldError } from "../../shared/ui/field";
 import { NativeSelect, NativeSelectOption } from "../../shared/ui/native-select";
 import { Item, ItemGroup, ItemContent, ItemTitle, ItemDescription } from "../../shared/ui/item";
@@ -114,7 +116,7 @@ export function ImpactReview({ jobId, nodeId, inspect }: { jobId: string; nodeId
         <NativeSelectOption value="add">새 요구사항 추가</NativeSelectOption>
       </NativeSelect>
     </Field>
-    <Field data-invalid={!!error}><FieldLabel htmlFor={`${id}-proposal`}>변경 가정</FieldLabel>
+    <Field data-invalid={!!error}>
       <PromptInput id={`${id}-proposal`} label="변경 가정" buttonLabel={analysing ? "추가 영향 분석 중" : "추가 영향 분석"} maxLength={4000} rows={3}
         value={proposal} onChange={event => { setProposal(event.target.value); setReport(null); }} readOnly={analysing} disabled={loading || analysing || blocked || !page}
         placeholder="예: 네트워크 연결 없이도 기록을 작성할 수 있게 해줘"
@@ -128,7 +130,7 @@ export function ImpactReview({ jobId, nodeId, inspect }: { jobId: string; nodeId
     </TraceLine></Trace>
     <Button variant="outline" size="sm" disabled={loading || analysing} onClick={() => void load()}>기준 다시 조회</Button>
     <section className="impact-section" aria-labelledby={`${id}-recorded`}>
-      <h4 id={`${id}-recorded`}><LinkIcon aria-hidden />기록으로 연결된 검토 대상 <Badge variant="secondary">기록된 연결</Badge></h4>
+      <h4 id={`${id}-recorded`}><LinkIcon aria-hidden />기록으로 연결된 검토 대상 <Text type="supporting">기록된 연결</Text></h4>
       {loading ? <div aria-label="연결 조회 중"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div> : page ? <>
         <p className="impact-help">{page.message}</p>
         {page.recorded.length ? <ItemGroup>{page.recorded.map(item => <Item key={item.target.id} variant="outline" size="sm"><ItemContent>
@@ -149,15 +151,15 @@ export function ImpactReview({ jobId, nodeId, inspect }: { jobId: string; nodeId
       </> : <Alert><WarningCircleIcon aria-hidden /><AlertTitle>기준 명세를 확인하세요</AlertTitle><AlertDescription>승인 후보가 준비된 작업에서 현재 요구사항을 선택해 주세요.</AlertDescription></Alert>}
     </section>
     <section className="impact-section" aria-labelledby={`${id}-inferred`}>
-      <h4 id={`${id}-inferred`}><SparkleIcon aria-hidden />모델이 제안한 추가 검토 <Badge variant="outline">모델 추정</Badge></h4>
+      <h4 id={`${id}-inferred`}><SparkleIcon aria-hidden />모델이 제안한 추가 검토 <Text type="supporting">모델 추정</Text></h4>
       {!report ? <p className="impact-help">변경 가정을 입력하고 추가 영향 분석을 실행하면 검토 후보가 여기에 표시됩니다.</p> : <>
         {(report.stale || report.status !== "complete") && <Alert><WarningCircleIcon aria-hidden /><AlertTitle>{report.stale ? "이전 기준의 분석 결과입니다" : "분석을 완료하지 못했습니다"}</AlertTitle><AlertDescription>{report.stale ? "현재 명세나 요구사항이 달라졌습니다. 기준을 다시 조회한 뒤 새 가정으로 검토해 주세요." : report.reason}</AlertDescription></Alert>}
-        <div className="impact-help impact-coverage"><span>문맥 {report.coverage.included}/{report.coverage.total}개 사용</span><span>{report.coverage.omitted}개 제외</span><span>{report.coverage.truncated}개 일부 인용</span></div><p className="impact-help">추정 결과는 확정된 영향이 아닙니다.</p>
+        <HStack gap={2} wrap="wrap" className="impact-help impact-coverage"><span>문맥 {report.coverage.included}/{report.coverage.total}개 사용</span><span>{report.coverage.omitted}개 제외</span><span>{report.coverage.truncated}개 일부 인용</span></HStack><p className="impact-help">추정 결과는 확정된 영향이 아닙니다.</p>
         {report.inferred.length ? <ItemGroup>{report.inferred.map((item, index) => <Item key={index} variant="outline"><ItemContent>
           <ItemTitle>{item.topic}</ItemTitle><p>{item.effect}</p><ItemDescription>{item.rationale}</ItemDescription>
-          <div className="impact-citations">{item.evidence.map((ref, i) => <ImpactCitation key={i} evidence={ref} report={report} inspect={inspect} />)}</div>
+          <HStack gap={2} wrap="wrap" className="impact-citations">{item.evidence.map((ref, i) => <ImpactCitation key={i} evidence={ref} report={report} inspect={inspect} />)}</HStack>
           {!item.evidence.length && <p className="impact-help">기존 명세의 직접 인용 없이 제안한 검토 주제입니다.</p>}
-          <div className="impact-question"><strong>확인할 사항</strong><p>{item.question}</p><Button variant="secondary" size="sm" disabled={report.stale} onClick={() => addQuestion(item.question)}>수정 의견에 추가</Button></div>
+          <VStack gap={2} className="impact-question"><strong>확인할 사항</strong><p>{item.question}</p><Button variant="secondary" size="sm" disabled={report.stale} onClick={() => addQuestion(item.question)}>수정 의견에 추가</Button></VStack>
         </ItemContent></Item>)}</ItemGroup> : report.status === "complete" && <Empty><EmptyHeader><EmptyTitle>추가 검토 제안이 없습니다</EmptyTitle><EmptyDescription>제공된 문맥에서 제안할 항목을 찾지 못했습니다. 영향이 없다는 보장은 아닙니다.</EmptyDescription></EmptyHeader></Empty>}
         {!!sources.length && <Trace><TraceCollapsible><TraceCollapsibleTrigger><TraceLine><TraceIcon><LinkIcon /></TraceIcon><TraceTitle>사용한 근거 {sources.length}개</TraceTitle></TraceLine></TraceCollapsibleTrigger><TraceCollapsibleContent>
           {sources.map(ref => <TraceLine key={ref.node_id}><TraceTitle><Button variant="link" size="sm" onClick={() => inspect(ref.node_id)}>{report.sources.find(source => source.node_id === ref.node_id)?.section || "근거 원문"}</Button></TraceTitle></TraceLine>)}

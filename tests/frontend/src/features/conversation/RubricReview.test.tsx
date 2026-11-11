@@ -81,11 +81,13 @@ it("필터를 바꾸면 페이지와 펼친 항목이 초기화되고 인용 원
   fireEvent.click(screen.getByRole("button", { name: /RUB-1 / }));
   expect(screen.getByText("custom_reference")).toBeTruthy();
   expect(screen.getByText("custom_reference").nextElementSibling?.textContent).toBe(longQuote);
-  fireEvent.change(screen.getByRole("combobox", { name: "평가 판정 필터" }), { target: { value: "PASS" } });
+  fireEvent.click(screen.getByRole("combobox", { name: "평가 판정 필터" }));
+  fireEvent.click(screen.getByRole("option", { name: "충족" }));
   expect(screen.queryByText("custom_reference")).toBeNull();
   fireEvent.click(within(screen.getByRole("navigation", { name: "평가 항목 페이지" })).getByRole("button", { name: "다음" }));
   expect(screen.getByText("평가 조건 11")).toBeTruthy();
-  fireEvent.change(screen.getByRole("combobox", { name: "평가 판정 필터" }), { target: { value: "all" } });
+  fireEvent.click(screen.getByRole("combobox", { name: "평가 판정 필터" }));
+  fireEvent.click(screen.getByRole("option", { name: "전체" }));
   expect(screen.getByText("평가 조건 1")).toBeTruthy();
   expect(screen.queryByText("평가 조건 11")).toBeNull();
 });

@@ -1,3 +1,6 @@
+import { Stack } from "@astryxdesign/core/Stack";
+import { RadioList, RadioListItem } from "@astryxdesign/core/RadioList";
+import { CheckboxList, CheckboxListItem } from "@astryxdesign/core/CheckboxList";
 import type { ChangeReviewData, SpecChange } from "../../shared/types";
 import { Button } from "../../shared/ui/UI";
 import "./change-review.css";
@@ -5,7 +8,7 @@ import "../conversation/question-guidance.css";
 import { useId, useState } from "react";
 import { ExpandableTextarea } from "../../shared/ui/PromptInput";
 import { Field, FieldSet, FieldLegend, FieldLabel, FieldDescription } from "../../shared/ui/field";
-import { Badge } from "../../shared/ui/badge";
+import { Text } from "@astryxdesign/core/Text";
 
 function ProposalQuestion({ item, disabled, onQuestion }: {
   item: SpecChange; disabled: boolean; onQuestion: (answer: string) => boolean | void;
@@ -30,21 +33,22 @@ function ProposalQuestion({ item, disabled, onQuestion }: {
   }
   return <FieldSet className="change-question question-form" disabled={disabled} onChange={() => { setAdded(false); setError(""); }}>
     <FieldLegend>{item.question}</FieldLegend>
-    {!textOnly && <div className="choice-options">{form.options.map(option => <Field key={option.id} className="question-choice-field">
-      <FieldLabel className="choice-card" data-selected={selected.includes(option.id)}><input type={form.input_type === "single_choice" ? "radio" : "checkbox"}
-        name={id} checked={selected.includes(option.id)} onChange={event => {
-          if (form.input_type === "single_choice") setCustom(false);
-          setSelected(form.input_type === "single_choice" ? [option.id] : event.target.checked ? [...selected, option.id] : selected.filter(value => value !== option.id));
-        }} />
-        <span className="choice-copy"><span className="choice-heading">{option.label}{form.recommendation?.option_ids.includes(option.id) && <Badge variant="outline">추천</Badge>}</span>
-          {option.impact && <FieldDescription>{option.impact}</FieldDescription>}
-          {option.assumptions?.map((assumption, index) => <span className="choice-assumption" key={index}>전제: {assumption}</span>)}
-        </span>
-      </FieldLabel>
-    </Field>)}<Field className="question-choice-field"><FieldLabel className="choice-card" data-selected={custom}><input type={form.input_type === "single_choice" ? "radio" : "checkbox"}
-      name={id} checked={custom} onChange={event => { setCustom(event.target.checked); if (form.input_type === "single_choice") setSelected([]); }} />직접 입력</FieldLabel></Field></div>}
-    {form?.recommendation && <div className="question-recommendation"><p>모델이 안내한 추천 이유: {form.recommendation.reason}</p>
-      {form.recommendation.assumptions.map((assumption, index) => <p key={index}>추천 전제: {assumption}</p>)}</div>}
+    {!textOnly && (() => {
+      const options = [...form.options, { id: "__custom", label: "직접 입력", impact: null, assumptions: [] }];
+      const values = [...selected, ...(custom ? ["__custom"] : [])];
+      const update = (next: string[]) => { setCustom(next.includes("__custom")); setSelected(next.filter(value => value !== "__custom")); setAdded(false); setError(""); };
+      const label = (option: typeof options[number]) => <>{option.label}{form.recommendation?.option_ids.includes(option.id) && <Text type="supporting" aria-hidden>추천</Text>}</>;
+      const description = (option: typeof options[number]) => option.impact || option.assumptions?.length ? <>{option.impact && <p>{option.impact}</p>}{option.assumptions?.map((assumption, index) => <p key={index}>전제: {assumption}</p>)}</> : undefined;
+      return form.input_type === "single_choice"
+        ? <RadioList label="선택지" isLabelHidden htmlName={id} value={values[0] || ""} onChange={value => update([value])} isDisabled={disabled}>
+          {options.map(option => <RadioListItem key={option.id} value={option.id} label={label(option)} aria-label={option.label} description={description(option)} />)}
+        </RadioList>
+        : <CheckboxList label="선택지" isLabelHidden value={values} onChange={update} isDisabled={disabled}>
+          {options.map(option => <CheckboxListItem key={option.id} value={option.id} label={label(option)} aria-label={option.label} description={description(option)} />)}
+        </CheckboxList>;
+    })()}
+    {form?.recommendation && <Stack className="question-recommendation"><p>모델이 안내한 추천 이유: {form.recommendation.reason}</p>
+      {form.recommendation.assumptions.map((assumption, index) => <p key={index}>추천 전제: {assumption}</p>)}</Stack>}
     {(textOnly || custom) && <Field><FieldLabel htmlFor={`${id}-answer`}>답변 직접 입력</FieldLabel>
       <ExpandableTextarea id={`${id}-answer`} label={`${item.question} 직접 입력`} value={answer} disabled={disabled}
         onChange={event => setAnswer(event.target.value)} /></Field>}
@@ -71,14 +75,14 @@ function ChangeItem({ item, review }: { item: SpecChange; review: ChangeReviewDa
     {item.rationale && <p>{item.rationale}</p>}
     {item.meaning === "uncertain" && <p>문맥이 부족하여 의미 판정을 보류했습니다.</p>}
     {item.status === "unanalysed" && <p>{reasons[item.reason] || "아직 의미를 분석하지 못했습니다."}</p>}
-    <div className="change-originals">{([ ["이전", item.before], ["현재", item.after] ] as const).map(([label, location]) =>
-      <div key={label}><h5>{label}</h5>{location ? <><div className="subtle magi-meta"><span>{location.section}</span><span>{location.line}행</span></div><pre>{location.text}</pre></> : <p>해당 본문 없음</p>}</div>)}
-    </div>
-    {!!item.evidence?.length && <div><h5>사용자 입력 근거</h5>{item.evidence.map((ref, index) => {
+    <Stack className="change-originals">{([ ["이전", item.before], ["현재", item.after] ] as const).map(([label, location]) =>
+      <Stack key={label}><h5>{label}</h5>{location ? <><Stack direction="horizontal" wrap="wrap" className="subtle magi-meta"><span>{location.section}</span><span>{location.line}행</span></Stack><pre>{location.text}</pre></> : <p>해당 본문 없음</p>}</Stack>)}
+    </Stack>
+    {!!item.evidence?.length && <Stack><h5>사용자 입력 근거</h5>{item.evidence.map((ref, index) => {
       const source = review.sources.find(value => value.source_id === ref.source_id);
-      return <div key={index}><blockquote>{ref.quote}</blockquote>{source?.question && <p>질문: {source.question}</p>}
-        <details><summary>사용자 원문 전체</summary><pre>{source?.text || "근거 원문 확인 불가"}</pre></details></div>;
-    })}</div>}
+      return <Stack key={index}><blockquote>{ref.quote}</blockquote>{source?.question && <p>질문: {source.question}</p>}
+        <details><summary>사용자 원문 전체</summary><pre>{source?.text || "근거 원문 확인 불가"}</pre></details></Stack>;
+    })}</Stack>}
     {item.diff && <details><summary>줄 단위 비교</summary><pre>{item.diff}</pre></details>}
   </details></li>;
 }
@@ -94,7 +98,7 @@ export function ChangeReview({ review, onQuestion, disabled = false }: { review?
     <h3>이전 검토본에서 달라진 내용</h3>
     {review.status === "no_baseline" ? <p>첫 승인 후보입니다. 비교할 이전 검토본이 없습니다.</p> : <>
       {review.remaining === null ? <p role="status">변경 범위를 확인하지 못했습니다.</p> : review.status === "unchanged" ? <p>비교 가능한 본문 변경이 없습니다. 의미의 안전성을 보증하는 결과는 아닙니다.</p> :
-        <div className="magi-meta" role="status"><span>본문 변경 {review.changes.length}건 중 {review.analysed}건 분석</span><span>{review.remaining === null ? "남은 범위 확인 불가" : `${review.remaining}건 미분석`}</span></div>}
+        <Stack direction="horizontal" wrap="wrap" className="magi-meta" role="status"><span>본문 변경 {review.changes.length}건 중 {review.analysed}건 분석</span><span>{review.remaining === null ? "남은 범위 확인 불가" : `${review.remaining}건 미분석`}</span></Stack>}
       {["failed", "partial", "running"].includes(review.status) && <p className="change-warning">일부 또는 전체 변경 분석을 완료하지 못했습니다. 원문을 확인한 후 승인할 수 있습니다.</p>}
       {requested.length > 0 && <section><h4>요청 반영</h4><ul>{requested.map(item => <ChangeItem key={item.id} item={item} review={review} />)}</ul></section>}
       {other.length > 0 && <section><h4>함께 달라진 내용</h4><ul>{other.map(item => <ChangeItem key={item.id} item={item} review={review} />)}</ul></section>}

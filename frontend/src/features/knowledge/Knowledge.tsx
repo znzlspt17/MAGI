@@ -1,4 +1,11 @@
-import { ArrowsOutIcon, FunnelIcon, GraphIcon, ListBulletsIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
+import { HStack } from "@astryxdesign/core/HStack";
+import { Slider } from "@astryxdesign/core/Slider";
+import { CheckboxInput } from "@astryxdesign/core/CheckboxInput";
+import { NativeSelect } from "../../shared/ui/native-select";
+import { Input } from "../../shared/ui/input";
+import { Button } from "../../shared/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "../../shared/ui/dialog";
+import { ArrowsOutIcon, CaretRightIcon, FunnelIcon, GraphIcon, ListBulletsIcon, MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { useEffect, useRef } from "react";
 import "./admin-knowledge.css";
 import {
@@ -30,6 +37,7 @@ export default function Knowledge({
   onDeleted?: (ids: string[]) => void;
   selectedJobId?: string;
 }) {
+  const projectDeleteOpener = useRef<HTMLButtonElement | null>(null);
   const {
     canRetry, mutationBusy, projects, project, setProject,
     sessions, session, setSession, query, setQuery,
@@ -61,11 +69,11 @@ export default function Knowledge({
         </div>
       </header>
       {admin && (
-        <div className="project-bar">
-          <label>
+        <HStack gap={2} wrap="wrap" className="project-bar">
+          <div>
             프로젝트
-            <select
-              id="admin-project"
+            <NativeSelect
+              aria-label="프로젝트" id="admin-project"
               value={project}
               onChange={(e) => {
                 invalidate();
@@ -80,20 +88,20 @@ export default function Knowledge({
                   {p.name} (식별자 {p.id.slice(0, 8)})
                 </option>
               ))}
-            </select>
-          </label>
+            </NativeSelect>
+          </div>
           <p id="project-notice" role="status">
             {project
               ? "프로젝트의 저장된 지식을 조회합니다."
               : "조회할 프로젝트를 선택하세요."}
           </p>
-          <button disabled={!project || busy} onClick={previewProject}>
+          <Button disabled={!project || busy} onClick={event => { projectDeleteOpener.current = event.currentTarget; void previewProject(); }}>
             빈 프로젝트 삭제 미리보기
-          </button>
-        </div>
+          </Button>
+        </HStack>
       )}
-      <div className="knowledge-controls">
-        {!admin && session && <button type="button" onClick={beginRequirement}>새 요구사항 영향 검토</button>}
+      <HStack gap={2} wrap="wrap" className="knowledge-controls">
+        {!admin && session && <Button type="button" onClick={beginRequirement}>새 요구사항 영향 검토</Button>}
         <form
           id="knowledge-form"
           onSubmit={(e) => {
@@ -101,7 +109,7 @@ export default function Knowledge({
             void search();
           }}
         >
-          <select
+          <NativeSelect
             id="knowledge-session"
             aria-label="대화 세션"
             value={session}
@@ -116,18 +124,18 @@ export default function Knowledge({
                 {s.request || "대화 세션"} (식별자 {s.id.slice(0, 8)})
               </option>
             ))}
-          </select>
-          <input
+          </NativeSelect>
+          <Input
             id="knowledge-query"
             aria-label="검색"
             placeholder="지식 검색…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <button disabled={busy}><MagnifyingGlassIcon size={18} aria-hidden />검색</button>
+          <Button type="submit" variant="default" disabled={busy}><MagnifyingGlassIcon size={18} aria-hidden />검색</Button>
         </form>
-        <div className="button-row">
-          <button
+        <HStack gap={2} wrap="wrap" className="button-row">
+          <Button
             id="graph-summary"
             aria-pressed={mode === "summary"}
             onClick={() => {
@@ -136,31 +144,31 @@ export default function Knowledge({
             }}
           >
             요약
-          </button>
-          <button
+          </Button>
+          <Button
             id="graph-detail-mode"
             aria-pressed={mode === "detail"}
             onClick={() => setMode("detail")}
           >
             상세
-          </button>
-          <button
+          </Button>
+          <Button
             id="graph-list-toggle"
             aria-expanded={list}
             onClick={() => setList(!list)}
           >
             <ListBulletsIcon size={18} aria-hidden />목록
-          </button>
-          <button id="graph-fit" onClick={() => handle.current?.fit()}>
+          </Button>
+          <Button id="graph-fit" onClick={() => handle.current?.fit()}>
             <ArrowsOutIcon size={18} aria-hidden />전체 맞춤
-          </button>
-        </div>
+          </Button>
+        </HStack>
         <details className="graph-menu">
-          <summary><FunnelIcon size={16} aria-hidden />필터</summary>
-          <label>
+          <summary><CaretRightIcon className="graph-menu-caret" size={16} aria-hidden /><FunnelIcon size={16} aria-hidden /><span>필터</span></summary>
+          <div>
             유형
-            <select
-              id="knowledge-kind"
+            <NativeSelect
+              aria-label="유형" id="knowledge-kind"
               value={kind}
               onChange={(e) => {
                 invalidate();
@@ -173,12 +181,12 @@ export default function Knowledge({
                   {t}
                 </option>
               ))}
-            </select>
-          </label>
-          <label>
+            </NativeSelect>
+          </div>
+          <div>
             상태
-            <select
-              id="knowledge-status"
+            <NativeSelect
+              aria-label="상태" id="knowledge-status"
               value={status}
               onChange={(e) => {
                 invalidate();
@@ -190,69 +198,31 @@ export default function Knowledge({
               <option value="proposed">LLM 제안</option>
               <option value="assumption">가정</option>
               <option value="superseded">대체된 항목</option>
-            </select>
-          </label>
+            </NativeSelect>
+          </div>
         </details>
         <details className="graph-menu">
-          <summary>설정</summary>
-          <label>
-            노드 간격
-            <input
-              id="graph-spacing"
-              type="range"
-              min="15"
-              max="70"
-              value={spacing}
-              onChange={(e) => setSpacing(+e.target.value)}
-            />
-          </label>
-          <label>
-            연결 길이
-            <input
-              id="graph-distance"
-              type="range"
-              min="50"
-              max="200"
-              value={distance}
-              onChange={(e) => setDistance(+e.target.value)}
-            />
-          </label>
-          <label>
-            라벨 양
-            <input
-              id="graph-label-amount"
-              type="range"
-              min="0"
-              max="20"
-              value={labels}
-              onChange={(e) => setLabels(+e.target.value)}
-            />
-          </label>
-          <label>
-            <input
-              id="graph-pause"
-              type="checkbox"
-              checked={paused}
-              onChange={(e) => setPaused(e.target.checked)}
-            />
-            배치 일시정지
-          </label>
-          <button id="graph-layout" onClick={() => handle.current?.layout()}>
+          <summary><CaretRightIcon className="graph-menu-caret" size={16} aria-hidden /><span>설정</span></summary>
+          <Slider label="노드 간격" min={15} max={70} value={spacing} onChange={setSpacing} />
+          <Slider label="연결 길이" min={50} max={200} value={distance} onChange={setDistance} />
+          <Slider label="라벨 양" min={0} max={20} value={labels} onChange={setLabels} />
+          <CheckboxInput label="배치 일시정지" value={paused} onChange={setPaused} />
+          <Button id="graph-layout" onClick={() => handle.current?.layout()}>
             전체 재배치
-          </button>
+          </Button>
         </details>
         {canRetry && (
-          <button
+          <Button
             id="knowledge-retry"
             disabled={busy || mutationBusy}
             onClick={() => void retryEmbeddings()}
           >
             임베딩 재시도
-          </button>
+          </Button>
         )}
-      </div>
+      </HStack>
       <div id="knowledge-notice" role="status" aria-live="polite">
-        {notice || (busy ? "조회 중…" : <div className="graph-counts">
+        {notice || (busy ? "조회 중…" : <HStack gap={2} wrap="wrap" className="graph-counts">
           <span>화면 항목 <strong>{display.nodes.length}개</strong></span>
           <span>명세 묶음 <strong>{display.nodes.filter((n) => n.virtual).length}개</strong></span>
           <span>조회 항목 <strong>{display.rawCount}개</strong></span>
@@ -260,7 +230,7 @@ export default function Knowledge({
           {results && <span>검색 결과 <strong>{results.length}개</strong></span>}
           {graph.has_more && <span>100개 제한으로 일부 표시</span>}
           {!!display.rawCount && !display.rawEdges && <span>현재 범위에 관계 없음</span>}
-        </div>)}
+        </HStack>)}
       </div>
       <div className="react-graph-workspace">
         <KnowledgeGraph
@@ -299,20 +269,20 @@ export default function Knowledge({
           >
             <header>
               <strong>지식 항목과 검색 결과</strong>
-              <button
+              <Button
                 id="graph-list-close"
                 aria-label="목록 닫기"
                 onClick={() => setList(false)}
               >
                 ×
-              </button>
+              </Button>
             </header>
             <ul id="knowledge-nodes" aria-label="지식 항목 목록">
               {(results || graph.nodes).map((n) => (
                 <li key={n.id}>
-                  <button onClick={() => void showNode(n.id)}>
+                  <Button onClick={() => void showNode(n.id)}>
                     <span className="graph-result-kind">{kinds[n.kind] || n.kind}</span><span>{n.body.slice(0, 90)}</span>
-                  </button>
+                  </Button>
                   {n.matches?.map((m, i) => (
                     <blockquote key={i}>{m.quote}</blockquote>
                   ))}
@@ -329,20 +299,20 @@ export default function Knowledge({
           >
             <header>
               <strong>선택 항목</strong>
-              <button
+              <Button
                 id="graph-detail-close"
                 aria-label="상세 닫기"
                 onClick={clear}
               >
                 ×
-              </button>
+              </Button>
             </header>
             <div id="knowledge-detail">
               {newRequirement ? <ImpactReview key={`new:${session}`} jobId={session} inspect={id => void showNode(id)} /> : group ? (
                 <>
                   <h3>{group.label}</h3>
                   <p>같은 작업·문서 버전의 명세를 묶어 표시합니다.</p>
-                  <button
+                  <Button
                     onClick={() => {
                       setExpanded(
                         (previous) => new Set([...previous, group.id]),
@@ -351,13 +321,13 @@ export default function Knowledge({
                     }}
                   >
                     명세 묶음 펼치기
-                  </button>
+                  </Button>
                   <ul>
                     {group.members.map((id: string) => (
                       <li key={id}>
-                        <button onClick={() => void showNode(id)}>
+                        <Button onClick={() => void showNode(id)}>
                           {title(display.originals.get(id)!)}
-                        </button>
+                        </Button>
                       </li>
                     ))}
                   </ul>
@@ -406,17 +376,17 @@ export default function Knowledge({
                     {selected.attrs?.original_text && (
                       <pre>{selected.attrs.original_text}</pre>
                     )}
-                    <div className="button-row">
-                      <button onClick={() => void expand(selected.id)}>
+                    <HStack gap={2} wrap="wrap" className="button-row">
+                      <Button onClick={() => void expand(selected.id)}>
                         주변 관계 펼치기
-                      </button>
-                      <button onClick={() => void expand(selected.id, true)}>
+                      </Button>
+                      <Button onClick={() => void expand(selected.id, true)}>
                         이 항목 중심으로 보기
-                      </button>
-                      <button onClick={() => void expand(selected.id, true, 2)}>
+                      </Button>
+                      <Button onClick={() => void expand(selected.id, true, 2)}>
                         2단계 주변 보기
-                      </button>
-                    </div>
+                      </Button>
+                    </HStack>
                     <ul>
                       {(selected.edges || [])
                         .filter(
@@ -429,7 +399,7 @@ export default function Knowledge({
                             e.source === selected.id ? e.target : e.source;
                           return (
                             <li key={e.id || i}>
-                              <button onClick={() => void showNode(other)}>
+                              <Button onClick={() => void showNode(other)}>
                                 {e.source === selected.id ? "→" : "←"}{" "}
                                 <span className="graph-result-kind">{edgeLabels[e.kind] || e.kind}</span>{" "}
                                 {(
@@ -437,7 +407,7 @@ export default function Knowledge({
                                   display.originals.get(other)?.body ||
                                   "연결된 항목 열기"
                                 ).slice(0, 70)}
-                              </button>
+                              </Button>
                             </li>
                           );
                         })}
@@ -447,12 +417,12 @@ export default function Knowledge({
                         <summary>이 버전의 명세 원문</summary>
                         <pre>{selected.document}</pre>
                         {selected.document_has_more && (
-                          <button
+                          <Button
                             disabled={busy}
                             onClick={() => void documentMore()}
                           >
                             다음 내용 읽기
-                          </button>
+                          </Button>
                         )}
                       </details>
                     )}
@@ -472,26 +442,26 @@ export default function Knowledge({
             </span>
           ))}
         </div>
-        <div id="graph-relation" className="graph-hints" role="status">
+        <HStack gap={2} wrap="wrap" id="graph-relation" className="graph-hints" role="status">
           {relation ? <span>{relation}</span> : <><span>끌어서 이동</span><span>휠로 확대</span><span><kbd>Esc</kbd> 선택 해제</span></>}
-        </div>
-        <div className="button-row">
-          <button
+        </HStack>
+        <HStack gap={2} wrap="wrap" className="button-row">
+          <Button
             id="graph-zoom-in"
             aria-label="그래프 확대"
             onClick={() => handle.current?.zoom(1.2)}
           >
             ＋
-          </button>
-          <button
+          </Button>
+          <Button
             id="graph-zoom-out"
             aria-label="그래프 축소"
             onClick={() => handle.current?.zoom(1 / 1.2)}
           >
             −
-          </button>
+          </Button>
           {focused && (
-            <button
+            <Button
               id="graph-back"
               onClick={() => {
                 setMode("summary");
@@ -500,20 +470,25 @@ export default function Knowledge({
               }}
             >
               ← 전체 요약
-            </button>
+            </Button>
           )}
           {display.orphans.length > 0 && (
-            <button id="graph-orphans" onClick={() => setOrphans(!orphans)}>
+            <Button id="graph-orphans" onClick={() => setOrphans(!orphans)}>
               {orphans ? "접기" : "펼치기"}: 이 범위에서 연결 없는 항목{" "}
               {display.orphans.length}개
-            </button>
+            </Button>
           )}
-        </div>
+        </HStack>
       </footer>
       {projectOperation && (
         <ProjectDelete
           operation={projectOperation}
           busy={busy}
+          restoreFocus={() => {
+            const target = projectDeleteOpener.current;
+            if (target?.isConnected && !target.disabled) target.focus();
+            else document.getElementById("admin-project")?.focus();
+          }}
           onCancel={() => setProjectOperation(null)}
           onExecute={deleteProject}
         />
@@ -521,50 +496,49 @@ export default function Knowledge({
     </section>
   );
 }
-function ProjectDelete({
+export function ProjectDelete({
   operation,
   busy,
+  restoreFocus,
   onCancel,
   onExecute,
 }: {
   operation: import("../admin/job-data").CleanupOperation & { project_id: string };
   busy: boolean;
+  restoreFocus?: () => void;
   onCancel: () => void;
   onExecute: () => void;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
+  const opener = useRef(document.activeElement as HTMLElement | null);
+  const cancel = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    ref.current?.showModal();
+    // 2026-11-11: 삭제 확인은 취소를 우선하고 닫을 때 호출 위치를 복원한다.
+    cancel.current?.focus();
     return () => {
-      if (opener?.isConnected) opener.focus();
+      if (restoreFocus) restoreFocus();
+      else if (opener.current?.isConnected) opener.current.focus();
     };
   }, []);
   return (
-    <dialog
-      ref={ref}
-      id="cleanup-dialog"
-      onCancel={(e) => {
-        if (busy) e.preventDefault();
-        else onCancel();
-      }}
-    >
-      <h2>빈 프로젝트 영구 삭제 확인</h2>
-      <p>
+    <Dialog open onOpenChange={open => { if (!open && !busy) onCancel(); }}>
+    <DialogContent id="cleanup-dialog" showCloseButton={false} onKeyDown={event => { if (busy && event.key === "Escape") event.preventDefault(); }}>
+      <DialogTitle>빈 프로젝트 영구 삭제 확인</DialogTitle>
+      <DialogDescription>
         작업이 없는 프로젝트를 삭제합니다. 삭제한 기록은 복구할 수 없습니다.
-      </p>
+      </DialogDescription>
       <pre id="cleanup-summary">
         빈 프로젝트 1개 삭제{"\n"}
         {operation.project_id}
         {"\n"}
         {(operation.targets || []).join("\n")}
       </pre>
-      <button id="cleanup-cancel" disabled={busy} autoFocus onClick={onCancel}>
+      <Button ref={cancel} id="cleanup-cancel" disabled={busy} autoFocus onClick={onCancel}>
         취소
-      </button>
-      <button id="cleanup-execute" disabled={busy} onClick={onExecute}>
+      </Button>
+      <Button id="cleanup-execute" variant="destructive" disabled={busy} onClick={onExecute}>
         영구 삭제
-      </button>
-    </dialog>
+      </Button>
+    </DialogContent>
+    </Dialog>
   );
 }

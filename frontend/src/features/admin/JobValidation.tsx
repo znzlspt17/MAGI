@@ -1,3 +1,4 @@
+import { HStack } from "@astryxdesign/core/HStack";
 import { decodeValidationPage } from "./admin-response";
 import { useEffect, useState } from "react";
 import { api } from "../../shared/api/api";
@@ -45,7 +46,7 @@ export default function JobValidation({ jobId }: { jobId: string }) {
     return () => abort.abort();
   }, [jobId, offset, epoch]);
   return <section className="job-validation" aria-label="명세 검증 진단" aria-busy={loading}>
-    <div className="job-validation-heading"><h3>명세 검증 기록</h3><Button variant="outline" disabled={loading} onClick={() => { setOffset(0); setEpoch(value => value + 1); }}>진단 다시 조회</Button></div>
+    <HStack gap={2} wrap="wrap" className="job-validation-heading"><h3>명세 검증 기록</h3><Button variant="outline" disabled={loading} onClick={() => { setOffset(0); setEpoch(value => value + 1); }}>진단 다시 조회</Button></HStack>
     <p className="jobs-muted">저장된 과거 실패 기록입니다. 현재 작업 상태와 다를 수 있으며, 실행 연결이 확인된 기록만 실행 ID를 표시합니다.</p>
     {loading && <p role="status">진단 기록을 불러오는 중…</p>}
     {error && <p role="alert">{error}</p>}
@@ -65,13 +66,13 @@ export default function JobValidation({ jobId }: { jobId: string }) {
           <div><dt>시도 횟수</dt><dd>{record.attempt == null ? "확인되지 않음" : `${record.attempt} / 4`}</dd></div>
           <div><dt>실행 연결</dt><dd>{linked ? <code>{record.execution_id}</code> : "실행 연결 미확인"}</dd></div>
         </dl>
-        <div className="job-validation-actions"><Button variant="outline" onClick={() => void copy(record)}>진단 요약 복사</Button><a href={"/admin/logs?" + params}>관련 로그 보기</a></div>
+        <HStack gap={2} wrap="wrap" className="job-validation-actions"><Button variant="outline" onClick={() => void copy(record)}>진단 요약 복사</Button><a href={"/admin/logs?" + params}>관련 로그 보기</a></HStack>
       </li>;
     })}</ol>
-    {page && <div className="jobs-pagination"><span>{page.items.length ? `${page.offset + 1}–${page.offset + page.items.length}번째 기록` : "0개 기록"}</span><div>
+    {page && <HStack gap={2} wrap="wrap" className="jobs-pagination"><span>{page.items.length ? `${page.offset + 1}–${page.offset + page.items.length}번째 기록` : "0개 기록"}</span><div>
       <Button variant="outline" disabled={loading || offset === 0} onClick={() => setOffset(value => Math.max(0, value - 20))}>이전 진단</Button>
       <Button variant="outline" disabled={loading || page.next_offset == null} onClick={() => setOffset(page.next_offset!)}>다음 진단</Button>
-    </div></div>}
+    </div></HStack>}
     <p role="status">{notice}</p><p className="jobs-muted">관련 로그는 최근 7일 보관 범위에서 조회합니다. 이전 진단에 대응하는 로그는 남아 있지 않을 수 있습니다.</p>
   </section>;
 }

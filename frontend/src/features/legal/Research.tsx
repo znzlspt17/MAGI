@@ -1,3 +1,5 @@
+import { VStack } from "@astryxdesign/core/VStack";
+import { Table, TableHeader, TableBody, TableRow, TableHeaderCell, TableCell } from "@astryxdesign/core/Table";
 import { BookOpenIcon } from "@phosphor-icons/react";
 import { WorkspaceReturnLink } from "../workspace/WorkspaceReturnLink";
 import "./research.css";
@@ -20,11 +22,11 @@ export function Research() {
       <h1><BookOpenIcon weight="duotone" size={32} aria-hidden />연구 출처 및 적용 방식</h1>
       <p className="research-lead">작업별 루브릭을 이용한 명세 검토와 반복 개선</p>
       <p>이 보고서는 MAGI가 RubricRefine의 어떤 절차를 참고했는지, 명세 작성에 맞춰 무엇을 바꿨는지, 현재 무엇까지 확인할 수 있는지를 설명합니다.</p>
-      <div className="research-source"><p lang="en"><cite>RubricRefine: Improving Tool-Use Agent Reliability with Training-Free Pre-Execution Refinement</cite></p>
+      <VStack gap={2} className="research-source"><p lang="en"><cite>RubricRefine: Improving Tool-Use Agent Reliability with Training-Free Pre-Execution Refinement</cite></p>
         <p lang="en">Will LeVine, Brendan Raffel Evers, Sam Saltwick, Abhay Venkatesh</p>
         <dl className="research-source-meta"><div><dt>발행 연도</dt><dd>2026년</dd></div><div><dt>논문 식별자</dt><dd>arXiv:2605.09730v5</dd></div></dl>
         <a href={paper} target="_blank" rel="noreferrer">논문 원문 보기 (v5, 새 창)</a>
-      </div>
+      </VStack>
     </header>
 
     <nav className="research-toc" aria-label="보고서 목차">
@@ -52,27 +54,27 @@ export function Research() {
 
     <section aria-labelledby="comparison"><h2 id="comparison">논문과 MAGI의 대응 관계</h2>
       <p>두 방법은 기준을 유지하며 평가와 수정을 반복하는 제어 흐름을 공유합니다. 실제로 검사하는 산출물과 근거는 아래처럼 다릅니다. MAGI의 기준은 제품 요구사항의 인용에 연결되며 사용자 승인 흐름을 통과해야 합니다.</p>
-      <div className="research-table" role="region" aria-label="논문과 MAGI 적용 비교 표 스크롤 영역" tabIndex={0}><table><caption>논문과 MAGI 적용 비교</caption><thead><tr><th scope="col">항목</th><th scope="col">RubricRefine 논문</th><th scope="col">MAGI의 명세 검토</th></tr></thead><tbody>
-        <tr><th scope="row">입력 근거</th><td>작업 지시와 도구 문서</td><td>확정 요구사항, 제품 제약과 확인된 원문</td></tr>
-        <tr><th scope="row">후보</th><td>실행 전 코드</td><td>요구사항에 연결된 명세 초안</td></tr>
-        <tr><th scope="row">검사 분류</th><td>도구 선택·출력·호출 형식·값의 출처</td><td>요구사항·계약·데이터 흐름·실패/완료·인수 테스트</td></tr>
-        <tr><th scope="row">판정과 점수</th><td>항목별 PASS/FAIL과 1–10점</td><td>PASS/FAIL/UNDETERMINED와 1–10점</td></tr>
-        <tr><th scope="row">종료와 선택</th><td>최고점·정체·라운드 한도와 최고점 후보</td><td>같은 유형의 종료와 후보 선택을 명세에 적용</td></tr>
-        <tr><th scope="row">결과 사용</th><td>선택된 코드를 단일 실행 대상으로 사용</td><td>선택된 명세와 남은 결함을 사용자 승인 대상으로 제시</td></tr>
-      </tbody></table></div>
+      <div className="research-table" role="region" aria-label="논문과 MAGI 적용 비교 표 스크롤 영역" tabIndex={0}><Table><caption>논문과 MAGI 적용 비교</caption><TableHeader><TableRow><TableHeaderCell scope="col">항목</TableHeaderCell><TableHeaderCell scope="col">RubricRefine 논문</TableHeaderCell><TableHeaderCell scope="col">MAGI의 명세 검토</TableHeaderCell></TableRow></TableHeader><TableBody>
+        <TableRow><TableHeaderCell scope="row">입력 근거</TableHeaderCell><TableCell>작업 지시와 도구 문서</TableCell><TableCell>확정 요구사항, 제품 제약과 확인된 원문</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row">후보</TableHeaderCell><TableCell>실행 전 코드</TableCell><TableCell>요구사항에 연결된 명세 초안</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row">검사 분류</TableHeaderCell><TableCell>도구 선택·출력·호출 형식·값의 출처</TableCell><TableCell>요구사항·계약·데이터 흐름·실패/완료·인수 테스트</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row">판정과 점수</TableHeaderCell><TableCell>항목별 PASS/FAIL과 1–10점</TableCell><TableCell>PASS/FAIL/UNDETERMINED와 1–10점</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row">종료와 선택</TableHeaderCell><TableCell>최고점·정체·라운드 한도와 최고점 후보</TableCell><TableCell>같은 유형의 종료와 후보 선택을 명세에 적용</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row">결과 사용</TableHeaderCell><TableCell>선택된 코드를 단일 실행 대상으로 사용</TableCell><TableCell>선택된 명세와 남은 결함을 사용자 승인 대상으로 제시</TableCell></TableRow>
+      </TableBody></Table></div>
       <p>이 대응표는 접근 방법의 연결을 보여 줍니다. 동일한 벤치마크와 출력물에 대한 재현 실험을 뜻하지 않습니다. 논문의 상세 절차는 <a href={`${paper}#A4`} target="_blank" rel="noreferrer">부록 D: 알고리즘과 설정</a>에서 확인할 수 있습니다.</p>
     </section>
 
     <section aria-labelledby="generation"><h2 id="generation">작업별 루브릭 생성</h2>
       <p>MAGI는 확인된 요구사항 묶음에서 검사 기준을 만듭니다. 필수 요구사항과 제품 제약은 빠짐없이 기준에 연결해야 하며, 권장·선택 요구사항은 그 우선순위를 유지합니다. 범위 밖으로 확정된 내용도 제품의 제외 조건으로 다룹니다. 사용자가 선택하지 않은 선택 기능이 없다는 이유로 그 기능을 새 필수 동작으로 만들지 않습니다.</p>
       <p>각 기준은 해당 요구사항의 식별자와 정확히 일치하는 근거 인용을 가져야 합니다. 제공된 원문이 실제 사용자 출처와 연결될 때에는 보조 인용으로 사용할 수 있습니다. 생성된 항목에 중복 ID가 있거나 알 수 없는 요구사항을 참조하거나 인용이 해당 근거에 존재하지 않으면 유효한 루브릭으로 받아들이지 않습니다.</p>
-      <div className="research-table" role="region" aria-label="루브릭 항목 구성 표 스크롤 영역" tabIndex={0}><table><caption>루브릭 항목의 구성</caption><thead><tr><th scope="col">필드</th><th scope="col">용도</th></tr></thead><tbody>
-        <tr><th scope="row">rubric_id / requirement_id</th><td>기준과 그 기준이 검사하는 제품 요구사항을 식별합니다.</td></tr>
-        <tr><th scope="row">condition / basis</th><td>확인할 조건과 해당 요구사항에서 발췌한 근거를 담습니다.</td></tr>
-        <tr><th scope="row">sections</th><td>평가 시 확인할 명세 섹션을 지정합니다.</td></tr>
-        <tr><th scope="row">category</th><td>requirement, contract, data_flow, failure_completion, acceptance_test 중 검사 영역을 나타냅니다.</td></tr>
-        <tr><th scope="row">importance</th><td>core, critical, secondary 중 해당 기준의 평가 우선순위를 나타냅니다.</td></tr>
-      </tbody></table></div>
+      <div className="research-table" role="region" aria-label="루브릭 항목 구성 표 스크롤 영역" tabIndex={0}><Table><caption>루브릭 항목의 구성</caption><TableHeader><TableRow><TableHeaderCell scope="col">필드</TableHeaderCell><TableHeaderCell scope="col">용도</TableHeaderCell></TableRow></TableHeader><TableBody>
+        <TableRow><TableHeaderCell scope="row">rubric_id / requirement_id</TableHeaderCell><TableCell>기준과 그 기준이 검사하는 제품 요구사항을 식별합니다.</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row">condition / basis</TableHeaderCell><TableCell>확인할 조건과 해당 요구사항에서 발췌한 근거를 담습니다.</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row">sections</TableHeaderCell><TableCell>평가 시 확인할 명세 섹션을 지정합니다.</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row">category</TableHeaderCell><TableCell>requirement, contract, data_flow, failure_completion, acceptance_test 중 검사 영역을 나타냅니다.</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row">importance</TableHeaderCell><TableCell>core, critical, secondary 중 해당 기준의 평가 우선순위를 나타냅니다.</TableCell></TableRow>
+      </TableBody></Table></div>
       <p>검사 영역과 중요도는 서로 다른 축입니다. 예를 들어 어떤 조건이 테스트 영역에 속하는지와 그것이 점수 제한에서 얼마나 중요한지는 같은 질문이 아닙니다. 사용자의 확정 입력과 기준 생성에 사용된 근거가 유지되면 기존 루브릭을 재사용하고, 그 근거가 바뀌면 기존 평가를 현재 기준으로 간주하지 않습니다.</p>
     </section>
 
@@ -85,12 +87,12 @@ export function Research() {
 
     <section aria-labelledby="score"><h2 id="score">점수와 중요 실패 제한</h2>
       <p>평가 모델은 1부터 10까지의 정수 점수와 이유, 중요 실패 목록, 구체적인 수정 지시를 반환합니다. 이 점수는 모델의 순서형 판단입니다. 전체 항목 중 PASS의 비율로 자동 계산하지 않으며, 제품이 성공할 확률이나 사용자 요구를 완전히 만족할 확률을 뜻하지 않습니다.</p>
-      <div className="research-table" role="region" aria-label="MAGI 점수 상한 표 스크롤 영역" tabIndex={0}><table><caption>MAGI 점수 상한</caption><thead><tr><th scope="col">확인된 상태</th><th scope="col">허용 상한</th><th scope="col">해석</th></tr></thead><tbody>
-        <tr><th scope="row">core 항목 미충족 또는 판단 불가</th><td>4점</td><td>핵심 동작에 대한 기준이 충족되지 않았습니다.</td></tr>
-        <tr><th scope="row">critical 항목 미충족·판단 불가 또는 blocking/major 이슈</th><td>7점</td><td>중요 계약이나 명세 결함이 남아 있습니다.</td></tr>
-        <tr><th scope="row">secondary 실패 또는 minor 이슈만 남음</th><td>9점</td><td>남은 부차적 결함을 설명하고 수정할 수 있습니다.</td></tr>
-        <tr><th scope="row">10점 부여의 필요조건</th><td>10점</td><td>모든 항목 PASS와 이슈 없음이 필요합니다.</td></tr>
-      </tbody></table></div>
+      <div className="research-table" role="region" aria-label="MAGI 점수 상한 표 스크롤 영역" tabIndex={0}><Table><caption>MAGI 점수 상한</caption><TableHeader><TableRow><TableHeaderCell scope="col">확인된 상태</TableHeaderCell><TableHeaderCell scope="col">허용 상한</TableHeaderCell><TableHeaderCell scope="col">해석</TableHeaderCell></TableRow></TableHeader><TableBody>
+        <TableRow><TableHeaderCell scope="row">core 항목 미충족 또는 판단 불가</TableHeaderCell><TableCell>4점</TableCell><TableCell>핵심 동작에 대한 기준이 충족되지 않았습니다.</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row">critical 항목 미충족·판단 불가 또는 blocking/major 이슈</TableHeaderCell><TableCell>7점</TableCell><TableCell>중요 계약이나 명세 결함이 남아 있습니다.</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row">secondary 실패 또는 minor 이슈만 남음</TableHeaderCell><TableCell>9점</TableCell><TableCell>남은 부차적 결함을 설명하고 수정할 수 있습니다.</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row">10점 부여의 필요조건</TableHeaderCell><TableCell>10점</TableCell><TableCell>모든 항목 PASS와 이슈 없음이 필요합니다.</TableCell></TableRow>
+      </TableBody></Table></div>
       <p>서버는 모델이 제안한 점수를 보존하고, 루브릭 판정과 이슈 및 결정적 검사에서 나온 가장 낮은 상한을 적용해 최종 점수를 정합니다. 모델이 더 높은 점수를 제안해도 상한으로 보정합니다. 중요 실패 목록도 서버가 판정과 중요 결함을 바탕으로 재구성합니다. 동일한 중요도의 UNDETERMINED에는 비충족과 같은 제한을 적용합니다.</p>
       <p>점수 보정과 별개로 응답 형식이나 평가 항목, 인용, 이슈 연결이 계약에 맞지 않으면 서버가 평가를 거부합니다. 승인할 때에는 저장된 평가와 초안이 맞는지, 점수와 중요 실패가 현재 검사 결과와 일치하는지도 다시 확인합니다. 이런 검사는 모델이 개별 조건을 의미적으로 올바르게 해석했는지까지 보증하지는 않습니다.</p>
       <p>기준의 importance는 생성 시 정해지는 검사 우선순위이고, 이슈의 severity는 실제 결함의 영향입니다. secondary 기준이라고 해서 실제로 중요한 결함을 반드시 minor로 낮추지는 않습니다. 중요 실패부터 수정 지시를 제공하되, 지시문이 확인된 요구사항을 바꾸는 근거가 되지는 않습니다.</p>
@@ -110,19 +112,19 @@ export function Research() {
   10점 또는 연속 비개선 2회이면 종료
   남은 예산이 있으면 직전 피드백으로 초안 수정
 종료 후 최고점 초안과 그 평가·이슈를 함께 선택`}</code></pre>
-      <div className="research-example"><h3>가상의 예시: 8 → 7 → 7</h3><p>첫 초안이 8점이면 그 초안이 최고점 후보입니다. 두 번째 초안이 7점으로 내려가면 비개선 1회입니다. 세 번째도 7점이면 최고점 8점을 넘지 못했으므로 비개선 2회가 되어 종료합니다. 이때 세 번째가 아니라 첫 초안과 첫 평가가 선택됩니다. 예시의 점수와 명세는 설명을 위해 만든 가상의 예시입니다.</p></div>
+      <VStack gap={2} className="research-example"><h3>가상의 예시: 8 → 7 → 7</h3><p>첫 초안이 8점이면 그 초안이 최고점 후보입니다. 두 번째 초안이 7점으로 내려가면 비개선 1회입니다. 세 번째도 7점이면 최고점 8점을 넘지 못했으므로 비개선 2회가 되어 종료합니다. 이때 세 번째가 아니라 첫 초안과 첫 평가가 선택됩니다. 예시의 점수와 명세는 설명을 위해 만든 가상의 예시입니다.</p></VStack>
       <p>동점 처리의 목적은 먼저 확보한 후보를 보존하는 데 있습니다. 점수가 같다는 사실만으로 새 초안의 다른 부분이 더 좋다고 판단하지 않습니다. 최고점 선택은 모델이 평가한 순서에 의존하므로, 기준이나 모델 판정의 오류까지 자동으로 제거하는 장치는 아닙니다.</p>
     </section>
 
     <section aria-labelledby="roles"><h2 id="roles">단계별 책임과 근거 우선순위</h2>
       <p>생성, 평가, 해결 판단은 서로 다른 책임을 갖습니다. 단계별 지침과 구조화 응답의 역할을 나누는 이유는 초안 작성 중 만들어진 추측이 사용자의 확정 요구사항으로 섞이거나, 평가 제안이 새로운 의무로 전환되는 것을 막기 위해서입니다.</p>
-      <div className="research-table" role="region" aria-label="단계별 책임 표 스크롤 영역" tabIndex={0}><table><caption>단계별 책임</caption><thead><tr><th scope="col">단계</th><th scope="col">주요 책임</th></tr></thead><tbody>
-        <tr><th scope="row">루브릭 생성</th><td>확정 요구사항에서 검사 조건과 근거를 만들고 스스로 후보를 채점하지 않습니다.</td></tr>
-        <tr><th scope="row">명세 작성·수정</th><td>확정 요구사항과 해결 판단된 이슈에 따라 초안을 작성하고 기존 문서의 관련 없는 부분을 보존합니다.</td></tr>
-        <tr><th scope="row">검토</th><td>일반 결함과 루브릭 항목을 평가해 근거, 이슈, 점수와 수정 제안을 만듭니다.</td></tr>
-        <tr><th scope="row">해결 판단</th><td>확정 근거로 자동 보완할지, 사용자에게 빠진 제품 결정을 질문할지 분류합니다.</td></tr>
-        <tr><th scope="row">계획·실행 제어</th><td>선행 조건과 라운드 상태를 확인하고 필요한 다음 단계를 선택합니다.</td></tr>
-      </tbody></table></div>
+      <div className="research-table" role="region" aria-label="단계별 책임 표 스크롤 영역" tabIndex={0}><Table><caption>단계별 책임</caption><TableHeader><TableRow><TableHeaderCell scope="col">단계</TableHeaderCell><TableHeaderCell scope="col">주요 책임</TableHeaderCell></TableRow></TableHeader><TableBody>
+        <TableRow><TableHeaderCell scope="row">루브릭 생성</TableHeaderCell><TableCell>확정 요구사항에서 검사 조건과 근거를 만들고 스스로 후보를 채점하지 않습니다.</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row">명세 작성·수정</TableHeaderCell><TableCell>확정 요구사항과 해결 판단된 이슈에 따라 초안을 작성하고 기존 문서의 관련 없는 부분을 보존합니다.</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row">검토</TableHeaderCell><TableCell>일반 결함과 루브릭 항목을 평가해 근거, 이슈, 점수와 수정 제안을 만듭니다.</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row">해결 판단</TableHeaderCell><TableCell>확정 근거로 자동 보완할지, 사용자에게 빠진 제품 결정을 질문할지 분류합니다.</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row">계획·실행 제어</TableHeaderCell><TableCell>선행 조건과 라운드 상태를 확인하고 필요한 다음 단계를 선택합니다.</TableCell></TableRow>
+      </TableBody></Table></div>
       <p>확정 요구사항과 실제 사용자 출처가 우선합니다. 해결 판단된 이슈는 그 근거의 범위에서 수정 방향을 제공하고, 평가 모델의 수정 제안은 근거와 충돌할 수 없는 제안입니다. 이미 답한 제품 결정은 다시 사용하며, 새로 확인할 중대한 결정이 없는데 시스템 오류를 사용자에게 해결하도록 질문하지 않습니다.</p>
       <p>평가 점수나 수정 지시는 원문의 수치·조건을 임의로 바꿀 권한이 없습니다. 특히 권장·선택 사항을 점수 개선만을 위해 필수 기능으로 승격하지 않습니다. 반대로 중대한 선택이 실제로 미확정이라면 모델의 추정을 확정 사실로 기록하지 않고 사용자 답변을 기다립니다.</p>
     </section>
@@ -152,13 +154,13 @@ export function Research() {
       <h3>참고문헌</h3><p lang="en"><cite>LeVine, W., Evers, B. R., Saltwick, S., &amp; Venkatesh, A. (2026). RubricRefine: Improving Tool-Use Agent Reliability with Training-Free Pre-Execution Refinement.</cite> arXiv:2605.09730v5.</p>
       <nav className="research-references" aria-label="원 논문 참고 링크"><a href={`${paper}#S3`} target="_blank" rel="noreferrer">논문 3절: 방법</a><a href={`${paper}#S4`} target="_blank" rel="noreferrer">4절: 실험</a><a href={`${paper}#A4`} target="_blank" rel="noreferrer">부록 D: 알고리즘</a><a href={`${paper}#A5`} target="_blank" rel="noreferrer">부록 E: 프롬프트</a></nav>
       <h3>구현 대응표</h3><p>아래 이름은 이 보고서의 설명을 코드 책임과 대조하기 위한 모듈 이름입니다. 운영 환경의 데이터 위치를 나타내지 않습니다.</p>
-      <div className="research-table" role="region" aria-label="구현 대응 표 스크롤 영역" tabIndex={0}><table><caption>구현 대응표</caption><thead><tr><th scope="col">구현 모듈</th><th scope="col">담당</th></tr></thead><tbody>
-        <tr><th scope="row"><code>rubric</code></th><td>기준 생성·검증, 평가 연결과 점수 상한 검증</td></tr>
-        <tr><th scope="row"><code>refinement</code></th><td>라운드 기록, 최고점 추적과 초안·평가 복원</td></tr>
-        <tr><th scope="row"><code>checklist_critic</code></th><td>결정적 검사와 모델의 일반·루브릭 검토 결합</td></tr>
-        <tr><th scope="row"><code>review_resolution</code></th><td>확정 근거에 따른 자동 보완과 사용자 결정 분류</td></tr>
-        <tr><th scope="row"><code>execution_segment</code></th><td>사용자 입력·명시적 재시도에 따른 실행 구간 상태 전환</td></tr>
-      </tbody></table></div>
+      <div className="research-table" role="region" aria-label="구현 대응 표 스크롤 영역" tabIndex={0}><Table><caption>구현 대응표</caption><TableHeader><TableRow><TableHeaderCell scope="col">구현 모듈</TableHeaderCell><TableHeaderCell scope="col">담당</TableHeaderCell></TableRow></TableHeader><TableBody>
+        <TableRow><TableHeaderCell scope="row"><code>rubric</code></TableHeaderCell><TableCell>기준 생성·검증, 평가 연결과 점수 상한 검증</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row"><code>refinement</code></TableHeaderCell><TableCell>라운드 기록, 최고점 추적과 초안·평가 복원</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row"><code>checklist_critic</code></TableHeaderCell><TableCell>결정적 검사와 모델의 일반·루브릭 검토 결합</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row"><code>review_resolution</code></TableHeaderCell><TableCell>확정 근거에 따른 자동 보완과 사용자 결정 분류</TableCell></TableRow>
+        <TableRow><TableHeaderCell scope="row"><code>execution_segment</code></TableHeaderCell><TableCell>사용자 입력·명시적 재시도에 따른 실행 구간 상태 전환</TableCell></TableRow>
+      </TableBody></Table></div>
       <p>연구 출처와 적용 설명은 배포 코드·에셋의 라이선스 고지와 별개입니다. 오픈소스 라이선스 페이지에서 별도의 고지 내용을 확인할 수 있습니다.</p>
     </section>
     <footer className="public-links"><WorkspaceReturnLink /><a href="/licenses">오픈소스 라이선스</a><a href="/privacy">정보 처리 안내</a></footer>

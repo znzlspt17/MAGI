@@ -1,3 +1,4 @@
+import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import { useEffect, useState } from "react";
 import { StatusIcon } from "../../shared/ui/StatusIcon";
 import { Trace, TraceCollapsible, TraceCollapsibleTrigger, TraceCollapsibleContent, TraceLine, TraceIcon, TraceTitle } from "../../shared/ui/trace";
@@ -52,10 +53,10 @@ export function ExecutionMonitor({ job, select }: { job: Job; select: (id: strin
         const stepDuration = end ? elapsedLabel(node.started_at, end, clock)
           : active && node.status === "running" ? elapsedLabel(node.started_at, undefined, clock)
           : "소요 시간 기록 없음";
-        return <li key={node.id} data-status={status}><button type="button" onClick={() => select(node.id)}>
+        return <li key={node.id} data-status={status}><AstryxButton variant="ghost" label={`${stageLabel(node)} ${statusLabel(status)} ${stepDuration}`} onClick={() => select(node.id)}>
           <StatusIcon status={status} size={17} /><span>{stageLabel(node)}</span><span className="execution-monitor-step-status sr-only">{statusLabel(status)}</span>
           {!intakeStages.has(node.stage || "") && <span className="execution-monitor-time">{stepDuration}</span>}
-        </button></li>;
+        </AstryxButton></li>;
       })}</ol>
       {!nodes.length && <p>{job.status === "queued" ? "실행 가능한 순서를 기다리고 있습니다." : "단계 기록을 준비하고 있습니다."}</p>}
       {!active && job.message && <p>{job.message}</p>}

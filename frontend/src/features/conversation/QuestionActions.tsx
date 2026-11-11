@@ -1,3 +1,8 @@
+import { Stack } from "@astryxdesign/core/Stack";
+import { RadioList, RadioListItem } from "@astryxdesign/core/RadioList";
+import { CheckboxList, CheckboxListItem } from "@astryxdesign/core/CheckboxList";
+import { CheckboxInput } from "@astryxdesign/core/CheckboxInput";
+import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import { RubricReview } from "./RubricReview";
 import { ServiceStatusNotice, serviceState } from "../workspace/ServiceStatus";
 import { ChangeReview } from "../requirements/ChangeReview";
@@ -9,7 +14,7 @@ import type { ReactNode } from "react";
 import { Item, ItemContent, ItemTitle, ItemDescription, ItemActions } from "../../shared/ui/item";
 import { SealCheckIcon, LightbulbIcon } from "@phosphor-icons/react";
 import { Field, FieldSet, FieldLegend, FieldLabel, FieldDescription, FieldError } from "../../shared/ui/field";
-import { Badge } from "../../shared/ui/badge";
+import { Text } from "@astryxdesign/core/Text";
 import { Alert, AlertTitle, AlertDescription } from "../../shared/ui/alert";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "../../shared/ui/collapsible";
 import "./question-guidance.css";
@@ -31,7 +36,7 @@ const decodeDraft = requiredObject({ ids: array(text), custom: boolean, text });
 export function ReviewContext({ record }: { record?: ReviewQuestion }) {
   if (!record) return null;
   return (
-    <div className="question-hint">
+    <Stack className="question-hint">
       {([
         ["requirement_ids", "관련 요구사항"],
         ["missing_information", "미확정 내용"],
@@ -50,7 +55,7 @@ export function ReviewContext({ record }: { record?: ReviewQuestion }) {
           관련 명세 ({e.source}): {e.quote}
         </blockquote>
       ))}</CollapsibleContent></Collapsible>}
-    </div>
+    </Stack>
   );
 }
 function initial(form: QuestionForm | undefined, saved?: SavedAnswer): Draft {
@@ -228,14 +233,13 @@ export function QuestionActions({
           ? "저장된 답변을 유지하고 마지막 저장 지점부터 다시 시도합니다."
           : job.retry_unavailable_reason || job.continuation_error || "재시도 가능 여부를 확인할 수 없습니다. 최신 작업 상태를 확인해주세요."}</p>
         {retryApproval && <RubricReview review={job.state?.rubric_review} />}
-        {retryApproval && requiresAcceptance && <label><input type="checkbox" checked={acceptedCandidate === reviewKey}
-          onChange={event => setAcceptedCandidate(event.target.checked ? reviewKey : "")} />표시된 남은 결함을 확인했으며, 이 명세에 남아 있는 상태로 수락합니다.</label>}
-        {job.retry_requires_replay && <label><input type="checkbox" checked={replayConsent} onChange={e => setReplayConsent(e.target.checked)} />호출 반복과 추가 비용 가능성을 확인했습니다.</label>}
+        {retryApproval && requiresAcceptance && <CheckboxInput label="표시된 남은 결함을 확인했으며, 이 명세에 남아 있는 상태로 수락합니다." value={acceptedCandidate === reviewKey} onChange={checked => setAcceptedCandidate(checked ? reviewKey : "")} />}
+        {job.retry_requires_replay && <CheckboxInput label="호출 반복과 추가 비용 가능성을 확인했습니다." value={replayConsent} onChange={setReplayConsent} />}
         <ServiceStatusNotice inline />
-        {(job.can_retry || retryApproval) && controls(<div className="chat-answer-controls"><Button
-          className="primary" disabled={disabled || (!!job.retry_requires_replay && !replayConsent) || (retryApproval && requiresAcceptance && acceptedCandidate !== reviewKey)}
+        {(job.can_retry || retryApproval) && controls(<Stack direction="horizontal" wrap="wrap" className="chat-answer-controls"><Button
+          variant="default" disabled={disabled || (!!job.retry_requires_replay && !replayConsent) || (retryApproval && requiresAcceptance && acceptedCandidate !== reviewKey)}
           onClick={() => void perform(retryApproval ? "approve" : "retry", retryApproval && requiresAcceptance ? { accept_remaining_issues: true } : job.retry_requires_replay ? { replay_pending: true } : null).catch(() => {})}
-        >{pending ? "재시도 요청 중…" : retryApproval ? "승인 다시 저장" : job.retry_requires_replay ? "미완료 단계 다시 실행" : "다시 시도"}</Button></div>)}
+        >{pending ? "재시도 요청 중…" : retryApproval ? "승인 다시 저장" : job.retry_requires_replay ? "미완료 단계 다시 실행" : "다시 시도"}</Button></Stack>)}
       </section>
     );
   if (job.read_only || (job.status === "FINALIZED" && !job.can_continue))
@@ -278,11 +282,11 @@ export function QuestionActions({
         </p>
         <nav className="question-navigation" aria-label="질문 탐색"><ol>{questions.map((raw, index) => {
           const question = questionDetails(raw, index), answered = questionAnswered(raw, index);
-          return <li key={`${index}:${question.id}`}><button type="button" className="question-navigation-item" data-answered={answered} aria-label={`질문 ${index + 1} ${answered ? "작성됨" : "미작성"}`} title={question.label} onClick={() => {
+          return <li key={`${index}:${question.id}`}><AstryxButton className="question-navigation-item" data-answered={answered} label={`질문 ${index + 1} ${answered ? "작성됨" : "미작성"}`} tooltip={question.label} onClick={() => {
             const field = questionFields.current[question.id];
             field?.scrollIntoView?.({ block: "start", behavior: "auto" });
             field?.focus();
-          }}><span>{index + 1}</span><span>{answered ? "작성됨" : "미작성"}</span></button></li>;
+          }}><span>{index + 1}</span><span>{answered ? "작성됨" : "미작성"}</span></AstryxButton></li>;
         })}</ol></nav>
         {questions.map((raw, index) => {
           const q = questionDetails(raw, index),
@@ -297,65 +301,25 @@ export function QuestionActions({
               <FieldLegend>
                 {index + 1}. {form?.question || q.label}
               </FieldLegend>
-              <div id={`question-context-${q.id}`} hidden={!context}>
+              <Stack id={`question-context-${q.id}`} hidden={!context}>
                 <Collapsible defaultOpen={!conversational}><CollapsibleTrigger className="question-evidence-trigger">검토 배경 보기</CollapsibleTrigger><CollapsibleContent><ReviewContext record={context} /></CollapsibleContent></Collapsible>
-              </div>
+              </Stack>
               {form && form.input_type !== "text" && (form.recommendation !== undefined || form.options.some(option => option.impact)) && <p className="question-guidance-notice">영향과 전제는 모델의 안내입니다. 선택한 항목과 직접 입력한 내용만 답변으로 제출됩니다.</p>}
-              {form &&
-                form.input_type !== "text" &&
-                [...form.options, { id: "__custom", label: "직접 입력", impact: null, assumptions: [] }].map(
-                  (option) => (
-                    <Field key={option.id} className="question-choice-field"><FieldLabel className="question-option choice-card" data-selected={option.id === "__custom" ? draft.custom : draft.ids.includes(option.id)}>
-                      <input
-                        type={
-                          form.input_type === "single_choice"
-                            ? "radio"
-                            : "checkbox"
-                        }
-                        name={key}
-                        aria-labelledby={`choice-${q.id}-${option.id}-label`}
-                        aria-describedby={option.impact || option.assumptions?.length ? `choice-${q.id}-${option.id}-description` : undefined}
-                        checked={
-                          option.id === "__custom"
-                            ? draft.custom
-                            : draft.ids.includes(option.id)
-                        }
-                        onChange={(e) => {
-                          if (option.id === "__custom")
-                            change(key, {
-                              ...draft,
-                              custom: e.target.checked,
-                              ids:
-                                form.input_type === "single_choice"
-                                  ? []
-                                  : draft.ids,
-                            });
-                          else if (form.input_type === "single_choice")
-                            change(key, {
-                              ...draft,
-                              custom: false,
-                              ids: [option.id],
-                            });
-                          else
-                            change(key, {
-                              ...draft,
-                              ids: e.target.checked
-                                ? [
-                                    ...draft.ids.filter(
-                                      (id) => id !== option.id,
-                                    ),
-                                    option.id,
-                                  ]
-                                : draft.ids.filter((id) => id !== option.id),
-                            });
-                        }}
-                      />
-                      <span className="choice-copy"><span className="choice-heading"><span id={`choice-${q.id}-${option.id}-label`}>{option.label}</span>{form.recommendation?.option_ids.includes(option.id) && <Badge variant="outline" className="choice-recommended" aria-hidden><LightbulbIcon size={14} />추천</Badge>}{(option.id === "__custom" ? draft.custom : draft.ids.includes(option.id)) && <span className="choice-selected" aria-hidden>선택됨</span>}</span>
-                        {(option.impact || !!option.assumptions?.length) && <span id={`choice-${q.id}-${option.id}-description`} className="choice-description">{option.impact && <FieldDescription>{option.impact}</FieldDescription>}{option.assumptions?.map((assumption, n) => <span className="choice-assumption" key={n}>전제: {assumption}</span>)}</span>}
-                      </span>
-                    </FieldLabel></Field>
-                  ),
-                )}
+              {form && form.input_type !== "text" && (() => {
+                const options = [...form.options, { id: "__custom", label: "직접 입력", impact: null, assumptions: [] }];
+                const selected = [...draft.ids, ...(draft.custom ? ["__custom"] : [])];
+                const update = (values: string[]) => change(key, { ...draft, custom: values.includes("__custom"), ids: values.filter(value => value !== "__custom") });
+                const description = (option: typeof options[number]) => option.impact || option.assumptions?.length
+                  ? <>{option.impact && <p>{option.impact}</p>}{option.assumptions?.map((assumption, n) => <p key={n}>전제: {assumption}</p>)}</> : undefined;
+                const label = (option: typeof options[number]) => <>{option.label}{form.recommendation?.option_ids.includes(option.id) && <Text type="supporting" aria-hidden>추천</Text>}{selected.includes(option.id) && <span aria-hidden>선택됨</span>}</>;
+                return form.input_type === "single_choice"
+                  ? <RadioList label="선택지" isLabelHidden htmlName={key} value={selected[0] || ""} onChange={value => update([value])} isDisabled={busy || pending}>
+                    {options.map(option => <RadioListItem key={option.id} value={option.id} label={label(option)} aria-label={option.label} description={description(option)} />)}
+                  </RadioList>
+                  : <CheckboxList label="선택지" isLabelHidden value={selected} onChange={update} isDisabled={busy || pending}>
+                    {options.map(option => <CheckboxListItem key={option.id} value={option.id} label={label(option)} aria-label={option.label} description={description(option)} />)}
+                  </CheckboxList>;
+              })()}
               {form && form.input_type !== "text" && form.recommendation !== undefined && (form.recommendation ? <Collapsible defaultOpen={!conversational}><CollapsibleTrigger className="question-evidence-trigger">모델 추천 이유와 전제</CollapsibleTrigger><CollapsibleContent><Alert className="question-recommendation" role="note" aria-label="추천 이유와 전제"><LightbulbIcon size={19} aria-hidden /><AlertTitle>모델이 안내한 추천 이유</AlertTitle><AlertDescription><p>{form.recommendation.option_ids.map(id => form.options.find(option => option.id === id)?.label).filter(Boolean).join(" + ")}</p><p>{form.recommendation.reason}</p>{form.recommendation.assumptions.map((assumption, n) => <p key={n}>추천 전제: {assumption}</p>)}<p className="recommendation-boundary">추천과 전제는 안내입니다. 직접 선택하고 답변을 제출해야 결정됩니다.</p></AlertDescription></Alert></CollapsibleContent></Collapsible> : <p className="question-recommendation-unavailable">현재 정보로는 추천을 정하기 어렵습니다</p>)}
               {(!form || form.input_type === "text" || draft.custom) && (
                 <ExpandableTextarea
@@ -377,13 +341,13 @@ export function QuestionActions({
         })}
         <ServiceStatusNotice inline />
         {error && <FieldError>{error}</FieldError>}
-        {controls(<div className="chat-answer-controls"><span role="status">답변 {answeredCount}/{questions.length}개 작성</span><Button
-          className="primary"
+        {controls(<Stack direction="horizontal" wrap="wrap" className="chat-answer-controls"><span role="status">답변 {answeredCount}/{questions.length}개 작성</span><Button
+          variant="default"
           disabled={disabled || answeredCount === 0}
           onClick={() => void submit().catch(() => {})}
         >
           답변 제출
-        </Button></div>)}
+        </Button></Stack>)}
       </section>
     );
   const recovery =
@@ -420,7 +384,22 @@ export function QuestionActions({
         if (job.state?.plan) return onAppendFeedback?.(question) ?? false;
         return appendFeedback(question);
       }} />}
-      {!job.state?.plan && controls(<div className="chat-feedback-controls"><label htmlFor={`feedback-${job.id}`}>{job.can_continue ? "추가 요청 내용" : "수정 의견 보내기"}</label>
+      {approval && <>
+        <Item variant="outline" size="sm" className="spec-confirmation">
+          <SealCheckIcon weight="duotone" size={25} aria-hidden />
+          <ItemContent><ItemTitle>이 명세를 최종 승인할까요?</ItemTitle><ItemDescription>현재 검토본을 확인한 뒤 승인해주세요. 과거 명세를 여는 것만으로 승인되지는 않습니다.</ItemDescription></ItemContent>
+        </Item>
+        {/* 2026-11-11: 수락 조건과 단일 승인 동작을 같은 하단 영역에 두어 항상 찾을 수 있게 한다. */}
+        {controls(<Stack className="chat-approval-controls" role="group" aria-label="명세 승인 동작">
+          {requiresAcceptance && <CheckboxInput label="표시된 남은 결함을 확인했으며, 이 명세에 남아 있는 상태로 수락합니다." value={acceptedCandidate === reviewKey} isDisabled={disabled} onChange={checked => setAcceptedCandidate(checked ? reviewKey : "")} />}
+          <ItemActions>
+            {onReview && <Button onClick={onReview}>현재 검토본 열기</Button>}
+            <Button variant="default" disabled={disabled || (requiresAcceptance && acceptedCandidate !== reviewKey)} onClick={() => void perform("approve", requiresAcceptance ? { accept_remaining_issues: true } : null).catch(() => {})}>{approvedExecution === executionKey ? "승인 전송됨" : "이 명세 승인"}</Button>
+            {job.state?.rubric_review?.termination && job.state.rubric_review.score < 10 && <Button disabled={disabled} onClick={() => void perform("retry", null).catch(() => {})}>최고점 후보에서 추가 실행</Button>}
+          </ItemActions>
+        </Stack>)}
+      </>}
+      {!job.state?.plan && controls(<Stack className="chat-feedback-controls">
       <PromptInput
         id={`feedback-${job.id}`}
         label={job.can_continue ? "추가 요청 내용" : "수정 의견 보내기"}
@@ -437,23 +416,8 @@ export function QuestionActions({
           }).catch(() => {});
         }}
       />
-      <Notice>{error}</Notice></div>)}
+      <Notice>{error}</Notice></Stack>)}
       <RubricReview review={job.state?.rubric_review} />
-      {(approval || retryApproval) && requiresAcceptance && <label><input type="checkbox" checked={acceptedCandidate === reviewKey}
-        disabled={disabled} onChange={event => setAcceptedCandidate(event.target.checked ? reviewKey : "")} />
-        표시된 남은 결함을 확인했으며, 이 명세에 남아 있는 상태로 수락합니다.
-      </label>}
-      {approval && (
-        <Item variant="outline" size="sm" className="spec-confirmation">
-          <SealCheckIcon weight="duotone" size={25} aria-hidden />
-          <ItemContent><ItemTitle>이 명세를 최종 승인할까요?</ItemTitle><ItemDescription>현재 검토본을 확인한 뒤 승인해주세요. 과거 명세를 여는 것만으로 승인되지는 않습니다.</ItemDescription></ItemContent>
-          <ItemActions>
-            {onReview && <Button onClick={onReview}>현재 검토본 열기</Button>}
-            <Button className="primary" disabled={disabled || (requiresAcceptance && acceptedCandidate !== reviewKey)} onClick={() => void perform("approve", requiresAcceptance ? { accept_remaining_issues: true } : null).catch(() => {})}>{approvedExecution === executionKey ? "승인 전송됨" : "이 명세 승인"}</Button>
-            {job.state?.rubric_review?.termination && job.state.rubric_review.score < 10 && <Button disabled={disabled} onClick={() => void perform("retry", null).catch(() => {})}>최고점 후보에서 추가 실행</Button>}
-          </ItemActions>
-        </Item>
-      )}
     </section>
   );
 }

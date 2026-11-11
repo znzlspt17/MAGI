@@ -1,3 +1,4 @@
+import { Stack } from "@astryxdesign/core/Stack";
 import { Notice, statusLabel } from "../../shared/ui/UI";
 import { ResearchResult } from "./ExecutionTimeline";
 import { questionDetails } from "../conversation/QuestionActions";
@@ -37,8 +38,8 @@ export function StepResult({ node, detail, hideQuestions = false, retry }: { nod
       {content.kind === "resolution" && content.action && <p><strong>다음 처리: </strong>{({ repair: "초안 수정·재검토", ask_user: "사용자 결정 확인", stop: "보완 중단", approve: "승인 후보 준비" } as Record<string, string>)[content.action] || content.action}</p>}
       <StopDiagnostic value={result.stop_diagnostic} />
       {result.rubric_summary && <section aria-label="루브릭 검증"><h3>루브릭 검증</h3>
-        <div className="magi-meta"><span>검사 기준 {result.rubric_summary.item_count}개</span><span>{result.rubric_summary.status === "ready" ? "생성 완료" : "평가 완료"}</span></div>
-        {result.rubric_summary.status === "evaluated" && <div className="magi-meta"><span>충족 {result.rubric_summary.PASS}</span><span>미충족 {result.rubric_summary.FAIL}</span><span>판단 불가 {result.rubric_summary.UNDETERMINED}</span></div>}
+        <Stack direction="horizontal" wrap="wrap" className="magi-meta"><span>검사 기준 {result.rubric_summary.item_count}개</span><span>{result.rubric_summary.status === "ready" ? "생성 완료" : "평가 완료"}</span></Stack>
+        {result.rubric_summary.status === "evaluated" && <Stack direction="horizontal" wrap="wrap" className="magi-meta"><span>충족 {result.rubric_summary.PASS}</span><span>미충족 {result.rubric_summary.FAIL}</span><span>판단 불가 {result.rubric_summary.UNDETERMINED}</span></Stack>}
       </section>}
       {result.wait_reason && <p><strong>중단·대기 사유: </strong>{result.wait_reason}</p>}
       <FailureDiagnostic value={result.diagnostic} fallbackStage={node?.stage} recovered={(node?.status || detail.status) === "completed"} retry={retry} />
@@ -75,8 +76,8 @@ function ModelCallSummary({ calls }: { calls: StepDetail["model_calls"] }) {
         const title = stageLabel({ id: call.id, stage: call.stage });
         return <li key={call.id}>
           <h3 className="magi-meta"><span>{title === "실행 단계" ? call.stage : title}</span><span>{call.attempt}회차</span><span>{status[call.status]}</span></h3>
-          <div className="magi-meta"><span>추론 {call.request_settings.reasoning.mode}</span><span>강도 {call.request_settings.reasoning.effort}</span><span>상세도 {call.request_settings.verbosity}</span><span>최대 출력 {token(call.request_settings.max_output_tokens)}</span></div>
-          <div className="magi-meta"><span>입력 {token(call.input_tokens)} 토큰</span><span>출력 {token(call.output_tokens)} 토큰</span><span>추론 {token(call.reasoning_tokens)} 토큰</span></div>
+          <Stack direction="horizontal" wrap="wrap" className="magi-meta"><span>추론 {call.request_settings.reasoning.mode}</span><span>강도 {call.request_settings.reasoning.effort}</span><span>상세도 {call.request_settings.verbosity}</span><span>최대 출력 {token(call.request_settings.max_output_tokens)}</span></Stack>
+          <Stack direction="horizontal" wrap="wrap" className="magi-meta"><span>입력 {token(call.input_tokens)} 토큰</span><span>출력 {token(call.output_tokens)} 토큰</span><span>추론 {token(call.reasoning_tokens)} 토큰</span></Stack>
           {call.reasoning_summary === null ? <p>요약 미제공</p> : <p className="model-call-summary-text">{call.reasoning_summary}</p>}
           {call.summary_truncated && <p>요약 일부가 생략되었습니다.</p>}
         </li>;

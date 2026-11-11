@@ -36,7 +36,7 @@ it("진단에서 전달한 작업·실행 필터를 화면과 첫 조회에 적�
   render(<AdminLogs />); await screen.findByText(row.message);
   expect((screen.getByLabelText("작업 ID") as HTMLInputElement).value).toBe("job");
   expect((screen.getByLabelText("실행 ID") as HTMLInputElement).value).toBe("run");
-  expect((screen.getByLabelText("기간") as HTMLSelectElement).value).toBe("10080");
+  expect(screen.getByRole("combobox", { name: "기간" }).textContent).toContain("최근 7일");
   const path = vi.mocked(api).mock.calls.find(([path]) => path.startsWith("/api/admin/logs?"))![0];
   expect(path).toContain("job_id=job"); expect(path).toContain("execution_id=run");
   expect(path).not.toContain("query="); expect(path).not.toContain("period=");

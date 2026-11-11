@@ -1,7 +1,8 @@
+@layer components {
 /* 터치 및 고대비 환경에서는 브라우저의 기본 조작 영역과 색상을 유지한다. */
 @media (pointer: fine) and (hover: hover) and (forced-colors: none) {
   :root {
-    --scrollbar-thumb: #d4d4d4;
+    --scrollbar-thumb: #DDD6E8;
     --scrollbar-thumb-hover: #a3a3a3;
     --scrollbar-thumb-active: #737373;
   }
@@ -36,4 +37,6 @@
     }
     :where(html, body, body *):is(:hover, :focus-within) { scrollbar-color: var(--scrollbar-thumb-hover) transparent; }
   }
+}
+
 }

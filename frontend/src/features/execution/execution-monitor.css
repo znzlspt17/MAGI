@@ -1,16 +1,15 @@
+@layer components {
 .execution-monitor { margin-block: .75rem; }
-.execution-monitor [data-slot="trace-collapsible-trigger"] { display: flex; gap: .5rem; padding: .35rem 0; border: 0; background: transparent; text-align: left; color: var(--muted); cursor: pointer; }
-.execution-monitor [data-slot="trace-collapsible-trigger"]:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; border-radius: 4px; }
+.execution-monitor [data-slot="trace-collapsible-trigger"] { text-align: left; }
 .execution-monitor [data-slot="trace-line"] { display: inline-flex; align-items: center; gap: .55rem; flex-wrap: wrap; }
 .execution-monitor [data-slot="trace-icon"] { display: inline-flex; align-items: center; }
-.execution-monitor-time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .8rem; white-space: nowrap; }
+.execution-monitor-time { color: var(--color-text-secondary); font-variant-numeric: tabular-nums; font-size: .8rem; white-space: nowrap; }
 .execution-monitor-steps { list-style: none; padding: .75rem 0 .25rem .45rem; margin: 0; }
-.execution-monitor-steps li { position: relative; padding: 0 0 .35rem .8rem; border-left: 2px solid var(--line); transition: border-color 180ms ease; }
-.execution-monitor-steps li[data-status="running"] { border-color: var(--primary); }
-.execution-monitor-steps button { width: 100%; display: flex; align-items: center; gap: .55rem; padding: .6rem .7rem; border: 1px solid transparent; background: transparent; color: inherit; border-radius: .6rem; text-align: left; cursor: pointer; transition: background 180ms ease; }
-.execution-monitor-steps button:hover { background: var(--primary-light); }
-.execution-monitor-steps button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.execution-monitor-steps [data-status="running"] button { background: color-mix(in srgb, var(--primary) 7%, transparent); }
-.execution-monitor-step-status { margin-left: auto; color: var(--muted); font-size: .8rem; }
+.execution-monitor-steps li { position: relative; padding: 0 0 .35rem .8rem; border-left: 2px solid var(--color-border); transition: border-color 180ms ease; }
+.execution-monitor-steps li[data-status="running"] { border-color: var(--color-accent); }
+.execution-monitor-steps button { width: 100%; text-align: left; }
+.execution-monitor-steps [data-status="running"] button { background: color-mix(in srgb, var(--color-accent) 7%, transparent); }
+.execution-monitor-step-status { margin-left: auto; color: var(--color-text-secondary); font-size: .8rem; }
 @media (max-width: 540px) { .execution-monitor-steps button { flex-wrap: wrap; } .execution-monitor-step-status { margin-left: 0; } }
 @media (prefers-reduced-motion: reduce) { .execution-monitor *, .execution-monitor *::before { animation: none !important; transition: none !important; } }
+}

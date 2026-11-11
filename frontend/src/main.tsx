@@ -1,9 +1,17 @@
+import "./app/layers.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./features/auth/Auth";
 import Workspace from "./features/workspace/Workspace";
 import Admin from "./features/admin/Admin";
+import "@astryxdesign/core/reset.css";
+import "@astryxdesign/core/astryx.css";
+import "./app/magi.css";
+import { Theme } from "@astryxdesign/core/theme";
+import { InternationalizationProvider } from "@astryxdesign/core/i18n";
+import koKR from "@astryxdesign/core/locales/ko-KR.generated.js";
+import { magiTheme } from "./app/magi.js";
 import "./app/theme.css";
 import "./app/styles.css";
 import "./features/workspace/workspace-design.css";
@@ -96,6 +104,6 @@ function App() {
 }
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <InternationalizationProvider locale="ko-KR" messages={{"ko-KR": koKR}}><Theme theme={magiTheme} mode="light"><App /></Theme></InternationalizationProvider>
   </StrictMode>,
 );

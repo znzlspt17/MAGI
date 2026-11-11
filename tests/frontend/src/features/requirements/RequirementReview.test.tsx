@@ -48,7 +48,8 @@ it("페이지·필터·검색을 서버에 전달하고 요약은 전체 수치�
   fireEvent.click(within(pagination).getByRole("button", { name: "다음" }));
   await waitFor(() => expect(api).toHaveBeenLastCalledWith(expect.stringContaining("offset=20"), expect.anything()));
   await screen.findByText("사용자별 기록 격리");
-  fireEvent.change(screen.getByRole("combobox", { name: "요구사항 연결 필터" }), { target: { value: "missing" } });
+  fireEvent.click(screen.getByRole("combobox", { name: "요구사항 연결 필터" }));
+  fireEvent.click(screen.getByRole("option", { name: "연결 확인 필요" }));
   await waitFor(() => expect(api).toHaveBeenLastCalledWith(expect.stringContaining("missing=true"), expect.anything()));
   await screen.findByText("사용자별 기록 격리");
   fireEvent.change(screen.getByRole("textbox", { name: "요구사항 검색" }), { target: { value: "REQ-001" } });

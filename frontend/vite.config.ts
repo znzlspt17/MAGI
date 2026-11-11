@@ -22,5 +22,5 @@ export default defineConfig({
     manifest: "manifest.json",
     rollupOptions: { input: "src/main.tsx" },
   },
-  test: { environment: "jsdom", globals: true, include: ["tests/frontend/src/**/*.test.{ts,tsx}"] },
+  test: { environment: "jsdom", globals: true, setupFiles: [fileURLToPath(new URL("../tests/frontend/setup.ts", import.meta.url))], include: ["tests/frontend/src/**/*.test.{ts,tsx}"] },
 });

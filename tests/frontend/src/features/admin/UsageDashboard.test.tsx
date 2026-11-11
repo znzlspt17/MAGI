@@ -24,7 +24,7 @@ it("요청이 null인 작업·호출도 제목 없음으로 표시하고 페이�
   expect((await screen.findByRole("link", { name: "작업 제목 없음" })).getAttribute("href")).toBe("/admin/data?job_id=job-id");
   fireEvent.click(screen.getByRole("button", { name: "다음" }));
   await waitFor(() => expect(api).toHaveBeenCalledWith(expect.stringContaining("offset=25")));
-  fireEvent.mouseDown(screen.getByRole("tab", { name: "호출별" }), { button: 0, ctrlKey: false });
+  fireEvent.click(screen.getByRole("tab", { name: "호출별" }));
   await screen.findByText("gpt-6-luna");
   expect(screen.getByRole("link", { name: "작업 제목 없음" })).toBeTruthy();
 });
@@ -37,7 +37,7 @@ it("호출별 표에서 사용량 기반 산정·수동 정산·불완전한 근
   } : summary);
   mount();
   await screen.findAllByRole("link", { name: "조회할 작업" });
-  fireEvent.mouseDown(screen.getByRole("tab", { name: "호출별" }), { button: 0, ctrlKey: false });
+  fireEvent.click(screen.getByRole("tab", { name: "호출별" }));
   for (const label of ["정산 근거 기록 없음", "사용량 기반 산정", "수동 정산", "정산 근거 불완전"])
     expect(await screen.findByText(label, { selector: "small" })).toBeTruthy();
 });
@@ -53,7 +53,7 @@ it("작업 상세 링크, 호출 드릴다운, 사용자 필터와 서버 페이
   expect((await screen.findByRole("link", { name: "조회할 작업" })).getAttribute("href")).toBe("/admin/data?job_id=job-id");
   fireEvent.click(screen.getByRole("button", { name: "다음" }));
   await waitFor(() => expect(api).toHaveBeenCalledWith(expect.stringContaining("offset=25")));
-  fireEvent.change(screen.getByLabelText("사용자 필터"), { target: { value: "owner" } });
+  fireEvent.click(screen.getByRole("combobox", { name: "사용자 필터" })); fireEvent.click(await screen.findByRole("option", { name: "owner" }));
   await waitFor(() => expect(api).toHaveBeenCalledWith(expect.stringMatching(/user_id=owner.*offset=0/)));
   fireEvent.click(await screen.findByRole("button", { name: "호출 보기" }));
   await waitFor(() => expect(api).toHaveBeenCalledWith(expect.stringMatching(/job_id=job-id.*group_by=call/)));
@@ -77,7 +77,7 @@ it("이전 조회 응답은 새 필터 결과를 덮어쓰지 않는다", async 
     return summary;
   });
   mount();
-  fireEvent.change(screen.getByLabelText("조회 기간"), { target: { value: "today" } });
+  fireEvent.click(screen.getByRole("combobox", { name: "조회 기간" })); fireEvent.click(await screen.findByRole("option", { name: "오늘" }));
   await screen.findByText("정산 완료된 내부 산정액");
   await act(async () => resolveOld({ ...summary, summary: { ...stats, spent: "99" } }));
   expect(screen.queryByText("$99.00000000")).toBeNull();
@@ -88,7 +88,7 @@ it("오류 후 재시도로 복구하고 수동 정산을 관리 영역에 전�
   fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
   await screen.findByText("정산 완료된 내부 산정액");
   vi.mocked(api).mockImplementation(async (path: string) => path.includes("/rows?") ? { rows: [{ ...row, id: "call-id", reserved: "0.3", state: "uncertain", usage_day: "2026-10-21", is_call: true }], total: 1 } : summary);
-  fireEvent.mouseDown(screen.getByRole("tab", { name: "호출별" }), { button: 0, ctrlKey: false });
+  fireEvent.click(screen.getByRole("tab", { name: "호출별" }));
   fireEvent.click(await screen.findByRole("button", { name: "수동 정산" }));
   fireEvent.change(screen.getByLabelText("확인된 실제 비용 US$"), { target: { value: "0.01" } });
   fireEvent.click(screen.getByRole("button", { name: "정산 저장" }));

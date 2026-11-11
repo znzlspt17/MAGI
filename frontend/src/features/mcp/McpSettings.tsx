@@ -1,4 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { Button } from "@astryxdesign/core/Button";
+import { TextInput } from "@astryxdesign/core/TextInput";
+import { Selector } from "@astryxdesign/core/Selector";
+import { HStack } from "@astryxdesign/core/HStack";
+import { VStack } from "@astryxdesign/core/VStack";
+import { CheckboxInput } from "@astryxdesign/core/CheckboxInput";
 import { LinkSimpleIcon, PowerIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { api, sensitiveMutation } from "../../shared/api/api";
 import { useAuth } from "../auth/Auth";
@@ -58,24 +64,19 @@ function ConnectionEditor({ connection, busy, onCancel, onSave }: EditorProps) {
   function changed() { operation.current = null; }
   return <form className="mcp-editor" onSubmit={(event) => void submit(event)} onChange={changed}>
     <h3>{connection ? "연결 수정" : "새 연결"}</h3>
-    <label>연결 이름<input value={name} onChange={(e) => setName(e.target.value)} required maxLength={100} /></label>
-    <label>서버 주소<input type="url" value={url} onChange={(e) => setUrl(e.target.value)} required placeholder="https://example.com/mcp" /></label>
-    <label>인증 방식<select value={authType} onChange={(e) => { setAuthType(e.target.value as AuthType); setCredential(""); setClientSecret(""); }}>
-      <option value="none">인증 없음</option><option value="api_key">API 키 헤더</option><option value="bearer">Bearer 토큰</option><option value="oauth">OAuth</option>
-    </select></label>
-    {authType === "api_key" && <label>API 키 헤더 이름<input value={header} onChange={(e) => setHeader(e.target.value)} required /></label>}
-    {(authType === "api_key" || authType === "bearer") && <label>{authType === "api_key" ? "API 키" : "Bearer 토큰"}
-      <input type="password" value={credential} autoComplete="new-password" onChange={(e) => setCredential(e.target.value)}
-        placeholder={connection?.has_credential ? "변경할 때만 입력" : "인증정보 입력"} />
-    </label>}
+    <TextInput label="연결 이름" value={name} onChange={(value) => setName(value.slice(0, 100))} />
+    <TextInput label="서버 주소" type="url" value={url} onChange={setUrl} placeholder="https://example.com/mcp" />
+    <Selector label="인증 방식" value={authType} options={[{ value: "none", label: "인증 없음" }, { value: "api_key", label: "API 키 헤더" }, { value: "bearer", label: "Bearer 토큰" }, { value: "oauth", label: "OAuth" }]} onChange={(value) => { changed(); setAuthType(value as AuthType); setCredential(""); setClientSecret(""); }} />
+    {authType === "api_key" && <TextInput label="API 키 헤더 이름" value={header} onChange={setHeader} />}
+    {(authType === "api_key" || authType === "bearer") && <TextInput label={authType === "api_key" ? "API 키" : "Bearer 토큰"} type="password" value={credential} autoComplete="new-password" onChange={setCredential} placeholder={connection?.has_credential ? "변경할 때만 입력" : "인증정보 입력"} />}
     {authType === "oauth" && <>
-      <label>OAuth 클라이언트 ID (선택)<input value={clientId} onChange={(e) => setClientId(e.target.value)} autoComplete="off" /></label>
-      <label>OAuth 클라이언트 비밀번호 (선택)<input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} autoComplete="new-password" placeholder={connection?.has_credential ? "변경할 때만 입력" : ""} /></label>
+      <TextInput label="OAuth 클라이언트 ID (선택)" value={clientId} onChange={setClientId} autoComplete="off" />
+      <TextInput label="OAuth 클라이언트 비밀번호 (선택)" type="password" value={clientSecret} onChange={setClientSecret} autoComplete="new-password" placeholder={connection?.has_credential ? "변경할 때만 입력" : ""} />
       <p>서버가 자동 등록을 지원하면 클라이언트 정보를 생략할 수 있습니다.</p>
     </>}
     <p>인증정보는 저장 후 다시 표시되지 않습니다.</p>
     {error && <p role="alert" className="mcp-error">{error}</p>}
-    <div className="mcp-actions"><button type="submit" disabled={busy}>{busy ? "저장 중…" : "저장"}</button><button type="button" onClick={onCancel} disabled={busy}>취소</button></div>
+    <HStack className="mcp-actions" gap={2} wrap="wrap"><Button type="submit" variant="primary" isDisabled={busy} label={busy ? "저장 중…" : "저장"} /><Button onClick={onCancel} isDisabled={busy} label="취소" /></HStack>
   </form>;
 }
 
@@ -138,35 +139,36 @@ export function McpSettings() {
       {error && <p role="alert" className="mcp-message mcp-error">{error}</p>}
       {oauthFailure && <p role="alert" className="mcp-message mcp-error">인증 연결에 실패했습니다. 다시 시도해 주세요.</p>}
       {notice && <p role="status" className="mcp-message">{notice}</p>}
-      <div className="mcp-toolbar"><h2>내 연결</h2><button type="button" onClick={() => { setCreating(true); setEditing(null); }} disabled={busy || creating}>연결 추가</button></div>
+      <HStack className="mcp-toolbar" gap={3} wrap="wrap"><h2>내 연결</h2><Button onClick={() => { setCreating(true); setEditing(null); }} isDisabled={busy || creating} label="연결 추가" variant="primary" /></HStack>
       {creating && <section><ConnectionEditor busy={busy} onCancel={() => setCreating(false)} onSave={(payload, op) => save(undefined, payload, op)} /></section>}
       {loading ? <p role="status">연결을 불러오는 중…</p> : <>
         {!connections.length && !error && <section><p>등록된 연결이 없습니다.</p></section>}
         {connections.map((connection) => <section className="mcp-card" key={connection.id}>
-          <div className="mcp-card-heading"><div><h3>{connection.name}</h3><p className="mcp-url">{connection.url}</p></div>
-            <div className="mcp-status-group" aria-label="연결 상태"><span className="mcp-status"><PowerIcon size={16} aria-hidden />{connection.enabled ? "활성" : "비활성"}</span><span className="mcp-status"><LinkSimpleIcon size={16} aria-hidden />{statusLabel[connection.status]}</span></div></div>
+          <HStack className="mcp-card-heading" gap={3} wrap="wrap"><VStack gap={1}><h3>{connection.name}</h3><p className="mcp-url">{connection.url}</p></VStack>
+            <HStack className="mcp-status-group" gap={2} wrap="wrap" aria-label="연결 상태"><span className="mcp-status"><PowerIcon size={16} aria-hidden />{connection.enabled ? "활성" : "비활성"}</span><span className="mcp-status"><LinkSimpleIcon size={16} aria-hidden />{statusLabel[connection.status]}</span></HStack></HStack>
           {connection.error && <p className="mcp-error">{connection.error}</p>}
           {editing === connection.id ? <ConnectionEditor key={connection.id} connection={connection} busy={busy} onCancel={() => setEditing(null)} onSave={(payload, op) => save(connection, payload, op)} /> : <>
-            <div className="mcp-actions">
-              <button type="button" disabled={busy} onClick={() => { setCreating(false); setEditing(connection.id); }}>수정</button>
-              {connection.auth_type === "oauth" && <button type="button" disabled={busy} onClick={() => void authorize(connection)}>{connection.status === "auth_required" ? "다시 인증" : "OAuth 연결"}</button>}
-              <button type="button" disabled={busy} onClick={() => void action(() => api(endpoint(connection.id) + "/test", { method: "POST" }), "연결과 도구 목록을 확인했습니다.")}>연결 확인 및 도구 갱신</button>
-              <button type="button" disabled={busy || (!connection.enabled && (connection.status !== "ready" || !connection.tools.some((tool) => tool.enabled && tool.available)))} onClick={() => void action(() => api(endpoint(connection.id), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: !connection.enabled }) }), connection.enabled ? "연결을 비활성화했습니다." : "연결을 활성화했습니다.")}>{connection.enabled ? "비활성화" : "활성화"}</button>
-              <button type="button" disabled={busy} onClick={() => { if (window.confirm(`'${connection.name}' 연결을 삭제할까요?`)) void action(() => api(endpoint(connection.id), { method: "DELETE" }), "연결을 삭제했습니다."); }}>삭제</button>
-            </div>
+            <HStack className="mcp-actions" gap={2} wrap="wrap">
+              <Button isDisabled={busy} onClick={() => { setCreating(false); setEditing(connection.id); }} label="수정" />
+              {connection.auth_type === "oauth" && <Button isDisabled={busy} onClick={() => void authorize(connection)} label={connection.status === "auth_required" ? "다시 인증" : "OAuth 연결"} />}
+              <Button isDisabled={busy} onClick={() => void action(() => api(endpoint(connection.id) + "/test", { method: "POST" }), "연결과 도구 목록을 확인했습니다.")} label="연결 확인 및 도구 갱신" />
+              <Button isDisabled={busy || (!connection.enabled && (connection.status !== "ready" || !connection.tools.some((tool) => tool.enabled && tool.available)))} onClick={() => void action(() => api(endpoint(connection.id), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: !connection.enabled }) }), connection.enabled ? "연결을 비활성화했습니다." : "연결을 활성화했습니다.")} label={connection.enabled ? "비활성화" : "활성화"} />
+              <Button isDisabled={busy} variant="destructive" onClick={() => { if (window.confirm(`'${connection.name}' 연결을 삭제할까요?`)) void action(() => api(endpoint(connection.id), { method: "DELETE" }), "연결을 삭제했습니다."); }} label="삭제" />
+            </HStack>
             <h4>사용할 도구</h4>
             <p>조회 가능 여부는 서버가 제공한 정보이며 실제 동작을 보증하지 않습니다.</p>
             {!connection.tools.length ? <p>연결 확인 후 사용 가능한 도구가 표시됩니다.</p> : <fieldset className="mcp-tools"><legend>조회 도구 선택</legend>
-              {connection.tools.map((tool) => <label key={tool.name} className="mcp-tool">
-                <input type="checkbox" checked={(selections[connection.id] ?? []).includes(tool.name)}
-                  disabled={busy || !tool.available || !tool.read_only_hint || tool.destructive_hint}
-                  onChange={(e) => toggleTool(connection, tool.name, e.target.checked)} />
-                <span><strong>{tool.name}</strong>{tool.schema_changed && <em><WarningCircleIcon size={16} aria-hidden />변경됨, 다시 선택 필요</em>}
+              {connection.tools.map((tool) => <HStack key={tool.name} className="mcp-tool" gap={2}>
+                <CheckboxInput label={tool.name} value={(selections[connection.id] ?? []).includes(tool.name)}
+                  isDisabled={busy || !tool.available || !tool.read_only_hint || tool.destructive_hint}
+                  {...{ disabled: busy || !tool.available || !tool.read_only_hint || tool.destructive_hint }}
+                  onChange={(checked) => toggleTool(connection, tool.name, checked)} />
+                <span>{tool.schema_changed && <em><WarningCircleIcon size={16} aria-hidden />변경됨, 다시 선택 필요</em>}
                   {(!tool.read_only_hint || tool.destructive_hint) && <em><WarningCircleIcon size={16} aria-hidden />조회 도구로 확인되지 않음</em>}
                   {!tool.available && tool.disabled_reason && <em><WarningCircleIcon size={16} aria-hidden />{tool.disabled_reason}</em>}
                   {tool.description && <small>{tool.description}</small>}</span>
-              </label>)}
-              <button type="button" disabled={busy} onClick={() => void action(() => api(endpoint(connection.id), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ selected_tools: selections[connection.id] ?? [] }) }), "도구 선택을 저장했습니다.")}>도구 선택 저장</button>
+              </HStack>)}
+              <Button variant="primary" isDisabled={busy} onClick={() => void action(() => api(endpoint(connection.id), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ selected_tools: selections[connection.id] ?? [] }) }), "도구 선택을 저장했습니다.")} label="도구 선택 저장" />
             </fieldset>}
           </>}
         </section>)}

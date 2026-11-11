@@ -1,5 +1,5 @@
-import { Button as ShadcnButton } from "./button";
-import { InfoIcon } from "@phosphor-icons/react";
+import { Button as MagiButton } from "./button";
+import { Banner } from "@astryxdesign/core/Banner";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
@@ -8,16 +8,13 @@ import { useId, useMemo } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 export function Button({
   className = "",
+  variant,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement>) {
-  return <ShadcnButton type="button" variant={className.split(" ").includes("primary") ? "default" : "outline"} className={`button ${className}`} {...props} />;
+}: ButtonHTMLAttributes<HTMLButtonElement> & {variant?: React.ComponentProps<typeof MagiButton>["variant"]}) {
+  return <MagiButton type="button" variant={variant ?? "secondary"} className={`button ${className}`} {...props} />;
 }
 export function Notice({ children }: { children?: ReactNode }) {
-  return children ? (
-    <div className="notice" role="status">
-      <InfoIcon weight="duotone" size={20} aria-hidden />{children}
-    </div>
-  ) : null;
+  return children ? <Banner className="notice" role="status" status="info" title={children} /> : null;
 }
 const markdownParser = unified().use(remarkParse).use(remarkGfm);
 type MarkdownNode = {

@@ -1,126 +1,41 @@
-// shadcn/ui MIT; adapted from ba1503c64472b82256d9de95e2e62c5901a38e8b
-"use client"
+import * as React from "react";
+import {ScrollableArea} from "@astryxdesign/core/ScrollableArea";
+import {VStack} from "@astryxdesign/core/VStack";
+import {Button} from "./button";
 
-import { ArrowDownIcon } from "@phosphor-icons/react"
-import {
-  MessageScroller as MessageScrollerPrimitive,
-  useMessageScroller,
-  useMessageScrollerScrollable,
-  useMessageScrollerVisibility,
-} from "@shadcn/react/message-scroller"
-import * as React from "react"
-import { cn } from "../lib/utils"
-
-import { Button } from "./button"
-
-function MessageScrollerProvider(
-  props: React.ComponentProps<typeof MessageScrollerPrimitive.Provider>
-) {
-  return <MessageScrollerPrimitive.Provider {...props} />
+type ScrollContext = {viewport: React.RefObject<HTMLDivElement | null>; autoScroll: boolean; threshold: number; atEnd: boolean; setAtEnd: (value: boolean) => void};
+const Context = React.createContext<ScrollContext | null>(null);
+function useMessageScroller() { const context = React.useContext(Context); if (!context) throw new Error("MessageScrollerProvider가 필요합니다."); return context; }
+function useMessageScrollerScrollable() { return useMessageScroller(); }
+function useMessageScrollerVisibility() { return useMessageScroller(); }
+function MessageScrollerProvider({children, autoScroll = true, scrollEdgeThreshold = 48, defaultScrollPosition = "end"}: {children: React.ReactNode; autoScroll?: boolean; scrollEdgeThreshold?: number; defaultScrollPosition?: "start" | "end"}) {
+  const viewport = React.useRef<HTMLDivElement>(null);
+  const [atEnd, setAtEnd] = React.useState(defaultScrollPosition === "end");
+  return <Context.Provider value={{viewport, autoScroll, threshold: scrollEdgeThreshold, atEnd, setAtEnd}}>{children}</Context.Provider>;
 }
-
-function MessageScroller({
-  className,
-  ...props
-}: React.ComponentProps<typeof MessageScrollerPrimitive.Root>) {
-  return (
-    <MessageScrollerPrimitive.Root
-      data-slot="message-scroller"
-      className={cn(
-        "group/message-scroller relative flex size-full min-h-0 flex-col overflow-hidden",
-        className
-      )}
-      {...props}
-    />
-  )
+function MessageScroller(props: React.ComponentProps<"div">) { return <VStack {...props} data-slot="message-scroller" />; }
+// 2026-11-11: 사용자가 이전 메시지를 읽는 동안 자동 스크롤하지 않고 끝에 있을 때만 새 내용을 따라간다.
+function MessageScrollerViewport({children, role: _role, ...props}: React.ComponentProps<"div">) {
+  const {viewport, autoScroll, threshold, atEnd, setAtEnd} = useMessageScroller();
+  const follow = React.useRef(atEnd);
+  follow.current = atEnd;
+  React.useEffect(() => {
+    const element = viewport.current;
+    if (!element) return;
+    const update = () => { if (autoScroll && follow.current) element.scrollTop = element.scrollHeight; };
+    update();
+    const mutation = new MutationObserver(update);
+    mutation.observe(element, {childList: true, subtree: true, characterData: true});
+    const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    if (element.firstElementChild) resize?.observe(element.firstElementChild);
+    return () => { mutation.disconnect(); resize?.disconnect(); };
+  }, [autoScroll, viewport]);
+  return <ScrollableArea {...props} ref={viewport} label={props["aria-label"] || "대화 이력"} data-slot="message-scroller-viewport" overscroll="contain" onScroll={event => { const el = event.currentTarget; setAtEnd(el.scrollHeight - el.clientHeight - el.scrollTop <= threshold); props.onScroll?.(event); }}>{children}</ScrollableArea>;
 }
-
-function MessageScrollerViewport({
-  className,
-  ...props
-}: React.ComponentProps<typeof MessageScrollerPrimitive.Viewport>) {
-  return (
-    <MessageScrollerPrimitive.Viewport
-      data-slot="message-scroller-viewport"
-      className={cn(
-        "size-full min-h-0 min-w-0 scroll-fade-b scrollbar-thin scrollbar-gutter-stable overflow-y-auto overscroll-contain contain-content data-autoscrolling:scrollbar-none data-pending-scroll:invisible",
-        className
-      )}
-      {...props}
-    />
-  )
+function MessageScrollerContent(props: React.ComponentProps<"div">) { return <VStack {...props} data-slot="message-scroller-content" />; }
+function MessageScrollerItem({messageId: _messageId, scrollAnchor: _scrollAnchor, ...props}: React.ComponentProps<"div"> & {messageId?: string; scrollAnchor?: boolean}) { return <VStack {...props} data-slot="message-scroller-item" />; }
+function MessageScrollerButton({children, direction = "end", ...props}: React.ComponentProps<typeof Button> & {direction?: "start" | "end"}) {
+  const {viewport, atEnd, setAtEnd} = useMessageScroller();
+  return <Button {...props} type="button" data-slot="message-scroller-button" hidden={direction === "end" && atEnd} onClick={event => { viewport.current?.scrollTo({top: direction === "end" ? viewport.current.scrollHeight : 0, behavior: "smooth"}); setAtEnd(direction === "end"); props.onClick?.(event); }}>{children || "최신 메시지로 이동"}</Button>;
 }
-
-function MessageScrollerContent({
-  className,
-  ...props
-}: React.ComponentProps<typeof MessageScrollerPrimitive.Content>) {
-  return (
-    <MessageScrollerPrimitive.Content
-      data-slot="message-scroller-content"
-      className={cn("flex h-max min-h-full flex-col gap-8", className)}
-      {...props}
-    />
-  )
-}
-
-function MessageScrollerItem({
-  className,
-  scrollAnchor = false,
-  ...props
-}: React.ComponentProps<typeof MessageScrollerPrimitive.Item>) {
-  return (
-    <MessageScrollerPrimitive.Item
-      data-slot="message-scroller-item"
-      scrollAnchor={scrollAnchor}
-      className={cn(
-        "min-w-0 shrink-0 [contain-intrinsic-size:auto_10rem] [content-visibility:auto]",
-        className
-      )}
-      {...props}
-    />
-  )
-}
-
-function MessageScrollerButton({
-  direction = "end",
-  className,
-  children,
-  render,
-  variant = "secondary",
-  size = "icon-sm",
-  ...props
-}: React.ComponentProps<typeof MessageScrollerPrimitive.Button> &
-  Pick<React.ComponentProps<typeof Button>, "variant" | "size">) {
-  return (
-    <MessageScrollerPrimitive.Button
-      data-slot="message-scroller-button"
-      data-direction={direction}
-      data-variant={variant}
-      data-size={size}
-      direction={direction}
-      className={cn(
-        "absolute inset-s-1/2 -translate-x-1/2 border-border bg-background text-foreground transition-[translate,scale,opacity] duration-200 hover:bg-muted hover:text-foreground data-[active=false]:pointer-events-none data-[active=false]:scale-95 data-[active=false]:opacity-0 data-[active=false]:duration-400 data-[active=false]:ease-[cubic-bezier(0.7,0,0.84,0)] data-[active=true]:translate-y-0 data-[active=true]:scale-100 data-[active=true]:opacity-100 data-[active=true]:ease-[cubic-bezier(0.23,1,0.32,1)] data-[direction=end]:bottom-4 data-[direction=end]:data-[active=false]:translate-y-full data-[direction=start]:top-4 data-[direction=start]:data-[active=false]:-translate-y-full rtl:translate-x-1/2 data-[direction=start]:[&_svg]:rotate-180",
-        className
-      )}
-      render={render ?? <Button variant={variant} size={size} />}
-      {...props}
-    >
-      {children ?? (
-        <>
-          <ArrowDownIcon />
-          <span className="sr-only">
-            {direction === "end" ? "최신 메시지로 이동" : "첫 메시지로 이동"}
-          </span>
-        </>
-      )}
-    </MessageScrollerPrimitive.Button>
-  )
-}
-
-export {
-MessageScroller,MessageScrollerButton,MessageScrollerContent,
-MessageScrollerItem,MessageScrollerProvider,MessageScrollerViewport,useMessageScroller,
-useMessageScrollerScrollable,
-useMessageScrollerVisibility
-}
+export {MessageScroller, MessageScrollerButton, MessageScrollerContent, MessageScrollerItem, MessageScrollerProvider, MessageScrollerViewport, useMessageScroller, useMessageScrollerScrollable, useMessageScrollerVisibility};

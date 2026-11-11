@@ -1,6 +1,7 @@
 import type { Simulation, SimulationNodeDatum, SimulationLinkDatum } from "d3-force";
 type LayoutNode = SimulationNodeDatum & { id: string };
 import { useEffect, useRef, useState } from "react";
+import { useTheme } from "@astryxdesign/core/theme";
 import cytoscape from "cytoscape";
 import {
   forceSimulation,
@@ -44,6 +45,8 @@ export default function Graph({
   onRelation: (text: string) => void;
   handle: React.MutableRefObject<GraphHandle | null>;
 }) {
+  // 2026-11-11: Cytoscape는 CSS 변수를 해석하지 않으므로 테마의 실제 색상을 전달한다.
+  const { tokens } = useTheme();
   const host = useRef<HTMLDivElement>(null),
     cyRef = useRef<cytoscape.Core | null>(null),
     simulation = useRef<Simulation<LayoutNode, SimulationLinkDatum<LayoutNode>> | null>(null),
@@ -73,8 +76,8 @@ export default function Graph({
             "font-size": 14,
             "text-valign": "bottom",
             "text-margin-y": 8,
-            color: "#374151",
-            "text-background-color": "#fff",
+            color: tokens["--color-text-primary"],
+            "text-background-color": tokens["--color-background-surface"],
             "text-background-opacity": 0.8,
             "text-background-padding": "3px",
           },
@@ -87,31 +90,31 @@ export default function Graph({
           selector: "edge",
           style: {
             width: 1.4,
-            "line-color": "#bdc9d5",
-            "target-arrow-color": "#9caebf",
+            "line-color": tokens["--color-border-emphasized"],
+            "target-arrow-color": tokens["--color-data-neutral"],
             "target-arrow-shape": "triangle",
             "curve-style": "bezier",
           },
         },
         {
           selector: "node.neighbor",
-          style: { "border-width": 2, "border-color": "#8ba7c6" },
+          style: { "border-width": 2, "border-color": tokens["--color-border-emphasized"] },
         },
         {
           selector: "edge.neighbor",
           style: {
-            "line-color": "#4276a8",
-            "target-arrow-color": "#4276a8",
+            "line-color": tokens["--color-accent"],
+            "target-arrow-color": tokens["--color-accent"],
             width: 2.5,
           },
         },
         {
           selector: ".chosen",
-          style: { "border-width": 4, "border-color": "#173d73" },
+          style: { "border-width": 4, "border-color": tokens["--color-accent"] },
         },
         {
           selector: ".match",
-          style: { "border-width": 3, "border-color": "#d59723" },
+          style: { "border-width": 3, "border-color": tokens["--color-data-categorical-orange"] },
         },
         { selector: ".hide-label", style: { label: "" } },
       ],
@@ -220,7 +223,7 @@ export default function Graph({
       cyRef.current = null;
       handle.current = null;
     };
-  }, [epoch]);
+  }, [epoch, tokens]);
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
@@ -229,7 +232,7 @@ export default function Graph({
     cy.elements().remove();
     cy.add([
       ...display.nodes.map((n, i) => ({
-        data: n,
+        data: { ...n, color: tokens[n.color.slice(4, -1)] },
         position: prior.get(n.id) || {
           x: Math.cos(i * 2.4) * Math.sqrt(i + 1) * 38,
           y: Math.sin(i * 2.4) * Math.sqrt(i + 1) * 38,
@@ -291,7 +294,7 @@ export default function Graph({
     return () => {
       sim.stop();
     };
-  }, [display, spacing, distance, epoch]);
+  }, [display, spacing, distance, epoch, tokens]);
   useEffect(() => {
     if (paused || matchMedia("(prefers-reduced-motion: reduce)").matches)
       simulation.current?.stop();

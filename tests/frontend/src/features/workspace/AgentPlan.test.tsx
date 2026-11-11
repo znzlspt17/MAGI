@@ -19,7 +19,7 @@ it("계획 이유와 대기 원인을 키보드로 펼쳐 확인한다", async (
   const summary = screen.getByRole("button", { name: /현재 계획.*메모 명세 보완/ });
   summary.focus(); await user.keyboard("{Enter}");
   expect(screen.getByText("보관 기간의 사용자 결정이 필요합니다.")).toBeVisible();
-  expect(screen.getByRole("status")).toHaveTextContent("보관 기간을 확인해주세요.");
+  expect(screen.getByText("보관 기간을 확인해주세요.")).toHaveAttribute("role", "status");
 });
 
 it("실행 중 초안을 보존하고 대기 후 자유 입력과 명시적인 추가 실행을 제출한다", async () => {

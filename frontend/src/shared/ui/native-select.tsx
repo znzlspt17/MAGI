@@ -1,58 +1,26 @@
-// shadcn/ui MIT; adapted from ba1503c64472b82256d9de95e2e62c5901a38e8b
-import * as React from "react"
-import { cn } from "../lib/utils"
+import * as React from "react";
+import {Selector} from "@astryxdesign/core/Selector";
 
-import { CaretDownIcon } from "@phosphor-icons/react"
-
-type NativeSelectProps = Omit<React.ComponentProps<"select">, "size"> & {
-  size?: "sm" | "default"
+type NativeSelectProps = Omit<React.ComponentProps<"select">, "size"> & {size?: "sm" | "default"};
+type OptionProps = React.ComponentProps<"option">;
+function optionsOf(children: React.ReactNode): {value: string; label: string; disabled?: boolean}[] {
+  return React.Children.toArray(children).flatMap(child => {
+    if (!React.isValidElement<OptionProps & {children?: React.ReactNode}>(child)) return [];
+    if (child.type === React.Fragment) return optionsOf(child.props.children);
+    const label = React.Children.toArray(child.props.children).join("");
+    return [{value: String(child.props.value ?? label), label, disabled: child.props.disabled}];
+  });
 }
-
-function NativeSelect({
-  className,
-  size = "default",
-  ...props
-}: NativeSelectProps) {
-  return (
-    <div
-      className={cn(
-        "cn-native-select-wrapper group/native-select relative w-fit has-[select:disabled]:opacity-50",
-        className
-      )}
-      data-slot="native-select-wrapper"
-      data-size={size}
-    >
-      <select
-        data-slot="native-select"
-        data-size={size}
-        className="cn-native-select outline-none disabled:pointer-events-none disabled:cursor-not-allowed"
-        {...props}
-      />
-      <CaretDownIcon
-        className="cn-native-select-icon pointer-events-none absolute select-none"
-        aria-hidden="true"
-        data-slot="native-select-icon"
-      />
-    </div>
-  )
+// 2026-11-11: Selector의 값 콜백을 기존 화면의 선택 이벤트 계약에 연결한다.
+function NativeSelect({children, value, defaultValue, onChange, disabled, required, name, size, className, ref: _ref, ...props}: NativeSelectProps) {
+  const options = optionsOf(children);
+  const [selected, setSelected] = React.useState(String(defaultValue ?? options[0]?.value ?? ""));
+  const label = props["aria-label"] || "선택";
+  return <Selector id={props.id} aria-label={props["aria-label"]} data-slot="native-select" label={label} isLabelHidden options={options} value={String(value ?? selected)} htmlName={name} isDisabled={disabled} isRequired={required} size={size === "sm" ? "sm" : "md"} containerClassName={className} onChange={next => {
+    if (value === undefined) setSelected(next);
+    const target = {value: next} as HTMLSelectElement;
+    onChange?.({target, currentTarget: target} as React.ChangeEvent<HTMLSelectElement>);
+  }} />;
 }
-
-function NativeSelectOption({
-  className,
-  ...props
-}: React.ComponentProps<"option">) {
-  return (
-    <option
-      data-slot="native-select-option"
-      className={cn("bg-[Canvas] text-[CanvasText]", className)}
-      {...props}
-    />
-  )
-}
-
-
-
-export {
-NativeSelect,
-NativeSelectOption
-}
+function NativeSelectOption(props: OptionProps) { return <option {...props} />; }
+export {NativeSelect, NativeSelectOption};

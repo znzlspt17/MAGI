@@ -57,8 +57,8 @@ it("통합 목록의 사용자 필터와 작업 ID 직접 조회를 연결한다
     return { id: "job-one", request: "사용자 작업", owner_id: "one", status: "FINALIZED" };
   });
   render(<MemoryRouter initialEntries={["/admin/data"]}><Admin /></MemoryRouter>);
-  await screen.findByRole("option", { name: "one" }, { timeout: 10000 });
-  fireEvent.change(screen.getByLabelText("사용자", { selector: "select" }), { target: { value: "one" } });
+  await screen.findByRole("combobox", { name: "사용자" }, { timeout: 10000 });
+  fireEvent.click(screen.getByRole("combobox", { name: "사용자" })); fireEvent.click(await screen.findByRole("option", { name: "one" }));
   const list = screen.getByRole("table");
   fireEvent.click(await within(list).findByRole("button", { name: "상세 조회" }));
   const panel = await screen.findByRole("dialog", { name: "작업 상세" });
@@ -69,7 +69,7 @@ it("통합 목록의 사용자 필터와 작업 ID 직접 조회를 연결한다
   fireEvent.click(screen.getByRole("button", { name: "조회" }));
   expect(api).toHaveBeenCalledWith("/api/admin/job?id=job-one");
   fireEvent.click(within(await screen.findByRole("dialog", { name: "작업 상세" })).getByRole("button", { name: "닫기" }));
-  fireEvent.change(screen.getByLabelText("사용자", { selector: "select" }), { target: { value: "empty" } });
+  fireEvent.click(screen.getByRole("combobox", { name: "사용자" })); fireEvent.click(await screen.findByRole("option", { name: "empty" }));
   await screen.findByText("조회된 작업이 없습니다");
   expect(vi.mocked(api).mock.calls.some(([path]) => path.includes("user_jobs"))).toBe(false);
 }, 15000);

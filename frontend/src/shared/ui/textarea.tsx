@@ -1,18 +1,10 @@
-// shadcn/ui MIT; adapted from ba1503c64472b82256d9de95e2e62c5901a38e8b
-import * as React from "react"
-import { cn } from "../lib/utils"
+import * as React from "react";
+import {TextArea} from "@astryxdesign/core/TextArea";
 
-function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
-  return (
-    <textarea
-      data-slot="textarea"
-      className={cn(
-        "flex field-sizing-content min-h-16 w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:aria-invalid:ring-destructive/40",
-        className
-      )}
-      {...props}
-    />
-  )
+// 2026-11-11: 편집기 ref와 입력 이벤트를 유지해 자동 높이와 포커스 복귀가 동작한다.
+function Textarea({value, defaultValue, onChange, disabled, readOnly, required, name, autoFocus, className, maxLength, ref, embedded = false, ...props}: React.ComponentProps<"textarea"> & {embedded?: boolean}) {
+  const [uncontrolled, setUncontrolled] = React.useState(String(defaultValue ?? ""));
+  const label = props["aria-label"] || props.placeholder || "입력";
+  return <TextArea {...(props as unknown as React.ComponentProps<typeof TextArea>)} ref={element => { if (element) { if (maxLength !== undefined) element.maxLength = maxLength; element.disabled = !!disabled; element.required = !!required; } if (typeof ref === "function") ref(element); else if (ref) ref.current = element; }} data-slot="textarea" label={label} isLabelHidden value={String(value ?? uncontrolled)} onChange={(next, event) => { if (value === undefined) setUncontrolled(next); onChange?.(event); }} isDisabled={disabled} isReadOnly={readOnly} isRequired={required} htmlName={name} hasAutoFocus={autoFocus} containerClassName={className} controlClassName={embedded ? "magi-composer-control" : undefined} />;
 }
-
-export { Textarea }
+export {Textarea};

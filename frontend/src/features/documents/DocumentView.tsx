@@ -1,3 +1,4 @@
+import { Stack } from "@astryxdesign/core/Stack";
 import { DownloadSimpleIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { Button, Markdown } from "../../shared/ui/UI";
@@ -57,12 +58,12 @@ export function DocumentView({
         ? <RequirementReview key={`${jobId}:${stepId}:${hash || source}`} jobId={jobId} stepId={stepId} sourceHash={hash} onLocate={locate} onQuestion={onQuestion} />
         : <details className="document-review" key={`${jobId}:${stepId}:${hash || source}`}><summary>요구사항별 검토 근거</summary><RequirementReview jobId={jobId} stepId={stepId} sourceHash={hash} onLocate={locate} onQuestion={onQuestion} /></details>)}
       {reviewOnly ? <Button onClick={onShowDocument}>명세 문서 보기</Button> : <>
-      <div className="document-controls">
+      <Stack direction="horizontal" wrap="wrap" className="document-controls">
         {[["rendered", "문서 보기"], ["raw", "Markdown 보기"]].map(([value, label]) => (
           <Button key={value} aria-pressed={mode === value} onClick={() => setMode(value)}>{label}</Button>
         ))}
         <Button onClick={download}><DownloadSimpleIcon size={18} aria-hidden />Markdown 다운로드</Button>
-      </div>
+      </Stack>
       <p className="subtle">한국어 명세 원문이 다운로드됩니다.</p>
       {mode === "raw" ? (
         location ? <pre ref={original} tabIndex={-1} aria-label="선택한 근거의 명세 원문" className="rr-original">{Array.from(normalized).slice(0, location.start).join("")}<mark>{Array.from(normalized).slice(location.start, location.end).join("")}</mark>{Array.from(normalized).slice(location.end).join("")}</pre> : <pre className="markdown-raw">{source}</pre>

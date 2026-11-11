@@ -1,3 +1,4 @@
+import { Stack } from "@astryxdesign/core/Stack";
 import { useState, type ReactNode } from "react";
 import { CaretDownIcon } from "@phosphor-icons/react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../shared/ui/collapsible";
@@ -24,19 +25,19 @@ export function ExecutionTimeline({ job, nodes, selected, select, detail }: { jo
       <CollapsibleContent>
         <section className="execution-input"><h3>사용자 입력</h3>
           {event?.input?.request && <p>{event.input.request}</p>}{event?.input?.feedback && <p>{event.input.feedback}</p>}
-          {event?.input?.answers?.map((answer, i) => <div className="execution-answer" key={i}><h4>질문</h4><p>{answer.question || "질문 원문 기록 없음"}</p><h4>답변</h4><p>{answer.answer || "답변 기록 없음"}</p>{answer.question_id && <details><summary>질문 참조</summary><code>{answer.question_id}</code></details>}</div>)}
+          {event?.input?.answers?.map((answer, i) => <Stack className="execution-answer" key={i}><h4>질문</h4><p>{answer.question || "질문 원문 기록 없음"}</p><h4>답변</h4><p>{answer.answer || "답변 기록 없음"}</p>{answer.question_id && <details><summary>질문 참조</summary><code>{answer.question_id}</code></details>}</Stack>)}
           {event?.action === "approve" && <p>사용자가 명세를 승인했습니다.</p>}
           {event?.action === "retry" && <p>이전에 저장된 입력과 처리 결과를 이어서 사용합니다.</p>}
           {!event?.input?.request && !event?.input?.feedback && !event?.input?.answers?.length && !["approve", "retry"].includes(event?.action || "") && <p>저장된 사용자 입력이 없습니다.</p>}
         </section>
         {!!questions.length && <section><h3>요구사항 확인 {steps.some(n => n.status === "waiting") ? "답변 대기" : ""}</h3><ol>{questions.map((q, i) => <li key={i}>{q.replace(/^\[[^\]]+\]\s*/, "")}</li>)}</ol></section>}
         <Collapsible className="execution-steps"><CollapsibleTrigger className="execution-detail-trigger">하위 처리 단계 {steps.length}개<CaretDownIcon size={14} aria-hidden /></CollapsibleTrigger><CollapsibleContent>
-          <div className="execution-step-list" role="group" aria-label="실행 흐름">{steps.map((node, stepIndex) => <div key={node.id}>
-            <Button aria-pressed={selected === node.id} aria-expanded={selected === node.id} aria-controls={`step-detail-${node.id}`} onClick={() => select(node.id)}><span aria-hidden="true">{stepIndex + 1}.</span><span>{node.title || node.stage || "처리 단계"}</span><span>{statusLabel(node.status)}</span></Button>
+          <Stack className="execution-step-list" role="group" aria-label="실행 흐름">{steps.map((node, stepIndex) => <Stack key={node.id}>
+            <Button aria-label={`${node.title || node.stage || "처리 단계"} ${statusLabel(node.status)}`} aria-pressed={selected === node.id} aria-expanded={selected === node.id} aria-controls={`step-detail-${node.id}`} onClick={() => select(node.id)}><span aria-hidden="true">{stepIndex + 1}.</span><span>{node.title || node.stage || "처리 단계"}</span><span>{statusLabel(node.status)}</span></Button>
             {selected === node.id && <section id={`step-detail-${node.id}`} className="execution-step-detail" aria-label={`${stepIndex + 1}번째 단계 상세`}>
               {detail || <p>{meaningful(node.summary)}</p>}
             </section>}
-          </div>)}</div>
+          </Stack>)}</Stack>
         </CollapsibleContent></Collapsible>
       </CollapsibleContent>
     </Collapsible></li>;

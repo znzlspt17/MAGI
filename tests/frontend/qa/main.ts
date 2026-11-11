@@ -5,6 +5,12 @@ const scenario = params.get("qa") || "normal", role = params.get("role") || "adm
 const target = params.get("target");
 const nativeFetch = window.fetch.bind(window);
 const job = makeJob(params.get("status") || "NEEDS_USER_INPUT", scenario === "long");
+// 화면 폭 검증용 장문은 이 QA 진입점에만 추가하고 운영 데이터에는 넣지 않는다.
+const layoutDocument = scenario === "layout-long" ? `${document}\n## ${"긴한국어제목".repeat(14)}\n\n${"긴 설명과 문서의 읽기 폭을 확인합니다. ".repeat(35)}\n\n${"REQ_WITHOUT_SPACES_".repeat(20)}\n\n> ${"긴 인용문의 줄바꿈을 확인합니다. ".repeat(30)}\n\n| ${"긴열제목".repeat(20)} | ${"다른열제목".repeat(20)} |\n| --- | --- |\n| ${"식별자".repeat(70)} | ${"검토근거".repeat(60)} |\n\n\`\`\`text\n${"long_code_identifier_".repeat(25)}\n\`\`\`\n` : document;
+if (scenario === "layout-long") { job.final = layoutDocument; job.candidate = layoutDocument; }
+const layoutReview = {...review, review_status: params.get("review_state") || review.review_status,
+  status: params.get("review_kind") || review.status,
+  ...(scenario === "layout-long" ? {message: "검토문구와공백없는식별자".repeat(12)} : {})};
 const jobs = scenario === "empty" ? [] : Array.from({ length: scenario === "long" ? 32 : 1 }, (_, i) => ({ ...job, id: i ? `sample-${i}` : jobId }));
 const users = [{ id: "qa-user", role: "admin", daily_limit: 10 }, { id: "qa-team-member-with-a-long-identifier-for-layout", role: "user", daily_limit: 5 }];
 const packet = { rows: [decision], total: 1, next_offset: null, project_id: "project" };
@@ -49,7 +55,7 @@ window.fetch = async (input, init) => {
   if (path.endsWith("/projects")) return json(init?.method === "POST" ? { id: "created", name: "새 프로젝트" } : empty ? [] : [{ id: "project", name: "팀 기록 서비스", node_count: 3, job_count: 1 }, { id: "empty-project", name: "빈 프로젝트", node_count: 0, job_count: 0 }]);
   if (path.includes("/decisions") || path.includes("decision-candidates")) return json({ ...packet, rows: empty ? [] : packet.rows });
   if (path.includes("reused-decisions")) return json(packet);
-  if (path.includes("requirement-review")) return json(empty ? { ...review, rows: [], total: 0 } : url.searchParams.has("evidence_for") ? { ...review, rows: [], evidence: [evidence] } : review);
+  if (path.includes("requirement-review")) return json(empty ? { ...layoutReview, rows: [], total: 0 } : url.searchParams.has("evidence_for") ? { ...layoutReview, rows: [], evidence: [evidence] } : layoutReview);
   if (path.includes("implementation-package") && empty) return json(null);
   if (path.includes("package") && !path.endsWith(".zip")) return json({ completed_id: completedId, bundle_id: "b".repeat(64), filename: "approved.zip", available: !empty, completeness: "complete", task_count: 3, total_size: 1200, source_hash: sourceHash, files: [{ name: "SPEC.ko.md", size: 500, sha256: sourceHash }], limitations: [] });
   if (path === "/api/commands") return json(job);
@@ -61,7 +67,7 @@ window.fetch = async (input, init) => {
     attempts: [{ attempt: 1, error_code: "REVIEW_VALIDATION_FAILED", error_stage: "checklist_critic", validation_reason: "quote_not_found", failed_checks: ["rubric_evidence"] }],
   } } });
   if (path.endsWith("/steps/research")) return json({ research: { mode: "auto", performed: true, outcome: "links_found", reason: "search_results", query: "PostgreSQL row security", retrieved_at: job.created_at, result_count: 1, sources: [{ title: "PostgreSQL documentation", url: "https://www.postgresql.org/docs/" }] } });
-  if (path.includes("/steps/") || path.includes("/completed/")) return json({ document: { content: document, filename: "SPEC.ko.md", language: "ko", source_hash: sourceHash, kind: path.includes("approved") ? "final" : "candidate", completed_id: completedId }, result: { research: { mode: "auto", performed: true, outcome: "links_found", reason: "search_results", query: "PostgreSQL row security", retrieved_at: job.created_at, result_count: 1, sources: [{ title: "PostgreSQL documentation", url: "https://www.postgresql.org/docs/" }] } }, change_review: { status: "complete", after_hash: sourceHash, analysed: 1, remaining: 0, sources: [], changes: [{ id: "change", change: "added", before: null, after: { item_id: "REQ-002", section: "요구사항", text: "보고서 30일 보관", line: 6, start: 0, end: 10, requirement_ids: ["REQ-002"], decision_ids: [] }, status: "analysed", meaning: "semantic", relation: "direct", summary: "보관 정책 추가", rationale: "사용자 답변을 반영했습니다." }] } });
+  if (path.includes("/steps/") || path.includes("/completed/")) return json({ document: { content: layoutDocument, filename: "SPEC.ko.md", language: "ko", source_hash: sourceHash, kind: path.includes("approved") ? "final" : "candidate", completed_id: completedId }, result: { research: { mode: "auto", performed: true, outcome: "links_found", reason: "search_results", query: "PostgreSQL row security", retrieved_at: job.created_at, result_count: 1, sources: [{ title: "PostgreSQL documentation", url: "https://www.postgresql.org/docs/" }] } }, change_review: { status: "complete", after_hash: sourceHash, analysed: 1, remaining: 0, sources: [], changes: [{ id: "change", change: "added", before: null, after: { item_id: "REQ-002", section: "요구사항", text: "보고서 30일 보관", line: 6, start: 0, end: 10, requirement_ids: ["REQ-002"], decision_ids: [] }, status: "analysed", meaning: "semantic", relation: "direct", summary: "보관 정책 추가", rationale: "사용자 답변을 반영했습니다." }] } });
   if (path.endsWith("/graph")) return json({ nodes: empty ? [] : nodes, edges: empty ? [] : edges });
   if (path.endsWith("/search")) return json({ nodes: empty ? [] : nodes });
   if (path.endsWith("/node")) return json({ ...(nodes.find(n => n.id === url.searchParams.get("node_id")) || nodes[0]), edges, document, document_has_more: false });

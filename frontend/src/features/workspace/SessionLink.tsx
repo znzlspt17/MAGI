@@ -1,3 +1,4 @@
+import { Stack } from "@astryxdesign/core/Stack";
 import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { StatusIcon } from "../../shared/ui/StatusIcon";
@@ -21,5 +22,5 @@ export function SessionLink({ job, active, onSelect }: { job: Job; active: boole
   return <TooltipProvider delayDuration={600}><Tooltip><TooltipTrigger asChild><Link className="session-row" to={`/jobs/${job.id}`} aria-current={active ? "page" : undefined} onClick={onSelect}
     style={style} data-overflow={overflow > 0 || undefined}>
     <StatusIcon status={job.status} /><span className="session-title" ref={viewport}><span ref={text}>{title}</span></span>
-  </Link></TooltipTrigger><TooltipContent side="right" className="session-tooltip"><div>{title}</div><div className="magi-meta"><span className="magi-meta-item"><StatusIcon status={job.status} />{statusLabel(job.status)}</span><span className="magi-meta-item"><ClockIcon size={14} aria-hidden />{formatTime(job.updated_at || job.created_at)}</span></div></TooltipContent></Tooltip></TooltipProvider>;
+  </Link></TooltipTrigger><TooltipContent side="right" className="session-tooltip"><Stack>{title}</Stack><Stack direction="horizontal" wrap="wrap" className="magi-meta"><span className="magi-meta-item"><StatusIcon status={job.status} />{statusLabel(job.status)}</span><span className="magi-meta-item"><ClockIcon size={14} aria-hidden />{formatTime(job.updated_at || job.created_at)}</span></Stack></TooltipContent></Tooltip></TooltipProvider>;
 }

@@ -1,3 +1,4 @@
+import { Banner } from "@astryxdesign/core/Banner";
 import { ClockIcon, CheckCircleIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useAuth } from "../auth/Auth";
 import type { ServiceStatus } from "../../shared/types";
@@ -16,7 +17,7 @@ export function ServiceStatusNotice({ inline = false, compact = false }: { inlin
   const Icon = state.kind === "available" ? CheckCircleIcon : state.kind === "unknown" ? WarningCircleIcon : ClockIcon;
   const counts = auth.publicMode && state.kind === "available" ? `실행 ${auth.status.active_count || 0}/${auth.status.max_parallel || 2} 대기 ${auth.status.queued_count || 0}` : "";
   if (compact && !state.blocked) return <span className="service-status-compact" role="status" aria-label={`${state.title} ${counts}`} title={`${state.title} ${counts}`}><Icon size={16} aria-hidden /></span>;
-  return <div className={`service-status-banner ${state.kind} ${inline ? "inline" : ""}`} role={inline ? undefined : "status"} aria-live={inline ? undefined : "polite"} aria-atomic={inline ? undefined : true}>
-    <Icon size={22} aria-hidden /><div><strong>{state.title}</strong>{state.description && <p>{state.description}</p>}{counts && <div className="magi-meta"><span className="magi-meta-item">실행 {auth.status.active_count || 0}/{auth.status.max_parallel || 2}</span><span className="magi-meta-item">대기 {auth.status.queued_count || 0}</span></div>}</div>
-  </div>;
+  return <Banner className={`service-status-banner ${state.kind} ${inline ? "inline" : ""}`} status={state.blocked ? "warning" : "success"}
+    role={inline ? undefined : "status"} aria-live={inline ? undefined : "polite"} aria-atomic={inline ? undefined : true}
+    icon={<Icon size={22} aria-hidden />} title={state.title} description={<>{state.description}{counts && <span> {counts}</span>}</>} />;
 }

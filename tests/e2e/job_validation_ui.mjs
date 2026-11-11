@@ -61,7 +61,7 @@ try {
  await page.getByText('조건에 맞는 로그가 없습니다.',{exact:true}).waitFor();
  assert.equal(await page.getByLabel('작업 ID',{exact:true}).inputValue(),job);
  assert.equal(await page.getByLabel('실행 ID',{exact:true}).inputValue(),execution);
- assert.equal(await page.getByRole('combobox',{name:/기간/}).inputValue(),'10080');
+ assert.match(await page.getByRole('combobox',{name:/기간/}).innerText(),/최근 7일/);
  assert(queries.some(q=>q.get('job_id')===job&&q.get('execution_id')===execution&&q.has('start')));
  assert.deepEqual(errors,[]);
  console.log('validation desktop/mobile/low, pagination, failure recovery, copy, and log filters passed');

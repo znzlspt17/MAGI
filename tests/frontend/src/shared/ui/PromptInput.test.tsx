@@ -43,3 +43,13 @@ it('입력 높이를 여섯 줄에서 제한하고 내용을 지우면 다시 �
 it('잠긴 질문 입력은 편집과 크게 쓰기를 막는다',()=>{
  render(<ExpandableTextarea label="답변" disabled/>);expect(screen.getByRole('textbox')).toBeDisabled();expect(screen.getByRole('button',{name:'답변 크게 쓰기'})).toBeDisabled();
 });
+it("호출자가 지정한 최소 입력 행 수를 유지한다", () => {
+  render(<ExpandableTextarea label="의견" rows={4} />);
+  expect(screen.getByRole("textbox", {name:"의견"}).getAttribute("rows")).toBe("4");
+});
+it("작성창은 입력과 연결된 가시 레이블을 제공한다", () => {
+ render(<PromptInput label="의견" buttonLabel="보내기" onSend={() => {}} />);
+ const input=screen.getByRole("textbox", {name:"의견"});
+ const visibleLabel=screen.getByText("의견", {selector:'label[data-slot="prompt-label"]'});
+ expect(visibleLabel.getAttribute("for")).toBe(input.id);
+});

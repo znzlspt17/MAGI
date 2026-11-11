@@ -1,9 +1,11 @@
+import { VStack } from "@astryxdesign/core/VStack";
+import { HStack } from "@astryxdesign/core/HStack";
 import { useEffect, useState } from "react";
 import JobValidation from "./JobValidation";
 import { CopyIcon, WarningCircleIcon, CaretDownIcon, ClockIcon } from "@phosphor-icons/react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../shared/ui/collapsible";
 import { Button } from "../../shared/ui/button";
-import { Badge } from "../../shared/ui/badge";
+
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../../shared/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../shared/ui/tabs";
 import { Markdown, statusLabel } from "../../shared/ui/UI";
@@ -14,10 +16,10 @@ export function RecordId({ value }: { value?: string | null }) {
   if (!value) return <span className="jobs-muted">미지정</span>;
   return <span className="jobs-id">
     <code title={value}>{value.length > 18 ? value.slice(0, 8) + "…" + value.slice(-6) : value}</code>
-    <button type="button" aria-label={`${value} 복사`} title={`${value} 복사`} onClick={async () => {
+    <Button type="button" aria-label={`${value} 복사`} title={`${value} 복사`} onClick={async () => {
       try { await navigator.clipboard.writeText(value); setNotice("복사됨"); }
       catch { setNotice("복사하지 못했습니다."); }
-    }}><CopyIcon size={14} aria-hidden /></button>
+    }}><CopyIcon size={14} aria-hidden /></Button>
     <span className="jobs-copy-result" role="status">{notice}</span>
   </span>;
 }
@@ -27,9 +29,9 @@ export function JobStatus({ status }: { status?: string | null }) {
     : ["error", "failed", "blocked", "CRITICAL_BLOCKED"].includes(status || "") ? "error"
     : ["NEEDS_USER_INPUT", "waiting", "waiting_approval", "PASS_PENDING_USER_APPROVAL", "needs_revision", "REJECTED_BY_USER"].includes(status || "") ? "waiting"
     : ["running", "queued", "ANALYZING", "COMPILING", "CRITIQUING", "RESEARCHING"].includes(status || "") ? "active" : "neutral";
-  return <Badge variant="outline" className={`jobs-status jobs-status-${tone}`}>
+  return <HStack gap={1} className={`jobs-status jobs-status-${tone}`}>
     <span aria-hidden />{jobStatusLabel(status)}
-  </Badge>;
+  </HStack>;
 }
 
 export function jobStatusLabel(status?: string | null) {
@@ -52,11 +54,11 @@ export default function JobDetailSheet({ id, job, fallback, loading, error, tab,
       <SheetHeader>
         <SheetTitle>작업 상세</SheetTitle>
         <SheetDescription>요청 내용, 생성된 문서와 처리 이력을 확인합니다.</SheetDescription>
-        <div className="jobs-detail-heading"><RecordId value={id} />{value && <JobStatus status={value.status} />}</div>
+        <HStack gap={2} wrap="wrap" className="jobs-detail-heading"><RecordId value={id} />{value && <JobStatus status={value.status} />}</HStack>
       </SheetHeader>
-      <div className="jobs-detail-body" id="job-result" aria-label="작업 상세 내용" aria-busy={loading}>
+      <VStack gap={2} className="jobs-detail-body" id="job-result" aria-label="작업 상세 내용" aria-busy={loading}>
         {loading ? <p className="jobs-empty" role="status">작업을 조회하는 중…</p> : error ?
-          <div className="jobs-error" role="alert"><WarningCircleIcon size={20} aria-hidden /><p>{error}</p><Button variant="outline" onClick={retry}>다시 조회</Button></div>
+          <HStack gap={2} wrap="wrap" className="jobs-error" role="alert"><WarningCircleIcon size={20} aria-hidden /><p>{error}</p><Button variant="outline" onClick={retry}>다시 조회</Button></HStack>
           : job && <Tabs value={tab} onValueChange={setTab}>
             <TabsList aria-label="작업 상세 탭" className="jobs-detail-tabs">
               <TabsTrigger value="summary">요약</TabsTrigger><TabsTrigger value="final">최종 명세</TabsTrigger>
@@ -82,7 +84,7 @@ export default function JobDetailSheet({ id, job, fallback, loading, error, tab,
             </TabsContent>
             <TabsContent value="diagnostics"><JobValidation key={id} jobId={id} /></TabsContent>
           </Tabs>}
-      </div>
+      </VStack>
     </SheetContent>
   </Sheet>;
 }
@@ -99,8 +101,8 @@ export function JobHistory({ events, open, setOpen }: { events: JobDetail["sessi
     const time = jobTime(event.started_at);
     const answers = event.input?.answers?.filter(answer => answer.answer?.trim()) || [];
     const questions = event.questions?.filter(question => question.trim()) || [];
-    return <li key={key}><span className="jobs-history-number" aria-hidden>{index + 1}</span><div className="jobs-history-entry">
-      <div className="jobs-history-heading"><h3>{title}</h3><JobStatus status={event.status} /></div>
+    return <li key={key}><span className="jobs-history-number" aria-hidden>{index + 1}</span><VStack gap={2} className="jobs-history-entry">
+      <HStack gap={2} wrap="wrap" className="jobs-history-heading"><h3>{title}</h3><JobStatus status={event.status} /></HStack>
       <p className="jobs-history-time"><ClockIcon size={14} aria-hidden />{time === "기록 없음" ? "시각 기록 없음" : `${time} (KST)`}</p>
       <p className="jobs-history-summary">{summary}</p>
       <Collapsible open={!!open[key]} onOpenChange={value => setOpen(key, value)}>
@@ -118,6 +120,6 @@ export function JobHistory({ events, open, setOpen }: { events: JobDetail["sessi
           {!historyLabels[event.action || ""] && event.action && <p className="jobs-muted">기록된 동작: {event.action}</p>}
         </CollapsibleContent>
       </Collapsible>
-    </div></li>;
+    </VStack></li>;
   })}</ol>;
 }

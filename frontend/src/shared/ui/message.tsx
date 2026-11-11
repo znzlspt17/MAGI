@@ -1,71 +1,9 @@
-// shadcn/ui MIT; adapted from ba1503c64472b82256d9de95e2e62c5901a38e8b
-import * as React from "react"
-import { cn } from "../lib/utils"
-
-
-
-function Message({
-  className,
-  align = "start",
-  ...props
-}: React.ComponentProps<"div"> & { align?: "start" | "end" }) {
-  return (
-    <div
-      data-slot="message"
-      data-align={align}
-      className={cn(
-        "group/message relative flex w-full min-w-0 gap-2 text-sm data-[align=end]:flex-row-reverse",
-        className
-      )}
-      {...props}
-    />
-  )
-}
-
-
-
-function MessageContent({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="message-content"
-      className={cn(
-        "flex w-full min-w-0 flex-col gap-2.5 wrap-break-word group-data-[align=end]/message:*:data-slot:self-end",
-        className
-      )}
-      {...props}
-    />
-  )
-}
-
-function MessageHeader({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="message-header"
-      className={cn(
-        "flex max-w-full min-w-0 items-center px-3 text-xs font-medium text-muted-foreground group-has-data-[variant=ghost]/message:px-0",
-        className
-      )}
-      {...props}
-    />
-  )
-}
-
-function MessageFooter({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="message-footer"
-      className={cn(
-        "flex max-w-full min-w-0 items-center px-3 text-xs font-medium text-muted-foreground group-has-data-[variant=ghost]/message:px-0 group-data-[align=end]/message:justify-end",
-        className
-      )}
-      {...props}
-    />
-  )
-}
-
-export {
-Message,
-MessageContent,
-MessageFooter,
-MessageHeader
-}
+import * as React from "react";
+import {VStack} from "@astryxdesign/core/VStack";
+import {ChatMessage} from "@astryxdesign/core/Chat";
+import {Text} from "@astryxdesign/core/Text";
+function Message({align = "start", children, ...props}: React.ComponentProps<"div"> & {align?: "start" | "end"}) { return <ChatMessage {...props} sender={align === "end" ? "user" : "assistant"} data-slot="message" data-align={align}>{children}</ChatMessage>; }
+function MessageContent(props: React.ComponentProps<"div">) { return <VStack {...props} data-slot="message-content" />; }
+function MessageHeader({children, color: _color, ...props}: React.ComponentProps<"div">) { return <Text {...props} data-slot="message-header" type="supporting">{children}</Text>; }
+function MessageFooter({children, color: _color, ...props}: React.ComponentProps<"div">) { return <Text {...props} data-slot="message-footer" type="supporting">{children}</Text>; }
+export {Message, MessageContent, MessageHeader, MessageFooter};

@@ -50,6 +50,7 @@ export function useKnowledge({ admin, selectedJobId, onDeleted }: { admin: boole
     [focused, setFocused] = useState(false),
     [projectOperation, setProjectOperation] = useState<(CleanupOperation & { project_id: string }) | null>(null);
   const generation = useRef(0),
+    deletingProject = useRef(false),
     selection = useRef(0),
     sessionGeneration = useRef(0),
     handle = useRef<GraphHandle | null>(null),
@@ -347,13 +348,15 @@ export function useKnowledge({ admin, selectedJobId, onDeleted }: { admin: boole
     catch (e) { fail(e); }
   }
   async function deleteProject() {
-    if (!projectOperation) return;
+    if (!projectOperation || deletingProject.current) return;
+    // 2026-11-11: 상태 갱신 전에 연속 클릭해도 같은 삭제 요청을 중복 전송하지 않는다.
+    deletingProject.current = true;
     setBusy(true);
     try {
       await post("/api/admin/cleanup/execute", { id: projectOperation.id, confirmation: "" });
       setProjectOperation(null); invalidate(); setProject(""); setRefresh(value => value+1); onDeleted?.([]);
     } catch(e) { fail(e); }
-    finally { setBusy(false); }
+    finally { deletingProject.current = false; setBusy(false); }
   }
   return {
     canRetry, mutationBusy, projects, project, setProject,

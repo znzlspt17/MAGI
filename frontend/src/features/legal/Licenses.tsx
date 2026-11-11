@@ -1,8 +1,10 @@
+import { HStack } from "@astryxdesign/core/HStack";
 import { useEffect, useState } from "react";
 import { CopyrightIcon, DownloadSimpleIcon } from "@phosphor-icons/react";
 import { WorkspaceReturnLink } from "../workspace/WorkspaceReturnLink";
 import { Button } from "../../shared/ui/button";
 import { Notice } from "../../shared/ui/UI";
+import "./research.css";
 
 type LicenseEntry = { name: string; version: string; license: string; url: string; text: string };
 
@@ -26,7 +28,7 @@ export function Licenses() {
       <Button asChild variant="outline"><a href="/static/vendor/THIRD_PARTY_NOTICES.txt" download><DownloadSimpleIcon size={18} aria-hidden />전체 고지 다운로드</a></Button>
     </header>
     <h2>배포에 포함된 라이선스</h2>
-    {error ? <Notice>{error}</Notice> : entries === null ? <p role="status">라이선스 고지를 불러오는 중입니다.</p> : entries.length === 0 ? <p role="status">표시할 라이선스 고지가 없습니다.</p> : <div className="license-overview"><p>배포 코드와 에셋 <strong>{entries.length}개</strong></p><p>라이선스 원문은 원문 언어로 제공합니다.</p></div>}
+    {error ? <Notice>{error}</Notice> : entries === null ? <p role="status">라이선스 고지를 불러오는 중입니다.</p> : entries.length === 0 ? <p role="status">표시할 라이선스 고지가 없습니다.</p> : <HStack gap={2} wrap="wrap" className="license-overview"><p>배포 코드와 에셋 <strong>{entries.length}개</strong></p><p>라이선스 원문은 원문 언어로 제공합니다.</p></HStack>}
     {entries?.map((entry) => <details className="license-entry" key={`${entry.name}:${entry.version}`}><summary>{entry.name}<small>{entry.license}</small></summary><div><p className="subtle">버전 / 출처 리비전: {entry.version}</p>{entry.url.startsWith("https://") && <a href={entry.url} target="_blank" rel="noreferrer">공식 소스</a>}<pre>{entry.text}</pre></div></details>)}
     <footer className="public-links"><WorkspaceReturnLink /><a href="/privacy">정보 처리 안내</a><a href="/research">연구 출처 및 적용 방식</a></footer>
   </main>;

@@ -1,53 +1,55 @@
-.research-page { max-width: 960px; margin: 0 auto; padding: 28px 24px 40px; overflow-wrap: anywhere; line-height: 1.8; }
-.research-page > header { padding: 16px 0; }
-.research-page h1 { display: flex; align-items: center; gap: 10px; font-size: 26px; letter-spacing: -.7px; line-height: 1.5; }
+@layer components {
+.research-page { max-width: 960px; margin: 0 auto; padding: 28px var(--spacing-6) var(--spacing-10); overflow-wrap: anywhere; line-height: 1.8; }
+.research-page > header { padding: var(--spacing-4) 0; }
+.research-page h1 { display: flex; align-items: center; gap: var(--spacing-2); font-size: 24px; letter-spacing: -.7px; line-height: 1.5; }
 .research-page h1 svg { flex-shrink: 0; }
-.research-page h2 { font-size: 19px; margin: 0 0 12px; scroll-margin-top: 24px; }
-.research-page h3 { font-size: 16px; margin: 22px 0 8px; }
-.research-page p { margin: 10px 0; color: #525252; }
-.research-page .research-lead { font-size: 19px; font-weight: 650; color: #171717; }
-.research-source { border-left: 3px solid var(--primary, #0f766e); padding: 3px 16px; margin: 24px 0 8px; }
-.research-source p { margin: 4px 0; }
-.research-source-meta { display: flex; flex-wrap: wrap; gap: 24px; margin: 16px 0; }
-.research-source-meta div { display: grid; gap: 4px; }
-.research-source-meta dt { color: #525252; font-size: 13px; }
-.research-source-meta dd { margin: 0; color: #171717; }
-.research-references { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 16px 0; }
-.licenses-page { max-width: 1120px; margin: 0 auto; padding: 32px; }
-.licenses-page > header { padding: 24px 0; max-width: 800px; }
-.licenses-page > h2 { margin: 24px 0 8px; font-size: 20px; }
-.licenses-page .license-entry { margin: 12px 0; border: 1px solid #e5e5e5; border-radius: 8px; background: #fff; }
-.licenses-page .license-entry summary { padding: 16px; cursor: pointer; }
-.licenses-page .license-entry summary small { color: #525252; }
-.licenses-page .license-entry > div { padding: 0 16px 16px; }
+.research-page h2 { font-size: 18px; margin: 0 0 var(--spacing-3); scroll-margin-top: var(--spacing-6); }
+.research-page h3 { font-size: 16px; margin: 22px 0 var(--spacing-2); }
+.research-page p { margin: 10px 0; color: var(--color-text-secondary); }
+.research-page .research-lead { font-size: 14px; font-weight: 650; color: var(--color-text-primary); }
+.research-source { border-left: 3px solid var(--primary, var(--color-text-accent)); padding: 3px var(--spacing-4); margin: var(--spacing-6) 0 var(--spacing-2); }
+.research-source p { margin: var(--spacing-1) 0; }
+.research-source-meta { display: flex; flex-wrap: wrap; gap: var(--spacing-6); margin: var(--spacing-4) 0; }
+.research-source-meta div { display: grid; gap: var(--spacing-1); }
+.research-source-meta dt { color: var(--color-text-secondary); font-size: 12px; }
+.research-source-meta dd { margin: 0; color: var(--color-text-primary); }
+.research-references { display: flex; flex-wrap: wrap; gap: var(--spacing-2) var(--spacing-6); margin: var(--spacing-4) 0; }
+.licenses-page { max-width: 1120px; margin: 0 auto; padding: var(--spacing-8); }
+.licenses-page > header { padding: var(--spacing-6) 0; max-width: 800px; }
+.licenses-page > h2 { margin: var(--spacing-6) 0 var(--spacing-2); font-size: 18px; }
+.licenses-page .license-entry { margin: var(--spacing-3) 0; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-background-surface); }
+.licenses-page .license-entry summary { padding: var(--spacing-4); cursor: pointer; }
+.licenses-page .license-entry summary small { color: var(--color-text-secondary); }
+.licenses-page .license-entry > div { padding: 0 var(--spacing-4) var(--spacing-4); }
 .licenses-page .license-entry pre { max-height: 480px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
-.privacy-toc { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 24px 0; padding: 16px; border: 1px solid #e5e5e5; border-radius: 8px; background: #fff; }
-.privacy section { padding: 16px 0; border-top: 1px solid #e5e5e5; }
-.privacy section h2 { margin: 0 0 8px; font-size: 20px; }
+.privacy-toc { display: flex; flex-wrap: wrap; gap: var(--spacing-2) var(--spacing-6); margin: var(--spacing-6) 0; padding: var(--spacing-4); border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-background-surface); }
+.privacy section { padding: var(--spacing-4) 0; border-top: 1px solid var(--color-border); }
+.privacy section h2 { margin: 0 0 var(--spacing-2); font-size: 18px; }
 .privacy section p { max-width: 800px; line-height: 1.7; }
 .privacy section p, .research-page section p, .research-page section li, .research-page .research-table table, .licenses-page > header p, .license-overview { font-size: 16px; line-height: 1.6; }
-.license-overview { display: flex; flex-wrap: wrap; gap: 8px 24px; color: #525252; }
-.license-overview p { margin: 0 0 16px; }
-.research-page section, .research-toc { margin: 16px 0; padding: 24px; background: #fff; border: 1px solid #e5e5e5; border-radius: 12px; }
-.research-page li { margin: 12px 0; }
-.research-page li p { margin: 4px 0; }
-.research-page ol, .research-page ul { padding-left: 24px; }
-.research-toc ol { columns: 2; column-gap: 32px; }
-.research-toc li { break-inside: avoid; margin: 6px 0; }
-.research-page a:focus-visible, .research-table:focus-visible { outline: 3px solid #0f766e; outline-offset: 3px; }
-.research-table { max-width: 100%; overflow-x: auto; margin: 20px 0; border: 1px solid #e5e5e5; border-radius: 8px; }
+.license-overview { display: flex; flex-wrap: wrap; gap: var(--spacing-2) var(--spacing-6); color: var(--color-text-secondary); }
+.license-overview p { margin: 0 0 var(--spacing-4); }
+.research-page section, .research-toc { margin: var(--spacing-4) 0; padding: var(--spacing-6); background: var(--color-background-surface); border: 1px solid var(--color-border); border-radius: 12px; }
+.research-page li { margin: var(--spacing-3) 0; }
+.research-page li p { margin: var(--spacing-1) 0; }
+.research-page ol, .research-page ul { padding-left: var(--spacing-6); }
+.research-toc ol { columns: 2; column-gap: var(--spacing-8); }
+.research-toc li { break-inside: avoid; margin: var(--spacing-1-5) 0; }
+.research-page a:focus-visible, .research-table:focus-visible { outline: 3px solid var(--color-text-accent); outline-offset: 3px; }
+.research-table { max-width: 100%; overflow-x: auto; margin: var(--spacing-5) 0; border: 1px solid var(--color-border); border-radius: 8px; }
 .research-table table { width: 100%; min-width: 570px; border-collapse: collapse; text-align: left; font-size: 14px; line-height: 1.65; }
-.research-table caption { padding: 12px 14px; background: #fafafa; text-align: left; font-weight: 700; }
-.research-table th, .research-table td { padding: 11px 14px; border-top: 1px solid #e5e5e5; vertical-align: top; }
-.research-table thead th { background: #fafafa; }
+.research-table caption { padding: var(--spacing-3) 14px; background: var(--color-background-body); text-align: left; font-weight: 700; }
+.research-table th, .research-table td { padding: 11px 14px; border-top: 1px solid var(--color-border); vertical-align: top; }
+.research-table thead th { background: var(--color-background-body); }
 .research-table tbody th { width: 20%; }
-.research-page pre { overflow-x: auto; padding: 18px; border-radius: 8px; background: #f5f5f5; color: #171717; line-height: 1.7; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.research-example { margin: 20px 0; padding: 2px 16px 10px; border-left: 3px solid var(--primary, #0f766e); background: #fafafa; }
-.research-glossary dt { margin-top: 12px; font-weight: 700; }
-.research-glossary dd { margin: 2px 0 0; color: #525252; }
+.research-page pre { overflow-x: auto; padding: var(--spacing-4); border-radius: 8px; background: var(--color-background-muted); color: var(--color-text-primary); line-height: 1.7; font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.research-example { margin: var(--spacing-5) 0; padding: var(--spacing-0-5) var(--spacing-4) 10px; border-left: 3px solid var(--primary, var(--color-text-accent)); background: var(--color-background-body); }
+.research-glossary dt { margin-top: var(--spacing-3); font-weight: 700; }
+.research-glossary dd { margin: var(--spacing-0-5) 0 0; color: var(--color-text-secondary); }
 @media (max-width: 767px) {
   .research-page { padding: 30px 18px; }
   .research-page h1 { font-size: 24px; }
-  .research-page section, .research-toc { padding: 20px 16px; }
+  .research-page section, .research-toc { padding: var(--spacing-5) var(--spacing-4); }
   .research-toc ol { columns: 1; }
+}
 }

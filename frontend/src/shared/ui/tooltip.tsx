@@ -1,57 +1,31 @@
-// shadcn/ui MIT; adapted from ba1503c64472b82256d9de95e2e62c5901a38e8b
-"use client"
+import { Tooltip as AstryxTooltip } from "@astryxdesign/core/Tooltip";
+import * as React from "react";
 
-import * as TooltipPrimitive from "@radix-ui/react-tooltip"
-import * as React from "react"
-import { cn } from "../lib/utils"
+type TooltipProviderProps = { children?: React.ReactNode; delayDuration?: number };
+type TooltipTriggerProps = React.ComponentProps<"button"> & { asChild?: boolean };
+type TooltipContentProps = React.ComponentProps<"div"> & { side?: "top" | "bottom" | "left" | "right"; align?: "start" | "center" | "end"; sideOffset?: number };
+type TooltipRootProps = { children?: React.ReactNode; open?: boolean; defaultOpen?: boolean; onOpenChange?: (open: boolean) => void };
 
-function TooltipProvider({
-  delayDuration = 0,
-  ...props
-}: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
-  return (
-    <TooltipPrimitive.Provider
-      data-slot="tooltip-provider"
-      delayDuration={delayDuration}
-      {...props}
-    />
-  )
+const DelayContext = React.createContext(0);
+function TooltipProvider({ delayDuration = 0, children }: TooltipProviderProps) {
+  return <DelayContext.Provider value={delayDuration}>{children}</DelayContext.Provider>;
 }
-
-function Tooltip({
-  ...props
-}: React.ComponentProps<typeof TooltipPrimitive.Root>) {
-  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
+function TooltipTrigger({ children }: TooltipTriggerProps) {
+  return <>{children}</>;
 }
-
-function TooltipTrigger({
-  ...props
-}: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
+function TooltipContent(_props: TooltipContentProps) { return null; }
+function Tooltip({ children, open, defaultOpen, onOpenChange }: TooltipRootProps) {
+  const delay = React.useContext(DelayContext);
+  const parts = React.Children.toArray(children).filter(React.isValidElement);
+  const trigger = parts.find(part => part.type === TooltipTrigger) as React.ReactElement<React.ComponentProps<typeof TooltipTrigger>> | undefined;
+  const content = parts.find(part => part.type === TooltipContent) as React.ReactElement<React.ComponentProps<typeof TooltipContent>> | undefined;
+  if (!trigger) return null;
+  const side = content?.props.side;
+  const placement = side === "top" ? "above" : side === "bottom" ? "below" : side === "left" ? "start" : side === "right" ? "end" : undefined;
+  // 2026-11-11: 기존 조합 API를 유지해 호출부의 실제 trigger와 비활성 툴팁 조건을 보존한다.
+  return <AstryxTooltip content={content?.props.children} placement={placement} alignment={content?.props.align}
+    delay={delay} isEnabled={!content?.props.hidden} isOpen={open} isDefaultOpen={defaultOpen} onOpenChange={onOpenChange}>
+    {trigger.props.children}
+  </AstryxTooltip>;
 }
-
-function TooltipContent({
-  className,
-  sideOffset = 0,
-  children,
-  ...props
-}: React.ComponentProps<typeof TooltipPrimitive.Content>) {
-  return (
-    <TooltipPrimitive.Portal>
-      <TooltipPrimitive.Content
-        data-slot="tooltip-content"
-        sideOffset={sideOffset}
-        className={cn(
-          "z-50 w-fit origin-(--radix-tooltip-content-transform-origin) animate-in rounded-md bg-foreground px-3 py-1.5 text-xs text-balance text-background fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
-          className
-        )}
-        {...props}
-      >
-        {children}
-        <TooltipPrimitive.Arrow className="z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px] bg-foreground fill-foreground" />
-      </TooltipPrimitive.Content>
-    </TooltipPrimitive.Portal>
-  )
-}
-
-export { Tooltip,TooltipContent,TooltipProvider,TooltipTrigger }
+export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger };

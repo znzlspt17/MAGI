@@ -1,68 +1,12 @@
-// shadcn/ui MIT; adapted from ba1503c64472b82256d9de95e2e62c5901a38e8b
-import * as React from "react"
-import { cn } from "../lib/utils"
+import * as React from "react";
+import {Card as AstryxCard} from "@astryxdesign/core/Card";
+import {VStack} from "@astryxdesign/core/VStack";
+import {Text} from "@astryxdesign/core/Text";
 
-function Card({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card"
-      className={cn(
-        "flex flex-col gap-6 rounded-xl border bg-card py-6 text-card-foreground shadow-sm",
-        className
-      )}
-      {...props}
-    />
-  )
-}
-
-function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-header"
-      className={cn(
-        "@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6",
-        className
-      )}
-      {...props}
-    />
-  )
-}
-
-function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-title"
-      className={cn("leading-none font-semibold", className)}
-      {...props}
-    />
-  )
-}
-
-function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-description"
-      className={cn("text-sm text-muted-foreground", className)}
-      {...props}
-    />
-  )
-}
-
-
-
-function CardContent({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="card-content"
-      className={cn("px-6", className)}
-      {...props}
-    />
-  )
-}
-
-
-
-export {
-Card,CardContent,CardDescription,CardHeader,
-CardTitle
-}
+// 2026-11-11: 공통 카드 외형과 내부 간격을 Astryx 컴포넌트가 담당한다.
+function Card(props: React.ComponentProps<"div">) { return <AstryxCard {...props} data-slot="card" />; }
+function CardHeader(props: React.ComponentProps<"div">) { return <VStack {...props} data-slot="card-header" gap={2} />; }
+function CardTitle({color: _color, children, ...props}: React.ComponentProps<"div">) { return <Text {...props} data-slot="card-title" weight="bold">{children}</Text>; }
+function CardDescription({color: _color, children, ...props}: React.ComponentProps<"div">) { return <Text {...props} data-slot="card-description" type="supporting">{children}</Text>; }
+function CardContent(props: React.ComponentProps<"div">) { return <VStack {...props} data-slot="card-content" />; }
+export {Card, CardContent, CardDescription, CardHeader, CardTitle};

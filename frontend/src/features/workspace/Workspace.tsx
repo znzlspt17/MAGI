@@ -1,3 +1,6 @@
+import { Stack } from "@astryxdesign/core/Stack";
+import { Selector } from "@astryxdesign/core/Selector";
+import { Button as AstryxButton } from "@astryxdesign/core/Button";
 import { StepResult } from "../execution/StepResult";
 import { StopDiagnostic } from "../execution/StopDiagnostic";
 import { FailureDiagnostic } from "../execution/FailureDiagnostic";
@@ -180,7 +183,7 @@ export default function Workspace() {
     <SidebarProvider className="shell" style={{ "--sidebar-width": "272px" } as CSSProperties}>
       <AppSidebar>
         <Button
-          className="primary new-job"
+          className="new-job" variant="default"
           onClick={() => {
             navigate("/");
             setSurface("workspace");
@@ -213,18 +216,11 @@ export default function Workspace() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <select
-            aria-label="작업 상태"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-          >
-            <option value="">전체 상태</option>
-            <option value="active">진행 중</option>
-            <option value="NEEDS_USER_INPUT">요구사항 확인 필요</option>
-            <option value="FINALIZED">최종 완료</option>
-            <option value="error">오류</option>
-            <option value="CRITICAL_BLOCKED">명세 진행 중단</option>
-          </select>
+          <Selector label="작업 상태" isLabelHidden value={filter || "__all"} onChange={value => setFilter(value === "__all" ? "" : value)} options={[
+            { value: "__all", label: "전체 상태" }, { value: "active", label: "진행 중" },
+            { value: "NEEDS_USER_INPUT", label: "요구사항 확인 필요" }, { value: "FINALIZED", label: "최종 완료" },
+            { value: "error", label: "오류" }, { value: "CRITICAL_BLOCKED", label: "명세 진행 중단" },
+          ]} />
           <SidebarGroupLabel asChild><h2>
             대화 세션 <span>{filtered.length}</span>
           </h2></SidebarGroupLabel>
@@ -235,12 +231,12 @@ export default function Workspace() {
         </SidebarGroup>
       </AppSidebar>
       <SidebarInset className="workspace-content">
-        <div className="workspace-topbar">
+        <Stack direction="horizontal" className="workspace-topbar">
           <SidebarTrigger aria-label="작업 메뉴 접기 또는 펼치기" />
           <h1 title={actualJob?.request}>{surface === "knowledge" ? "지식 검색" : id ? actualJob?.request || "작업 불러오는 중…" : "새 명세 만들기"}</h1>
           {workspaceTabs}
-          <div className="workspace-topbar-status">{actualJob && surface === "workspace" && <StatusIcon status={actualJob.status} />}<ServiceStatusNotice compact /></div>
-        </div>
+          <Stack direction="horizontal" className="workspace-topbar-status">{actualJob && surface === "workspace" && <StatusIcon status={actualJob.status} />}<ServiceStatusNotice compact /></Stack>
+        </Stack>
         <main ref={mainRef}>
           <Notice>{auth.notice || connection}</Notice>
           {surface === "workspace" && <WorkspaceSteps stage={id && !actualJob ? null : workspaceStage(actualJob)} message={workspaceStageMessage(actualJob)} interrupted={!!actualJob && ["error", "interrupted"].includes(actualJob.status)} />}
@@ -252,11 +248,10 @@ export default function Workspace() {
                 <section className="chat-welcome">
                   <h2>만들고 싶은 기능을 알려주세요</h2>
                   <p>완벽하게 정리하지 않아도 괜찮습니다.<br />요청을 바탕으로 필요한 내용을 함께 구체화합니다.</p>
-                  <label htmlFor="request-text">개발 요청</label>
                   <PromptInput id="request-text" label="개발 요청" buttonLabel={decisionSelections.length ? `선택한 결정 ${decisionSelections.length}개와 함께 생성` : "명세 생성 시작"} rows={5} value={request} disabled={blocked}
                     placeholder="예: 팀이 매주 진행 상황을 공유할 수 있는 보고서 생성 기능을 만들어주세요."
                     onChange={(event) => { setRequest(event.target.value); sessionStorage.setItem(draftKey, event.target.value); }} onSend={() => void generate()} />
-                  <div className="request-guidance"><span>만들고 싶은 것</span><span>사용할 사람</span><span>지켜야 할 조건</span></div>
+                  <Stack direction="horizontal" wrap="wrap" className="request-guidance"><span>만들고 싶은 것</span><span>사용할 사람</span><span>지켜야 할 조건</span></Stack>
                   <details className="request-options"><summary>프로젝트와 공통 결정{decisionSelections.length > 0 && <span className="request-selection-count">선택 {decisionSelections.length}개</span>}</summary><ProjectDecisionPicker key={auth.user?.id || "local"} projectId={projectId} onProject={setProjectId} selections={decisionSelections} onSelections={setDecisionSelections} /></details>
                   <p className="subtle">요청과 답변은 명세 생성을 위해 OpenAI에 전송됩니다.</p>
                 </section>
@@ -264,9 +259,9 @@ export default function Workspace() {
                 <>
                   <ReusedDecisions key={actualJob.id} jobId={actualJob.id} count={actualJob.reused_decision_count || 0} />
                   {tab !== "conversation" && <CompletedDocuments job={actualJob} select={selectStep} />}
-                  <div role="tabpanel" id={`workspace-panel-${tab}`} aria-labelledby={`workspace-tab-${tab}`} tabIndex={0} className="workspace-stage-panel" data-view={tab} data-review-open={reviewPanelOpen}>
+                  <Stack role="tabpanel" id={`workspace-panel-${tab}`} aria-labelledby={`workspace-tab-${tab}`} tabIndex={0} className="workspace-stage-panel" data-view={tab} data-review-open={reviewPanelOpen}>
                   {tab !== "conversation" && (
-                    <div className="document-action-layout">
+                    <Stack className="document-action-layout">
                       <section className="document-panel">
                         {detail?.change_review && <details className="document-change-review"><summary><span>명세 변경 검토</span><span>{detail.change_review.changes?.length || 0}건</span></summary><ChangeReview review={detail.change_review} /></details>}
                         {tab === "history" && actualJob.usage && <UsageSummary usage={actualJob.usage} />}
@@ -281,16 +276,16 @@ export default function Workspace() {
                           {selectedDetail()}
                         </>}
                       </section>
-                    </div>
+                    </Stack>
                   )}
-                  {historicalDocument && <aside className="historical-document-notice"><h2>이전 시점의 명세</h2><p>이 문서는 읽기 전용입니다. 현재 검토본에서 수정하거나 승인할 수 있습니다.</p>{currentDocument ? <Button className="primary" onClick={() => selectStep(currentDocument)}>현재 검토본 열기</Button> : <Button onClick={() => setTab("conversation")}>대화에서 현재 상태 확인</Button>}</aside>}
-                  {tab === "document" && !historicalDocument && <button type="button" ref={reviewToggle} className="button review-panel-toggle" aria-expanded={reviewPanelOpen} aria-controls="workspace-conversation" onClick={() => setReviewPanelOpen(open => !open)}>{reviewPanelOpen ? "대화와 검토 닫기" : "대화와 검토 열기"}</button>}
+                  {historicalDocument && <aside className="historical-document-notice"><h2>이전 시점의 명세</h2><p>이 문서는 읽기 전용입니다. 현재 검토본에서 수정하거나 승인할 수 있습니다.</p>{currentDocument ? <Button variant="default" onClick={() => selectStep(currentDocument)}>현재 검토본 열기</Button> : <Button onClick={() => setTab("conversation")}>대화에서 현재 상태 확인</Button>}</aside>}
+                  {tab === "document" && !historicalDocument && <AstryxButton ref={reviewToggle} className="review-panel-toggle" label={reviewPanelOpen ? "대화와 검토 닫기" : "대화와 검토 열기"} aria-expanded={reviewPanelOpen} aria-controls="workspace-conversation" onClick={() => setReviewPanelOpen(open => !open)} />}
                   <aside id="workspace-conversation" className="workspace-conversation" aria-label={tab === "document" ? "대화와 검토 동작" : "대화"} hidden={tab === "history" || historicalDocument} onKeyDown={event => { if (event.key === "Escape" && reviewPanelOpen && window.innerWidth < 1920) { setReviewPanelOpen(false); reviewToggle.current?.focus(); } }}>
-                    {tab === "document" && <button type="button" ref={reviewClose} className="button review-panel-close" onClick={() => { setReviewPanelOpen(false); reviewToggle.current?.focus(); }}>대화와 검토 닫기</button>}
+                    {tab === "document" && <AstryxButton ref={reviewClose} className="review-panel-close" label="대화와 검토 닫기" onClick={() => { setReviewPanelOpen(false); reviewToggle.current?.focus(); }} />}
                     {tab === "conversation" && ["queued", "running"].includes(actualJob.status) && <Button disabled={busy} onClick={() => void mutate("stop", undefined).catch(() => {})}>이 작업 중지</Button>}
                     <Conversation key={actualJob.id} job={actualJob} select={selectStep} onAction={mutate} busy={busy} failureDetail={session.failureDetail} documentMode={tab === "document"} appendQuestionRef={appendQuestion} />
                   </aside>
-                  </div>
+                  </Stack>
 
                 </>
               ) : (
@@ -322,7 +317,7 @@ function CompletedDocuments({
 }) {
   const [selected, setSelected] = useState("");
   return (
-    <details className="completed-documents"><summary>완료 명세와 다운로드</summary><div className="completed-document-controls">
+    <details className="completed-documents"><summary>완료 명세와 다운로드</summary><Stack direction="horizontal" wrap="wrap" className="completed-document-controls">
       {(job.latest_completed || job.status === "FINALIZED") && <ImplementationPackage key={`${job.id}:${job.latest_completed?.id || "latest"}`} jobId={job.id} completedId={job.latest_completed?.id} label="최근 승인본 구현 묶음" />}
       <span>
         {job.status === "FINALIZED"
@@ -340,17 +335,8 @@ function CompletedDocuments({
       )}
       {(job.completed_documents?.length || 0) > 1 && (
         <>
-          <select
-            aria-label="보존된 완료 명세"
-            value={selected || job.completed_documents![0].id}
-            onChange={(e) => setSelected(e.target.value)}
-          >
-            {job.completed_documents!.map((d, i) => (
-              <option key={d.id} value={d.id}>
-                완료본 {i + 1}
-              </option>
-            ))}
-          </select>
+          <Selector label="보존된 완료 명세" isLabelHidden value={selected || job.completed_documents![0].id}
+            onChange={setSelected} options={job.completed_documents!.map((d, i) => ({ value: d.id, label: `완료본 ${i + 1}` }))} />
           <Button
             onClick={() => select(selected || job.completed_documents![0].id)}
           >
@@ -358,6 +344,6 @@ function CompletedDocuments({
           </Button>
         </>
       )}
-    </div></details>
+    </Stack></details>
   );
 }

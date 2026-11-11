@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { Stack } from "@astryxdesign/core/Stack";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 // shadcn/ui Radix AI Elements Chat / Task compositions (MIT), revision ba1503c64472b82256d9de95e2e62c5901a38e8b.
 import { ScalesIcon, FileTextIcon, CaretDownIcon } from "@phosphor-icons/react";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "../../shared/ui/collapsible";
@@ -58,6 +59,8 @@ function ConversationContent({ job, select, onAction, busy, draftKey, failureDet
     return () => { appendQuestionRef.current = null; };
   }, [appendQuestionRef, job.id, job.status, job.read_only, job.state?.plan, job.state?.status, busy, message]);
   const [controlsTarget, setControlsTarget] = useState<HTMLDivElement | null>(null);
+  // 2026-11-11: 포털 대상 ref를 안정적으로 유지해 Stack 재렌더 시 불필요한 재설정을 막는다.
+  const controlsRef = useCallback((element: HTMLElement | null) => setControlsTarget(element as HTMLDivElement | null), []);
   const root = useRef<HTMLElement>(null);
   const scrollPositions = useRef({ conversation: 0, document: 0 });
   useEffect(() => {
@@ -93,13 +96,13 @@ function ConversationContent({ job, select, onAction, busy, draftKey, failureDet
                   <MessageHeader>{turn.role === "user" ? "나" : <><ScalesIcon weight="duotone" size={18} aria-hidden />MAGI</>}</MessageHeader>
                   <Bubble align={turn.role === "user" ? "end" : "start"} variant={turn.role === "user" ? "tinted" : "ghost"}><BubbleContent>
                     {turn.text && <p className="chat-message-text">{turn.text}</p>}
-                    {turn.answers?.map((answer, index) => <div className="chat-answer" key={`${index}:${answer.question_id || "answer"}`}>
+                    {turn.answers?.map((answer, index) => <Stack className="chat-answer" key={`${index}:${answer.question_id || "answer"}`}>
                       <p className="chat-message-text">{answer.answer}</p>
                       {answer.question?.trim() && <Collapsible className="chat-question-reference">
                         <CollapsibleTrigger className="chat-question-trigger">답변 대상 질문<CaretDownIcon size={14} aria-hidden /></CollapsibleTrigger>
                         <CollapsibleContent><blockquote className="chat-question-text">{answer.question}</blockquote></CollapsibleContent>
                       </Collapsible>}
-                    </div>)}
+                    </Stack>)}
                     {!!turn.questions?.length && !(waiting && turn.eventId === latestEventId) && <ol className="chat-history-questions">{turn.questions.map((question, index) => <li key={`${index}:${question}`}>{questionDetails(question, index).label}</li>)}</ol>}
                     {turn.documentStepId && <Button className="chat-document-link" onClick={() => select(turn.documentStepId!)}><FileTextIcon size={17} aria-hidden />이 시점의 명세 열기</Button>}
                   </BubbleContent></Bubble>
@@ -120,7 +123,7 @@ function ConversationContent({ job, select, onAction, busy, draftKey, failureDet
         {!documentMode && <MessageScrollerButton size="sm" className="chat-latest">최신 메시지로 이동</MessageScrollerButton>}
       </MessageScroller>
     </MessageScrollerProvider>
-    <div className="chat-actions" ref={setControlsTarget} />
+    <Stack className="chat-actions" ref={controlsRef} />
     {job.state?.plan && (waiting ? <Collapsible className="chat-secondary-composer" open={composerOpen} onOpenChange={setComposerOpen}>
       <CollapsibleTrigger className="chat-question-trigger">수정 의견 또는 추가 요청<CaretDownIcon size={14} aria-hidden /></CollapsibleTrigger>
       <CollapsibleContent><AgentComposer key={job.id} job={job} onAction={onAction} busy={busy} draft={messageDraft} /></CollapsibleContent>

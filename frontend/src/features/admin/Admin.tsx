@@ -1,7 +1,12 @@
+import { VStack } from "@astryxdesign/core/VStack";
+import { NativeSelect } from "../../shared/ui/native-select";
+import { Button } from "../../shared/ui/button";
+import { CheckboxInput } from "@astryxdesign/core/CheckboxInput";
+import { Field } from "@astryxdesign/core/Field";
 import { decodeOverview } from "./admin-response";
 type AdminUser = { id: string; role?: string; daily_runs?: number; daily_usd?: string; suspended?: boolean };
 type Overview = { embedding_status?: string | null; users?: AdminUser[]; executions?: { execution_id: string; job_id: string; kind: string; phase: string; stopping?: boolean }[] };
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useId, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { ActivityIcon, ClockIcon, IdentificationCardIcon } from "@phosphor-icons/react";
 import { api, post } from "../../shared/api/api";
@@ -72,7 +77,7 @@ export default function Admin() {
       </section>
     );
   return (
-    <div className="admin-react">
+    <VStack gap={2} className="admin-react">
       <header className="admin-heading">
         <div>
           <h1>서비스 관리</h1>
@@ -83,7 +88,7 @@ export default function Admin() {
       <details className="admin-account">
         <summary>관리자 계정</summary>
         <dl id="account-identity" className="admin-account-meta"><div><dt><IdentificationCardIcon size={16} aria-hidden />사용자 ID</dt><dd>{auth.user?.id}</dd></div><div><dt>권한</dt><dd>관리자</dd></div></dl>
-        <button
+        <Button
           id="account-copy"
           onClick={async () => {
             try {
@@ -95,7 +100,7 @@ export default function Admin() {
           }}
         >
           사용자 ID 복사
-        </button>
+        </Button>
       </details>
       <nav className="admin-nav" aria-label="관리자 메뉴">
         {views.map(([v, label]) => (
@@ -110,7 +115,7 @@ export default function Admin() {
       </nav>
       <p id="admin-error" role="alert">
         {error}
-        {error && <button onClick={() => { setError(""); setVersion(value => value + 1); }}>다시 조회</button>}
+        {error && <Button onClick={() => { setError(""); setVersion(value => value + 1); }}>다시 조회</Button>}
       </p>
       <p role="status">{notice}</p>
       <fieldset className="admin-content" disabled={busy} aria-busy={busy}>
@@ -123,7 +128,7 @@ export default function Admin() {
                   <p>현재 실행 {data.executions?.filter((item) => item.phase === "running").length || 0}개</p>
                   {(data.executions || []).map((item) => <div key={item.execution_id}>
                     <dl className="admin-execution-meta"><div><dt>작업 ID</dt><dd>{item.job_id}</dd></div><div><dt><ActivityIcon size={16} aria-hidden />유형</dt><dd>{item.kind}</dd></div><div><dt><ClockIcon size={16} aria-hidden />상태</dt><dd>{item.phase}</dd></div></dl>
-                    <button disabled={item.stopping} onClick={() => void act("/api/admin/stop", { id: item.job_id, execution_id: item.execution_id })}>{item.stopping ? "중지 요청됨" : "이 실행 종료 요청"}</button>
+                    <Button disabled={item.stopping} onClick={() => void act("/api/admin/stop", { id: item.job_id, execution_id: item.execution_id })}>{item.stopping ? "중지 요청됨" : "이 실행 종료 요청"}</Button>
                   </div>)}
                 </>
               ) : (
@@ -133,9 +138,9 @@ export default function Admin() {
             <section data-admin-section="overview">
               <h2>지식 색인 상태</h2>
               <p>{data?.embedding_status || "임베딩 오류 없음"}</p>
-              <button onClick={() => void act("/api/knowledge/retry")}>
+              <Button onClick={() => void act("/api/knowledge/retry")}>
                 임베딩 색인 실행
-              </button>
+              </Button>
             </section>
           </>
         )}
@@ -165,7 +170,7 @@ export default function Admin() {
         {view === "logs" && <Suspense fallback={<p role="status">로그 화면을 불러오는 중…</p>}><AdminLogs /></Suspense>}
         {view === "knowledge" && <Knowledge admin />}
       </fieldset>
-    </div>
+    </VStack>
   );
 }
 function UserEditor({
@@ -175,6 +180,8 @@ function UserEditor({
   user: AdminUser;
   onSave: (payload: unknown) => void;
 }) {
+  const [suspended, setSuspended] = useState(Boolean(user.suspended));
+  const fieldId = useId();
   return (
     <form
       className="admin-user"
@@ -191,41 +198,34 @@ function UserEditor({
       }}
     >
       <strong>{user.id}</strong>
-      <label>
+      <div>
         계정 역할
-        <select name="role" aria-label="계정 역할" defaultValue={user.role}>
+        <NativeSelect name="role" aria-label="계정 역할" defaultValue={user.role}>
           <option value="user">일반 사용자</option>
           <option value="admin">관리자</option>
-        </select>
-      </label>
-      <label>
-        일일 실행 관측 기준 (차단 없음)
+        </NativeSelect>
+      </div>
+      <Field label="일일 실행 관측 기준 (차단 없음)" inputID={`${fieldId}-runs`}>
         <input
+          id={`${fieldId}-runs`} className="admin-native-control"
           name="daily_runs"
           type="number"
           min="0"
           defaultValue={user.daily_runs}
         />
-      </label>
-      <label>
-        일일 예상 비용 관측 기준 US$ (차단 없음)
+      </Field>
+      <Field label="일일 예상 비용 관측 기준 US$ (차단 없음)" inputID={`${fieldId}-usd`}>
         <input
+          id={`${fieldId}-usd`} className="admin-native-control"
           name="daily_usd"
           type="number"
           min="0"
           step=".01"
           defaultValue={user.daily_usd}
         />
-      </label>
-      <label className="check-label">
-        <input
-          name="suspended"
-          type="checkbox"
-          defaultChecked={user.suspended}
-        />
-        계정 정지
-      </label>
-      <button>저장 및 세션 폐기</button>
+      </Field>
+      <CheckboxInput label="계정 정지" htmlName="suspended" value={suspended} onChange={setSuspended} />
+      <Button type="submit" variant="default">저장 및 세션 폐기</Button>
     </form>
   );
 }

@@ -1,3 +1,4 @@
+import { Stack } from "@astryxdesign/core/Stack";
 import type { FailureDiagnosticData } from "./execution-detail";
 import type { Job } from "../../shared/types";
 import { stageLabel } from "./step-view";
@@ -67,7 +68,7 @@ export function FailureDiagnostic({ value, fallbackStage, recovered = false, ret
       {stage && <p><strong>실패 단계: </strong>{stageLabel({ id: "", stage })}</p>}
       <p><strong>확인하지 못한 내용: </strong>{reason || "상세 원인이 기록되지 않았거나 확인되지 않았습니다."}</p>
       {value.context && <Context value={value.context} />}
-      {completeAttempts && <div className="magi-meta"><strong>처리 경과</strong><span>검증 {attempts.length}회</span><span>자동 보정 {attempts.length - 1}회</span></div>}
+      {completeAttempts && <Stack direction="horizontal" wrap="wrap" className="magi-meta"><strong>처리 경과</strong><span>검증 {attempts.length}회</span><span>자동 보정 {attempts.length - 1}회</span></Stack>}
       {!completeAttempts && <p><strong>처리 경과: </strong>검증 및 자동 보정 횟수를 확인할 수 없습니다.</p>}
       {policy && <p><strong>영향: </strong>{policy.impact}</p>}
       {retry?.can_retry === true && <p><strong>다시 시도: </strong>{retry.retry_requires_replay ? "호출 반복 가능성 확인 후 다시 시도할 수 있습니다." : "저장된 답변을 유지하고 다시 시도할 수 있습니다."}</p>}
@@ -84,7 +85,7 @@ export function FailureDiagnostic({ value, fallbackStage, recovered = false, ret
       {value.validation_field && <p>필드: {value.validation_field}</p>}
       {value.validation_index !== undefined && <p>위치: {value.validation_index}</p>}
       {!!value.attempts?.length && <ol aria-label="보정 시도 이력">{value.attempts.map((attempt, index) => <li key={`${attempt.attempt ?? "unknown"}-${index}`}>
-        <div className="magi-meta"><span>{attempt.attempt !== undefined ? `${attempt.attempt}회차` : "시도 횟수 기록 없음"}</span>{attempt.validation_reason && reasons[attempt.validation_reason] && <span>{reasons[attempt.validation_reason]}</span>}</div>
+        <Stack direction="horizontal" wrap="wrap" className="magi-meta"><span>{attempt.attempt !== undefined ? `${attempt.attempt}회차` : "시도 횟수 기록 없음"}</span>{attempt.validation_reason && reasons[attempt.validation_reason] && <span>{reasons[attempt.validation_reason]}</span>}</Stack>
         {attempt.error_code && <p>오류 코드: {attempt.error_code}</p>}
         {attempt.validation_reason && <p>세부 사유: {attempt.validation_reason}</p>}
         {!!attempt.failed_checks?.length && <p>검증 항목: {attempt.failed_checks.join(", ")}</p>}

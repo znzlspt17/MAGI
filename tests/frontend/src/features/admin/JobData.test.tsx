@@ -33,7 +33,7 @@ it("문서·시각이 없는 처리 이력도 상세 화면에 표시한다", as
   mount("/admin/data?job_id=recent");
   const panel = await screen.findByRole("dialog", { name: "작업 상세" });
   await within(panel).findByText("전체 요청 내용");
-  fireEvent.mouseDown(within(panel).getByRole("tab", { name: "처리 이력" }), { button: 0, ctrlKey: false });
+  fireEvent.click(within(panel).getByRole("tab", { name: "처리 이력" }));
   expect(await within(panel).findByText("요청을 접수했습니다.")).toBeTruthy();
   expect(within(panel).getByText("시각 기록 없음")).toBeTruthy();
 });
@@ -54,7 +54,7 @@ it("제목·상태·사용자·작업 ID를 별도 셀로 표시하고 필터 �
   fireEvent.change(screen.getByLabelText("작업 검색"), { target: { value: "other" } });
   expect(within(table).getAllByRole("checkbox")).toHaveLength(1);
   expect(screen.getByRole<HTMLButtonElement>("button", { name: "선택 작업 삭제 미리보기" }).disabled).toBe(true);
-  fireEvent.change(screen.getByLabelText("사용자", { selector: "select" }), { target: { value: "unowned" } });
+  fireEvent.click(screen.getByRole("combobox", { name: "사용자" })); fireEvent.click(await screen.findByRole("option", { name: "소유자 없음" }));
   await screen.findByText("조회된 작업이 없습니다");
 });
 it("25개 단위로 페이지를 나누고 페이지 이동·새로고침 시 선택을 해제한다", async () => {
@@ -75,7 +75,7 @@ it("직접 링크의 상세·빈 탭·닫기 동작과 다른 쿼리 매개변�
   mount("/admin/data?job_id=recent&keep=1");
   const panel = await screen.findByRole("dialog", { name: "작업 상세" });
   await within(panel).findByText("전체 요청 내용");
-  fireEvent.mouseDown(within(panel).getByRole("tab", { name: "처리 이력" }), { button: 0, ctrlKey: false });
+  fireEvent.click(within(panel).getByRole("tab", { name: "처리 이력" }));
   await within(panel).findByText("저장된 처리 이력이 없습니다.");
   fireEvent.click(within(panel).getByRole("button", { name: "닫기" }));
   expect(screen.getByLabelText("현재 주소").textContent).toBe("?keep=1");
@@ -116,4 +116,27 @@ it("선택한 작업만 미리보고 전체 삭제의 확인 문구와 복구 �
   await waitFor(() => expect(post).toHaveBeenCalledWith("/api/admin/cleanup/execute", { id: "all-preview", confirmation: "전체 기록 삭제" }));
   fireEvent.click(await screen.findByRole("button", { name: "남은 파일 정리 재시도 pending" }));
   await waitFor(() => expect(post).toHaveBeenCalledWith("/api/admin/cleanup/execute", { id: "pending", confirmation: "" }));
+});
+
+it("삭제 확인은 취소에 포커스하고 처리 중 Escape와 중복 실행을 막는다", async () => {
+  let finish!: (value: unknown) => void;
+  mount();
+  const table = await screen.findByRole("table");
+  fireEvent.click(within(table).getByLabelText("작업 recent 선택"));
+  const opener = screen.getByRole("button", { name: "선택 작업 삭제 미리보기" });
+  opener.focus(); fireEvent.click(opener);
+  const dialog = await screen.findByRole("dialog", { name: "영구 삭제 확인" });
+  await waitFor(() => expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "취소" })));
+  fireEvent.click(within(dialog).getByRole("button", { name: "취소" }));
+  await waitFor(() => expect(document.activeElement).toBe(opener));
+  fireEvent.click(opener);
+  const reopened = await screen.findByRole("dialog", { name: "영구 삭제 확인" });
+  vi.mocked(post).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const execute = within(reopened).getByRole("button", { name: "영구 삭제" });
+  fireEvent.click(execute); fireEvent.click(execute); fireEvent.keyDown(reopened, { key: "Escape" });
+  expect(screen.getByRole("dialog", { name: "영구 삭제 확인" })).toBeTruthy();
+  expect(vi.mocked(post).mock.calls.filter(([path]) => path === "/api/admin/cleanup/execute")).toHaveLength(1);
+  await act(async () => finish({ state: "completed" }));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "영구 삭제 확인" })).toBeNull());
+  expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "작업 ID" }));
 });

@@ -1,3 +1,4 @@
+import { Stack } from "@astryxdesign/core/Stack";
 import { useRef, useState } from "react";
 import { useAuth } from "../auth/Auth";
 import { serviceState } from "./ServiceStatus";
@@ -26,7 +27,7 @@ export function AgentPlan({ job, onDocument }: { job: Job; onDocument?: (stepId:
         {task.title} <span>{({ pending: "예정", completed: "완료", blocked: "확인 필요" } as Record<string, string>)[task.status] || ""}</span>
       </li>)}</ol>}
       {state.stop_reason && <p>{({ repair_limit: "자동 보완 한계", no_progress: "진전 없는 반복", execution_limit: "자동 실행 한도", invalid_plan: "유효한 계획 생성 실패" } as Record<string, string>)[state.stop_reason] || "진행 중단"}</p>}
-      {state.stop_reason && (state.execution_diagnostic?.stop_code ? <div aria-label="실행 중단 진단">
+      {state.stop_reason && (state.execution_diagnostic?.stop_code ? <Stack aria-label="실행 중단 진단">
         {state.execution_diagnostic.target_action && <p>중단 대상: {actionLabels[state.execution_diagnostic.target_action] || "작업 확인"}</p>}
         {state.execution_diagnostic.block_reasons.map((code) => <p key={code}>{({
           prerequisite_missing: "선행 단계가 완료되지 않았습니다.",
@@ -34,12 +35,12 @@ export function AgentPlan({ job, onDocument }: { job: Job; onDocument?: (stepId:
           repeated_without_progress: "같은 상태에서 작업이 반복되거나 진전이 멈췄습니다.",
         } as Record<string, string>)[code] || "상세 조건을 확인할 수 없습니다."}</p>)}
         <p>검토 횟수: {state.execution_diagnostic.review_pass_count} / {state.execution_diagnostic.review_pass_limit}</p>
-      </div> : <p>저장된 상세 중단 진단이 없습니다.</p>)}
+      </Stack> : <p>저장된 상세 중단 진단이 없습니다.</p>)}
       {state.wait_reason && <p role="status">{state.wait_reason}</p>}
       {!!results.length && <details><summary>수행한 작업과 근거</summary><ol>{results.map((result, index) => <li key={index}>
-        <div className="magi-meta"><span className="magi-meta-item">{actionLabels[result.action] || result.action}</span><span className="magi-meta-item">변경 {result.revision + 1}</span><span className="magi-meta-item">{result.status === "reused" ? "이전 결과 재사용" : result.action === "interview" ? "확인 작업 완료, 결정 여부는 질문 상태 참조" : "작업 완료"}</span></div><p>{result.reason}</p>
+        <Stack direction="horizontal" wrap="wrap" className="magi-meta"><span className="magi-meta-item">{actionLabels[result.action] || result.action}</span><span className="magi-meta-item">변경 {result.revision + 1}</span><span className="magi-meta-item">{result.status === "reused" ? "이전 결과 재사용" : result.action === "interview" ? "확인 작업 완료, 결정 여부는 질문 상태 참조" : "작업 완료"}</span></Stack><p>{result.reason}</p>
       </li>)}</ol></details>}
-      {!!state.document_versions?.length && <div className="magi-meta"><span>명세 버전 {state.document_versions.length}개</span><span>최신 변경 {(state.revision || 0) + 1}</span></div>}
+      {!!state.document_versions?.length && <Stack direction="horizontal" wrap="wrap" className="magi-meta"><span>명세 버전 {state.document_versions.length}개</span><span>최신 변경 {(state.revision || 0) + 1}</span></Stack>}
       {onDocument && state.document_versions?.map((version, index) => version.step_id &&
         <Button key={`${index}:${version.hash}`} onClick={() => onDocument(version.step_id!)}>명세 버전 {index + 1} 열기</Button>)}
     </CollapsibleContent>
@@ -77,16 +78,16 @@ export function AgentComposer({ job, onAction, busy, draft }: {
     } catch (cause) { setError((cause as Error).message); }
     finally { sending.current = false; setPending(false); }
   }
-  return <section className="agent-composer" aria-label="대화 입력">
+  return <Stack as="section" gap={3} className="agent-composer" aria-label="대화 입력">
     <PromptInput label="수정 의견 또는 추가 요청" id={`agent-message-${job.id}`} value={text}
       buttonLabel={pending ? "보내는 중…" : "의견 보내기"} disabled={disabled} rows={2}
       onChange={(event) => setText(event.target.value)}
       onSend={() => void send("message")} />
     {running && <p>실행이 끝나면 작성한 의견을 보낼 수 있습니다.</p>}
-    {job.state?.allowed_actions?.includes("retry") && <Button disabled={disabled} onClick={() => void send("retry")}>저장된 결과로 추가 실행</Button>}
+    {job.state?.allowed_actions?.includes("retry") && <Button className="self-start" disabled={disabled} onClick={() => void send("retry")}>저장된 결과로 추가 실행</Button>}
     {job.status === "CRITICAL_BLOCKED" && <p>{job.state?.stop_reason === "repair_limit"
       ? "이번 보완 횟수를 모두 사용했습니다. 추가 의견 없이 저장된 결과로 추가 실행할 수 있습니다. 초안 수정과 재검토를 진행하며 같은 문제가 남을 수 있습니다."
       : "저장된 결과로 추가 실행할 수 있습니다. 같은 문제가 남을 수 있습니다."}</p>}
     <Notice>{error}</Notice>
-  </section>;
+  </Stack>;
 }

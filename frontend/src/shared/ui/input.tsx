@@ -1,21 +1,11 @@
-// shadcn/ui MIT; adapted from ba1503c64472b82256d9de95e2e62c5901a38e8b
-import * as React from "react"
-import { cn } from "../lib/utils"
+import * as React from "react";
+import {TextInput} from "@astryxdesign/core/TextInput";
 
-function Input({ className, type, ...props }: React.ComponentProps<"input">) {
-  return (
-    <input
-      type={type}
-      data-slot="input"
-      className={cn(
-        "h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none selection:bg-primary selection:text-primary-foreground file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm dark:bg-input/30",
-        "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
-        "aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40",
-        className
-      )}
-      {...props}
-    />
-  )
+// 2026-11-11: 기존 이벤트와 ref 계약을 유지하며 Astryx 필드에 연결한다.
+function Input({value, defaultValue, onChange, disabled, readOnly, required, name, autoFocus, className, type, ref, ...props}: React.ComponentProps<"input">) {
+  const [uncontrolled, setUncontrolled] = React.useState(String(defaultValue ?? ""));
+  const label = props["aria-label"] || props.placeholder || "입력";
+  const inputType = (type === "password" || type === "email" || type === "search" || type === "tel" || type === "url" ? type : "text") as React.ComponentProps<typeof TextInput>["type"];
+  return <TextInput {...(props as unknown as React.ComponentProps<typeof TextInput>)} ref={element => { if (element) { element.disabled = !!disabled; element.required = !!required; } if (typeof ref === "function") ref(element); else if (ref) ref.current = element; }} aria-label={label} data-slot="input" type={inputType} label={label} isLabelHidden value={String(value ?? uncontrolled)} onChange={(next, event) => { if (value === undefined) setUncontrolled(next); onChange?.(event); }} isDisabled={disabled} isReadOnly={readOnly} isRequired={required} htmlName={name} hasAutoFocus={autoFocus} containerClassName={className} />;
 }
-
-export { Input }
+export {Input};

@@ -1,86 +1,13 @@
-// shadcn/ui MIT; adapted from ba1503c64472b82256d9de95e2e62c5901a38e8b
-"use client"
+import * as React from "react";
+import {Table as AstryxTable, TableHeader as AstryxTableHeader, TableBody as AstryxTableBody, TableRow as AstryxTableRow, TableCell as AstryxTableCell, TableHeaderCell} from "@astryxdesign/core/Table";
 
-import * as React from "react"
-import { cn } from "../lib/utils"
-
-function Table({ className, ...props }: React.ComponentProps<"table">) {
-  return (
-    <div data-slot="table-container" className="cn-table-container" tabIndex={0} role="region" aria-label="근거표 가로 스크롤">
-      <table
-        data-slot="table"
-        className={cn("cn-table", className)}
-        {...props}
-      />
-    </div>
-  )
-}
-
-function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
-  return (
-    <thead
-      data-slot="table-header"
-      className={cn("cn-table-header", className)}
-      {...props}
-    />
-  )
-}
-
-function TableBody({ className, ...props }: React.ComponentProps<"tbody">) {
-  return (
-    <tbody
-      data-slot="table-body"
-      className={cn("cn-table-body", className)}
-      {...props}
-    />
-  )
-}
-
-
-
-function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
-  return (
-    <tr
-      data-slot="table-row"
-      className={cn("cn-table-row has-aria-expanded:bg-muted/50", className)}
-      {...props}
-    />
-  )
-}
-
-function TableHead({ className, ...props }: React.ComponentProps<"th">) {
-  return (
-    <th
-      data-slot="table-head"
-      className={cn("cn-table-head", className)}
-      {...props}
-    />
-  )
-}
-
-function TableCell({ className, ...props }: React.ComponentProps<"td">) {
-  return (
-    <td
-      data-slot="table-cell"
-      className={cn("cn-table-cell", className)}
-      {...props}
-    />
-  )
-}
-
-function TableCaption({
-  className,
-  ...props
-}: React.ComponentProps<"caption">) {
-  return (
-    <caption
-      data-slot="table-caption"
-      className={cn("cn-table-caption", className)}
-      {...props}
-    />
-  )
-}
-
-export {
-Table,TableBody,TableCaption,TableCell,TableHead,TableHeader,TableRow
-}
+// 2026-11-11: Astryx의 스크롤 가능한 의미론적 표를 기존 합성 인터페이스에 연결한다.
+function Table(props: React.ComponentProps<"table">) { return <AstryxTable {...props} data-slot="table" />; }
+function TableHeader({children, ...props}: React.ComponentProps<"thead">) { return <AstryxTableHeader {...props} data-slot="table-header">{children}</AstryxTableHeader>; }
+function TableBody({children, ...props}: React.ComponentProps<"tbody">) { return <AstryxTableBody {...props} data-slot="table-body">{children}</AstryxTableBody>; }
+function TableRow({children, ...props}: React.ComponentProps<"tr">) { return <AstryxTableRow {...props} data-slot="table-row">{children}</AstryxTableRow>; }
+type Scope = "col" | "colgroup" | "row" | "rowgroup";
+function TableHead({children, scope, ...props}: React.ComponentProps<"th">) { return <TableHeaderCell {...props} scope={scope as Scope | undefined} data-slot="table-head">{children}</TableHeaderCell>; }
+function TableCell({children, scope, ...props}: React.ComponentProps<"td">) { return <AstryxTableCell {...props} scope={scope as Scope | undefined} data-slot="table-cell">{children}</AstryxTableCell>; }
+function TableCaption(props: React.ComponentProps<"caption">) { return <caption {...props} data-slot="table-caption" />; }
+export {Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow};

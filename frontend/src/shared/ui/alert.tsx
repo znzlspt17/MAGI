@@ -1,66 +1,8 @@
-// shadcn/ui MIT; adapted from ba1503c64472b82256d9de95e2e62c5901a38e8b
-import { cva, type VariantProps } from "class-variance-authority"
-import * as React from "react"
-import { cn } from "../lib/utils"
-
-const alertVariants = cva("cn-alert group/alert relative w-full", {
-  variants: {
-    variant: {
-      default: "cn-alert-variant-default",
-      destructive: "cn-alert-variant-destructive",
-    },
-  },
-  defaultVariants: {
-    variant: "default",
-  },
-})
-
-function Alert({
-  className,
-  variant,
-  ...props
-}: React.ComponentProps<"div"> & VariantProps<typeof alertVariants>) {
-  return (
-    <div
-      data-slot="alert"
-      role="alert"
-      className={cn(alertVariants({ variant }), className)}
-      {...props}
-    />
-  )
-}
-
-function AlertTitle({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="alert-title"
-      className={cn(
-        "cn-alert-title [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground",
-        className
-      )}
-      {...props}
-    />
-  )
-}
-
-function AlertDescription({
-  className,
-  ...props
-}: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="alert-description"
-      className={cn(
-        "cn-alert-description [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground",
-        className
-      )}
-      {...props}
-    />
-  )
-}
-
-
-
-export {
-Alert,AlertDescription,AlertTitle
-}
+import * as React from "react";
+import {Banner} from "@astryxdesign/core/Banner";
+import {VStack} from "@astryxdesign/core/VStack";
+import {Text} from "@astryxdesign/core/Text";
+function Alert({children, variant, role = "alert", ...props}: React.ComponentProps<"div"> & {variant?: "default" | "destructive"}) { return <Banner {...props} data-slot="alert" role={role} status={variant === "destructive" ? "error" : "info"} title={children} />; }
+function AlertTitle(props: React.ComponentProps<"div">) { return <VStack {...props} data-slot="alert-title" />; }
+function AlertDescription({children, color: _color, ...props}: React.ComponentProps<"div">) { return <Text {...props} data-slot="alert-description">{children}</Text>; }
+export {Alert, AlertTitle, AlertDescription};

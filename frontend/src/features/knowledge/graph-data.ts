@@ -36,11 +36,11 @@ export const kinds: Record<string, string> = {
   review: "검토",
 };
 export const colors: Record<string, string> = {
-  input: "#aa752f",
-  decision: "#8860b6",
-  requirement: "#397f96",
-  spec: "#36876b",
-  review: "#ac587a",
+  input: "var(--color-data-categorical-orange)",
+  decision: "var(--color-data-categorical-purple)",
+  requirement: "var(--color-data-categorical-cyan)",
+  spec: "var(--color-data-categorical-green)",
+  review: "var(--color-data-categorical-pink)",
 };
 export const edgeLabels: Record<string, string> = {
   evidence: "근거",
@@ -129,7 +129,7 @@ export function build(
       nodes.set(id, {
         id,
         kind: n.kind,
-        color: colors[n.kind] || "#8491a5",
+        color: colors[n.kind] || "var(--color-data-neutral)",
         label: title(n),
         members: [],
         virtual: id === group,

@@ -17,7 +17,7 @@ it("인증 API 없이 정적 고지를 읽고 원문과 다운로드 링크를 �
 it("고지 파일 응답 실패를 사용자에게 알린다", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
   render(<Licenses />);
-  await waitFor(() => expect(screen.getByRole("status").textContent).toContain("불러오지 못했습니다"));
+  await waitFor(() => expect(screen.getByText(/불러오지 못했습니다/).closest("[role=status]")?.getAttribute("role")).toBe("status"));
 });
 
 it("고지 목록이 비어 있으면 로딩을 마치고 빈 상태를 안내한다", async () => {

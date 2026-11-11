@@ -1,3 +1,9 @@
+import { VStack } from "@astryxdesign/core/VStack";
+import { HStack } from "@astryxdesign/core/HStack";
+import { NativeSelect } from "../../shared/ui/native-select";
+import { Input } from "../../shared/ui/input";
+import { Button } from "../../shared/ui/button";
+import { CheckboxInput } from "@astryxdesign/core/CheckboxInput";
 import { decodeLogPage, decodeLogStatus } from "./admin-response";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../shared/api/api";
@@ -81,15 +87,15 @@ export default function AdminLogs() {
 
   return <section className="admin-logs" aria-labelledby="logs-title">
     <header className="logs-heading"><div><h2 id="logs-title">컨테이너 로그</h2><p>MAGI 서비스의 최근 7일 기록을 한곳에서 확인합니다.</p></div>
-      <div className="logs-controls"><label><input type="checkbox" checked={automatic} onChange={e => { setAutomatic(e.target.checked); if (e.target.checked) setTick(v => v + 1); }} />5초 자동 갱신</label>
-        <button type="button" disabled={busy} onClick={() => setTick(v => v + 1)}>새로고침</button></div>
+      <HStack gap={2} wrap="wrap" className="logs-controls"><CheckboxInput label="5초 자동 갱신" value={automatic} onChange={checked => { setAutomatic(checked); if (checked) setTick(v => v + 1); }} />
+        <Button type="button" disabled={busy} onClick={() => setTick(v => v + 1)}>새로고침</Button></HStack>
     </header>
-    <div className="logs-status" role="status">
+    <HStack gap={2} wrap="wrap" className="logs-status" role="status">
       <span>저장소: {statusError ? "확인 불가" : status ? "연결됨" : "확인 중"}</span>
       <span>수집기: {status ? status.collector_seen ? "최근 신호 있음" : "신호 없음" : "확인 중"}</span>
       {status?.free_bytes != null && <span>디스크 여유 {(status.free_bytes / 1024 ** 3).toFixed(1)} GiB</span>}
       {statusError && <p>{statusError}</p>}{status?.warnings.map(w => <p key={w}>{w}</p>)}
-    </div>
+    </HStack>
     <form key={query} className="logs-filters" onSubmit={e => {
       e.preventDefault(); const data = new FormData(e.currentTarget); const params = new URLSearchParams();
       const minutes = Number(data.get("period") || 15);
@@ -97,23 +103,23 @@ export default function AdminLogs() {
       for (const key of ["service", "level", "q", "trace_id", "job_id", "execution_id"]) { const value = String(data.get(key) || "").trim(); if (value) params.set(key, value); }
       setQuery(params.toString()); setTick(v => v + 1); setNotice("");
     }}>
-      <label>서비스<select name="service" defaultValue={applied.get("service") || ""}><option value="">전체 서비스</option>{services.map(v => <option key={v}>{v}</option>)}</select></label>
-      <label>레벨<select name="level" defaultValue={applied.get("level") || ""}><option value="">전체 레벨</option>{levels.map(v => <option key={v}>{v}</option>)}</select></label>
-      <label>기간<select name="period" defaultValue={applied.get("period") || "15"}>{[[15, "최근 15분"], [60, "최근 1시간"], [1440, "최근 24시간"], [10080, "최근 7일"]].map(([v, label]) => <option key={v} value={v}>{label}</option>)}</select></label>
-      <label className="logs-search">메시지 검색<input name="q" defaultValue={applied.get("q") || ""} maxLength={256} placeholder="메시지에 포함된 문자열" /></label>
-      {[['trace_id', '추적 ID'], ['job_id', '작업 ID'], ['execution_id', '실행 ID']].map(([key, label]) => <label key={key}>{label}<input name={key} defaultValue={applied.get(key) || ""} maxLength={64} /></label>)}
-      <button type="submit">검색</button>
+      <div>서비스<NativeSelect aria-label="서비스" name="service" defaultValue={applied.get("service") || ""}><option value="">전체 서비스</option>{services.map(v => <option key={v}>{v}</option>)}</NativeSelect></div>
+      <div>레벨<NativeSelect aria-label="레벨" name="level" defaultValue={applied.get("level") || ""}><option value="">전체 레벨</option>{levels.map(v => <option key={v}>{v}</option>)}</NativeSelect></div>
+      <div>기간<NativeSelect aria-label="기간" name="period" defaultValue={applied.get("period") || "15"}>{[[15, "최근 15분"], [60, "최근 1시간"], [1440, "최근 24시간"], [10080, "최근 7일"]].map(([v, label]) => <option key={v} value={v}>{label}</option>)}</NativeSelect></div>
+      <VStack gap={2} className="logs-search">메시지 검색<Input aria-label="메시지 검색" name="q" defaultValue={applied.get("q") || ""} maxLength={256} placeholder="메시지에 포함된 문자열" /></VStack>
+      {[['trace_id', '추적 ID'], ['job_id', '작업 ID'], ['execution_id', '실행 ID']].map(([key, label]) => <div key={key}>{label}<Input aria-label={label} name={key} defaultValue={applied.get(key) || ""} maxLength={64} /></div>)}
+      <Button type="submit" variant="default">검색</Button>
     </form>
     <p role="alert">{error}</p><p role="status">{notice}</p>
-    <div className="logs-summary" aria-live="polite">{result ? <><span>조회 결과 {result.items.length}건</span><span>기준 {formatKst(result.end)}</span></> : <span>{busy ? "로그를 불러오는 중…" : "조회 결과 없음"}</span>}<span>{automatic ? "자동 갱신 중" : "갱신 일시정지"}</span></div>
-    <div className="logs-list" aria-busy={busy} onWheel={() => setAutomatic(false)} onTouchMove={() => setAutomatic(false)}>
+    <HStack gap={2} wrap="wrap" className="logs-summary" aria-live="polite">{result ? <><span>조회 결과 {result.items.length}건</span><span>기준 {formatKst(result.end)}</span></> : <span>{busy ? "로그를 불러오는 중…" : "조회 결과 없음"}</span>}<span>{automatic ? "자동 갱신 중" : "갱신 일시정지"}</span></HStack>
+    <VStack gap={2} className="logs-list" aria-busy={busy} onWheel={() => setAutomatic(false)} onTouchMove={() => setAutomatic(false)}>
       {result?.items.length === 0 && <p className="logs-empty">조건에 맞는 로그가 없습니다.</p>}
       {result?.items.map((row, index) => <details className={`logs-row logs-${row.level}`} key={`${row.timestamp}:${index}`} onToggle={e => { if (e.currentTarget.open) setAutomatic(false); }}>
         <summary><time dateTime={row.timestamp}>{formatKst(row.timestamp)}</time><span className="logs-service">{row.service}</span><span className="logs-level">{row.level}</span><span className="logs-message">{row.message}</span></summary>
-        <div className="logs-detail"><pre>{JSON.stringify(row, null, 2)}</pre><button type="button" onClick={() => { void navigator.clipboard.writeText(JSON.stringify(row, null, 2)).then(() => setNotice("로그를 복사했습니다."), () => setNotice("로그를 복사하지 못했습니다.")); }}>로그 복사</button></div>
+        <VStack gap={2} className="logs-detail"><pre>{JSON.stringify(row, null, 2)}</pre><Button type="button" onClick={() => { void navigator.clipboard.writeText(JSON.stringify(row, null, 2)).then(() => setNotice("로그를 복사했습니다."), () => setNotice("로그를 복사하지 못했습니다.")); }}>로그 복사</Button></VStack>
       </details>)}
-    </div>
-    {result?.next_offset != null && <button type="button" disabled={busy || result.items.length >= 10000} onClick={() => void more()}>이전 로그 더 보기</button>}
+    </VStack>
+    {result?.next_offset != null && <Button type="button" disabled={busy || result.items.length >= 10000} onClick={() => void more()}>이전 로그 더 보기</Button>}
     <p className="logs-footnote">수집 이전에 삭제된 기록은 표시되지 않습니다. 저장소와 수집기 상태는 최대 30초 간격으로 확인합니다.</p>
   </section>;
 }

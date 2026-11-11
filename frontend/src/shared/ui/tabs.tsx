@@ -1,91 +1,34 @@
-// shadcn/ui MIT; adapted from ba1503c64472b82256d9de95e2e62c5901a38e8b
-"use client"
+import { TabList, Tab } from "@astryxdesign/core/TabList";
+import { Stack } from "@astryxdesign/core/Stack";
+import * as React from "react";
 
-import * as TabsPrimitive from "@radix-ui/react-tabs"
-import { cva, type VariantProps } from "class-variance-authority"
-import * as React from "react"
-import { cn } from "../lib/utils"
+type TabsRootProps = React.ComponentProps<"div"> & { value?: string; defaultValue?: string; onValueChange?: (value: string) => void; orientation?: "horizontal" | "vertical" };
+type TabsTriggerProps = React.ComponentProps<"button"> & { value: string };
+type TabsContentProps = React.ComponentProps<"div"> & { value: string; forceMount?: true };
 
-function Tabs({
-  className,
-  orientation = "horizontal",
-  ...props
-}: React.ComponentProps<typeof TabsPrimitive.Root>) {
-  return (
-    <TabsPrimitive.Root
-      data-slot="tabs"
-      data-orientation={orientation}
-      orientation={orientation}
-      className={cn(
-        "group/tabs flex gap-2 data-[orientation=horizontal]:flex-col",
-        className
-      )}
-      {...props}
-    />
-  )
+type State = { value: string; setValue: (value: string) => void; baseId: string };
+const Context = React.createContext<State | null>(null);
+function useTabs() { const value = React.useContext(Context); if (!value) throw new Error("Tabs composition requires Tabs"); return value; }
+function textOf(node: React.ReactNode): string { return React.Children.toArray(node).map(child => typeof child === "string" || typeof child === "number" ? String(child) : React.isValidElement<{ children?: React.ReactNode }>(child) ? textOf(child.props.children) : "").join(""); }
+function Tabs({ children, value, defaultValue = "", onValueChange, orientation: _orientation, ...props }: TabsRootProps) {
+  const [internal, setInternal] = React.useState(defaultValue);
+  const baseId = React.useId();
+  // 2026-11-11: 기존 제어형 탭의 값과 패널을 유지하고 Astryx가 키보드 이동을 담당한다.
+  return <Context.Provider value={{ baseId, value: value ?? internal, setValue: next => { if (value === undefined) setInternal(next); onValueChange?.(next); } }}><Stack {...props} data-slot="tabs">{children}</Stack></Context.Provider>;
 }
-
-const tabsListVariants = cva(
-  "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg p-[3px] text-muted-foreground group-data-[orientation=horizontal]/tabs:h-9 group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col data-[variant=line]:rounded-none",
-  {
-    variants: {
-      variant: {
-        default: "bg-muted",
-        line: "gap-1 bg-transparent",
-      },
-    },
-    defaultVariants: {
-      variant: "default",
-    },
-  }
-)
-
-function TabsList({
-  className,
-  variant = "default",
-  ...props
-}: React.ComponentProps<typeof TabsPrimitive.List> &
-  VariantProps<typeof tabsListVariants>) {
-  return (
-    <TabsPrimitive.List
-      data-slot="tabs-list"
-      data-variant={variant}
-      className={cn(tabsListVariants({ variant }), className)}
-      {...props}
-    />
-  )
+function TabsList({ children, className, variant: _variant, ...props }: React.ComponentProps<"div"> & { variant?: "default" | "line" }) {
+  const { value, setValue } = useTabs();
+  return <TabList {...props} value={value} onChange={setValue} role="tablist" className={className}>{children}</TabList>;
 }
-
-function TabsTrigger({
-  className,
-  ...props
-}: React.ComponentProps<typeof TabsPrimitive.Trigger>) {
-  return (
-    <TabsPrimitive.Trigger
-      data-slot="tabs-trigger"
-      className={cn(
-        "relative inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap text-foreground/60 transition-all group-data-[orientation=vertical]/tabs:w-full group-data-[orientation=vertical]/tabs:justify-start hover:text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 group-data-[variant=default]/tabs-list:data-[state=active]:shadow-sm group-data-[variant=line]/tabs-list:data-[state=active]:shadow-none dark:text-muted-foreground dark:hover:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        "group-data-[variant=line]/tabs-list:bg-transparent group-data-[variant=line]/tabs-list:data-[state=active]:bg-transparent dark:group-data-[variant=line]/tabs-list:data-[state=active]:border-transparent dark:group-data-[variant=line]/tabs-list:data-[state=active]:bg-transparent",
-        "data-[state=active]:bg-background data-[state=active]:text-foreground dark:data-[state=active]:border-input dark:data-[state=active]:bg-input/30 dark:data-[state=active]:text-foreground",
-        "after:absolute after:bg-foreground after:opacity-0 after:transition-opacity group-data-[orientation=horizontal]/tabs:after:inset-x-0 group-data-[orientation=horizontal]/tabs:after:bottom-[-5px] group-data-[orientation=horizontal]/tabs:after:h-0.5 group-data-[orientation=vertical]/tabs:after:inset-y-0 group-data-[orientation=vertical]/tabs:after:-right-1 group-data-[orientation=vertical]/tabs:after:w-0.5 group-data-[variant=line]/tabs-list:data-[state=active]:after:opacity-100",
-        className
-      )}
-      {...props}
-    />
-  )
+function TabsTrigger({ children, value, className, disabled, ...props }: TabsTriggerProps) {
+  const { baseId } = useTabs();
+  const label = props["aria-label"] || textOf(children);
+  const icon = React.Children.toArray(children).find(child => React.isValidElement(child) && typeof child.type !== "string");
+  return <Tab {...props} value={value} label={label} icon={icon} className={className} aria-disabled={disabled || props["aria-disabled"]} id={props.id || `${baseId}-tab-${value}`} panelId={props["aria-controls"] || `${baseId}-panel-${value}`} />;
 }
-
-function TabsContent({
-  className,
-  ...props
-}: React.ComponentProps<typeof TabsPrimitive.Content>) {
-  return (
-    <TabsPrimitive.Content
-      data-slot="tabs-content"
-      className={cn("flex-1 outline-none", className)}
-      {...props}
-    />
-  )
+function TabsContent({ children, value, forceMount, className, ...props }: TabsContentProps) {
+  const state = useTabs(), selected = state.value === value;
+  return selected || forceMount ? <Stack as="div" role="tabpanel" hidden={!selected} className={className} id={`${state.baseId}-panel-${value}`} aria-labelledby={`${state.baseId}-tab-${value}`} {...props}>{children}</Stack> : null;
 }
-
-export { Tabs,TabsContent,TabsList,tabsListVariants,TabsTrigger }
+const tabsListVariants = () => "";
+export { Tabs, TabsContent, TabsList, tabsListVariants, TabsTrigger };
