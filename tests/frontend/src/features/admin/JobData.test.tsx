@@ -61,13 +61,14 @@ it("25개 단위로 페이지를 나누고 페이지 이동·새로고침 시 �
   vi.mocked(api).mockResolvedValue({ jobs: Array.from({ length: 27 }, (_, i) => ({ ...entries[0], id: "job-" + String(i).padStart(2, "0") })), pending: [] });
   mount(); const table = await screen.findByRole("table");
   expect(within(table).getAllByRole("checkbox")).toHaveLength(25);
-  fireEvent.click(screen.getByLabelText("현재 페이지 전체 선택"));
+  const summary = screen.getByText("검색 결과 27개").closest(".jobs-list-summary") as HTMLElement;
+  fireEvent.click(within(summary).getByLabelText("현재 페이지 전체 선택"));
   expect(screen.getByText("검색 결과 27개")).toBeTruthy();
   expect(screen.getByText("선택 25개")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "다음" }));
   expect(within(table).getAllByRole("checkbox")).toHaveLength(2);
   expect(screen.getByText("선택 0개")).toBeTruthy();
-  fireEvent.click(screen.getByLabelText("현재 페이지 전체 선택"));
+  fireEvent.click(within(summary).getByLabelText("현재 페이지 전체 선택"));
   fireEvent.click(screen.getByRole("button", { name: "목록 새로고침" }));
   await waitFor(() => expect(screen.getByText("선택 0개")).toBeTruthy());
 });

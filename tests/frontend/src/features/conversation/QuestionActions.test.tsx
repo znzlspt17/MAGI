@@ -67,7 +67,8 @@ describe('질문 답변',()=>{
   expect(action).not.toHaveBeenCalled();
  });
  it('선택과 직접 입력을 검증하고 답변한 질문만 전송한다',async()=>{
-  const action=vi.fn().mockResolvedValue(undefined);
+  let finish!:()=>void;
+  const action=vi.fn().mockImplementation(()=>new Promise<void>(resolve=>{finish=resolve;}));
   render(<QuestionActions job={job()} onAction={action} busy={false}/>);
   expect(screen.getAllByRole('radio').some(e=>(e as HTMLInputElement).checked)).toBe(false);
   fireEvent.click(group('운영체제').getByRole('radio',{name:'Windows'}));
@@ -84,6 +85,12 @@ describe('질문 답변',()=>{
   expect(answers).toHaveLength(2);
   expect(answers[0]).toMatchObject({question_id:'S',selected_option_ids:['a'],custom_text:null,form_version:'S-v1'});
   expect(answers[1]).toMatchObject({answer:'검색\n내보내기',selected_option_ids:['b'],custom_text:'내보내기'});
+  const question=screen.getByRole('group',{name:/운영체제/}) as HTMLFieldSetElement;
+  expect(question.disabled).toBe(true);
+  await act(async()=>finish());
+  await waitFor(()=>expect(question.disabled).toBe(false));
+  fireEvent.click(group('운영체제').getByRole('radio',{name:'Windows'}));
+  expect((group('운영체제').getByRole('radio',{name:'Windows'}) as HTMLInputElement).checked).toBe(true);
   fireEvent.click(group('운영체제').getByRole('radio',{name:'직접 입력'}));
   expect((group('운영체제').getByRole('radio',{name:'Windows'}) as HTMLInputElement).checked).toBe(false);
  });
