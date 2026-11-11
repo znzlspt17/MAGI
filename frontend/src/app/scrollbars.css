@@ -1,9 +1,9 @@
 /* 터치 및 고대비 환경에서는 브라우저의 기본 조작 영역과 색상을 유지한다. */
 @media (pointer: fine) and (hover: hover) and (forced-colors: none) {
   :root {
-    --scrollbar-thumb: #c4bdcf;
-    --scrollbar-thumb-hover: #9d8db4;
-    --scrollbar-thumb-active: #7a639c;
+    --scrollbar-thumb: #d4d4d4;
+    --scrollbar-thumb-hover: #a3a3a3;
+    --scrollbar-thumb-active: #737373;
   }
 
   /* 표준 속성에 색상·폭을 지정하면 Chromium의 둥근 손잡이 스타일이 무시된다. */

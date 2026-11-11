@@ -40,7 +40,7 @@ export function ExecutionMonitor({ job, select }: { job: Job; select: (id: strin
   const clock = now + offset;
   const duration = elapsedLabel(start, active ? undefined : job.updated_at, clock);
   return <Trace className="execution-monitor"><TraceCollapsible defaultOpen={false}>
-    <TraceCollapsibleTrigger title={title} aria-label={`${title}${running.length > 1 ? ` 외 ${running.length - 1}개` : ""} · ${duration}`}><TraceLine>
+    <TraceCollapsibleTrigger title={title} aria-label={`${title}${running.length > 1 ? ` 외 ${running.length - 1}개` : ""} 경과 시간 ${duration}`}><TraceLine>
       <TraceIcon><StatusIcon status={job.status} size={18} /></TraceIcon>
       <TraceTitle className="sr-only"><span role="status">{title}{running.length > 1 ? ` 외 ${running.length - 1}개` : ""}</span></TraceTitle>
       <span className="execution-monitor-time" aria-label={`경과 시간 ${duration}`}>{duration}</span>

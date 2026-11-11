@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { LinkSimpleIcon, PowerIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { api, sensitiveMutation } from "../../shared/api/api";
 import { useAuth } from "../auth/Auth";
 import { WorkspaceReturnLink } from "../workspace/WorkspaceReturnLink";
@@ -130,7 +131,7 @@ export function McpSettings() {
 
   return <main className="mcp-page">
     <a className="brand" href="/">MAGI</a>
-    <header><span className="eyebrow">CONNECTIONS</span><h1>MCP 연결</h1>
+    <header><h1>MCP 연결</h1>
       <p>외부 MCP 서버의 조회 도구를 연결합니다. 활성 연결은 새 작업에 자동 적용되며, 도구 사용 시 작업의 검색어와 인자가 해당 서비스에 전달됩니다.</p>
     </header>
     {!auth.user ? <section><p>사용자별 MCP 연결은 로그인 후 사용할 수 있습니다.</p><WorkspaceReturnLink /></section> : <>
@@ -143,7 +144,7 @@ export function McpSettings() {
         {!connections.length && !error && <section><p>등록된 연결이 없습니다.</p></section>}
         {connections.map((connection) => <section className="mcp-card" key={connection.id}>
           <div className="mcp-card-heading"><div><h3>{connection.name}</h3><p className="mcp-url">{connection.url}</p></div>
-            <span className="mcp-status">{connection.enabled ? "활성" : "비활성"} · {statusLabel[connection.status]}</span></div>
+            <div className="mcp-status-group" aria-label="연결 상태"><span className="mcp-status"><PowerIcon size={16} aria-hidden />{connection.enabled ? "활성" : "비활성"}</span><span className="mcp-status"><LinkSimpleIcon size={16} aria-hidden />{statusLabel[connection.status]}</span></div></div>
           {connection.error && <p className="mcp-error">{connection.error}</p>}
           {editing === connection.id ? <ConnectionEditor key={connection.id} connection={connection} busy={busy} onCancel={() => setEditing(null)} onSave={(payload, op) => save(connection, payload, op)} /> : <>
             <div className="mcp-actions">
@@ -160,9 +161,9 @@ export function McpSettings() {
                 <input type="checkbox" checked={(selections[connection.id] ?? []).includes(tool.name)}
                   disabled={busy || !tool.available || !tool.read_only_hint || tool.destructive_hint}
                   onChange={(e) => toggleTool(connection, tool.name, e.target.checked)} />
-                <span><strong>{tool.name}</strong>{tool.schema_changed && <em> · 변경됨, 다시 선택 필요</em>}
-                  {(!tool.read_only_hint || tool.destructive_hint) && <em> · 조회 도구로 확인되지 않음</em>}
-                  {!tool.available && tool.disabled_reason && <em> · {tool.disabled_reason}</em>}
+                <span><strong>{tool.name}</strong>{tool.schema_changed && <em><WarningCircleIcon size={16} aria-hidden />변경됨, 다시 선택 필요</em>}
+                  {(!tool.read_only_hint || tool.destructive_hint) && <em><WarningCircleIcon size={16} aria-hidden />조회 도구로 확인되지 않음</em>}
+                  {!tool.available && tool.disabled_reason && <em><WarningCircleIcon size={16} aria-hidden />{tool.disabled_reason}</em>}
                   {tool.description && <small>{tool.description}</small>}</span>
               </label>)}
               <button type="button" disabled={busy} onClick={() => void action(() => api(endpoint(connection.id), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ selected_tools: selections[connection.id] ?? [] }) }), "도구 선택을 저장했습니다.")}>도구 선택 저장</button>

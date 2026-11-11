@@ -30,15 +30,15 @@ export function StepResult({ node, detail, hideQuestions = false, retry }: { nod
         <p><strong>판단 근거: </strong>{content.plan.reason}</p>
         {content.plan.target && <p><strong>작업 대상: </strong>{content.plan.target}</p>}
         {content.plan.expected_result && <p><strong>예상 결과: </strong>{content.plan.expected_result}</p>}
-        {!!content.plan.tasks?.length && <ul>{content.plan.tasks.map((task) => <li key={task.id}>{task.title} · {({ pending: "예정", completed: "완료", blocked: "대기" } as Record<string, string>)[task.status || ""] || task.status}</li>)}</ul>}
+        {!!content.plan.tasks?.length && <ul>{content.plan.tasks.map((task) => <li className="magi-meta" key={task.id}><span>{task.title}</span><span>{({ pending: "예정", completed: "완료", blocked: "대기" } as Record<string, string>)[task.status || ""] || task.status}</span></li>)}</ul>}
         {!!content.plan.input_refs?.length && <p><strong>참조한 근거: </strong>{content.plan.input_refs.join(", ")}</p>}
         {!!content.plan.affected_requirement_ids?.length && <p><strong>관련 요구사항: </strong>{content.plan.affected_requirement_ids.join(", ")}</p>}
       </section> : <p>당시 작업 계획의 상세 내용이 저장되지 않았습니다.</p>)}
       {content.kind === "resolution" && content.action && <p><strong>다음 처리: </strong>{({ repair: "초안 수정·재검토", ask_user: "사용자 결정 확인", stop: "보완 중단", approve: "승인 후보 준비" } as Record<string, string>)[content.action] || content.action}</p>}
       <StopDiagnostic value={result.stop_diagnostic} />
       {result.rubric_summary && <section aria-label="루브릭 검증"><h3>루브릭 검증</h3>
-        <p>검사 기준 {result.rubric_summary.item_count}개 · {result.rubric_summary.status === "ready" ? "생성 완료" : "평가 완료"}</p>
-        {result.rubric_summary.status === "evaluated" && <p>충족 {result.rubric_summary.PASS} · 미충족 {result.rubric_summary.FAIL} · 판단 불가 {result.rubric_summary.UNDETERMINED}</p>}
+        <div className="magi-meta"><span>검사 기준 {result.rubric_summary.item_count}개</span><span>{result.rubric_summary.status === "ready" ? "생성 완료" : "평가 완료"}</span></div>
+        {result.rubric_summary.status === "evaluated" && <div className="magi-meta"><span>충족 {result.rubric_summary.PASS}</span><span>미충족 {result.rubric_summary.FAIL}</span><span>판단 불가 {result.rubric_summary.UNDETERMINED}</span></div>}
       </section>}
       {result.wait_reason && <p><strong>중단·대기 사유: </strong>{result.wait_reason}</p>}
       <FailureDiagnostic value={result.diagnostic} fallbackStage={node?.stage} recovered={(node?.status || detail.status) === "completed"} retry={retry} />
@@ -74,9 +74,9 @@ function ModelCallSummary({ calls }: { calls: StepDetail["model_calls"] }) {
       <ol>{calls.map(call => {
         const title = stageLabel({ id: call.id, stage: call.stage });
         return <li key={call.id}>
-          <h3>{title === "실행 단계" ? call.stage : title} · {call.attempt}회차 · {status[call.status]}</h3>
-          <p>추론 {call.request_settings.reasoning.mode} · {call.request_settings.reasoning.effort} · 상세도 {call.request_settings.verbosity} · 최대 출력 {token(call.request_settings.max_output_tokens)}</p>
-          <p>입력 {token(call.input_tokens)} · 출력 {token(call.output_tokens)} · 추론 {token(call.reasoning_tokens)} 토큰</p>
+          <h3 className="magi-meta"><span>{title === "실행 단계" ? call.stage : title}</span><span>{call.attempt}회차</span><span>{status[call.status]}</span></h3>
+          <div className="magi-meta"><span>추론 {call.request_settings.reasoning.mode}</span><span>강도 {call.request_settings.reasoning.effort}</span><span>상세도 {call.request_settings.verbosity}</span><span>최대 출력 {token(call.request_settings.max_output_tokens)}</span></div>
+          <div className="magi-meta"><span>입력 {token(call.input_tokens)} 토큰</span><span>출력 {token(call.output_tokens)} 토큰</span><span>추론 {token(call.reasoning_tokens)} 토큰</span></div>
           {call.reasoning_summary === null ? <p>요약 미제공</p> : <p className="model-call-summary-text">{call.reasoning_summary}</p>}
           {call.summary_truncated && <p>요약 일부가 생략되었습니다.</p>}
         </li>;

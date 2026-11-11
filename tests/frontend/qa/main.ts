@@ -1,4 +1,4 @@
-import { completedId, decision, document, edges, evidence, jobId, makeJob, nodes, review, sourceHash, stats } from "./fixtures";
+import { completedId, decision, document, edges, evidence, jobId, logRows, logStatus, makeJob, mcpConnection, nodes, review, sourceHash, stats, validationRecord } from "./fixtures";
 
 const params = new URLSearchParams(location.search);
 const scenario = params.get("qa") || "normal", role = params.get("role") || "admin";
@@ -13,9 +13,11 @@ const json = (value: unknown, status = 200) => new Response(JSON.stringify(value
 // 모든 API는 이 검증 진입점 안에서만 가로챈다. 알 수 없는 요청도 외부에 보내지 않는다.
 window.fetch = async (input, init) => {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.origin);
-  if (target === "licenses" && url.pathname.endsWith("third-party-licenses.json")) {
-    if (scenario === "error") return json({}, 503);
-    if (scenario === "loading") return new Promise<Response>(() => {});
+  if (url.pathname.endsWith("third-party-licenses.json")) {
+    if (target === "licenses" && scenario === "error") return json({}, 503);
+    if (target === "licenses" && scenario === "loading") return new Promise<Response>(() => {});
+    if (target === "licenses" && scenario === "empty") return json([]);
+    return nativeFetch("/frontend/static/vendor/third-party-licenses.json", init);
   }
   if (!url.pathname.startsWith("/api/")) return nativeFetch(input, init);
   const path = url.pathname;
@@ -28,13 +30,22 @@ window.fetch = async (input, init) => {
   if (scenario === "loading" && affected) return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("취소", "AbortError"))));
   if (scenario === "error" && affected) return json({ error: "검증용 조회 실패입니다. 다시 시도해주세요." }, 503);
   const empty = scenario === "empty" && affected;
+  if (path === "/api/mcp/connections" && (!init?.method || init.method === "GET")) return json({ connections: empty ? [] : [mcpConnection] });
+  if (path === "/api/admin/logs/status") return json(logStatus);
+  if (path === "/api/admin/logs") return json({ items: empty ? [] : logRows, start: url.searchParams.get("start") || "2026-10-26T23:45:00Z", end: url.searchParams.get("end") || "2026-10-27T00:00:00Z", next_offset: null, storage: { state: "ready" } });
+  if (path === "/api/admin/job/validation") return json({ items: empty ? [] : [validationRecord], offset: 0, limit: 20, next_offset: null });
   if (path.includes("/cleanup/preview")) return json({ id: "preview", scope: JSON.parse(String(init?.body || "{}")).scope, counts: { jobs: JSON.parse(String(init?.body || "{}")).scope === "projects" ? 0 : 2, files: 4, project_decisions: 1 }, targets: [jobId], skipped: [], external_references: 1 });
   if (path.includes("/cleanup/execute")) return json({ state: "completed" });
   if (path.includes("/cleanup/catalog")) return json({ jobs: empty ? [] : Array.from({ length: scenario === "long" ? 32 : 3 }, (_, i) => ({ ...job, id: i ? `sample-${i}` : jobId, status: ["FINALIZED", "error", "NEEDS_USER_INPUT"][i % 3] })), pending: [] });
   if (path === "/api/admin/job") return json(job);
   if (path === "/api/admin/overview") return json({ users: empty ? [] : users, executions: empty ? [] : [{ execution_id: "execution", job_id: jobId, kind: "generate", phase: "running" }], embedding_status: "임베딩 오류 없음" });
   if (path.includes("/usage/rows")) return json({ rows: empty ? [] : Array.from({ length: scenario === "long" ? 25 : 3 }, (_, i) => ({ ...stats, id: `call-${i}`, user_id: users[i % 2].id, job_id: jobId, request: job.request, model: "example-model", state: i === 1 ? "uncertain" : "settled", settlement_source: "calculated", cost_evidence: "complete", created_at: job.created_at })), total: empty ? 0 : 30 });
-  if (path === "/api/admin/usage") return json({ start: "2026-10-19", end: "2026-10-25", summary: stats, daily: [{ day: "2026-10-24", ...stats }], today: { day: "2026-10-25", spent: "0.125", outstanding: "0.3", limit: "10" }, users });
+  if (path === "/api/admin/usage") {
+    // 실제 사용량이 아닌 예시 값을 요청 기간 안에 배치한다.
+    const today = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const start = url.searchParams.get("start") || today, end = url.searchParams.get("end") || today;
+    return json({ start, end, summary: stats, daily: [{ day: end, ...stats }], today: { day: today, spent: "0.125", outstanding: "0.3", limit: "10" }, users });
+  }
   if (path.endsWith("/projects")) return json(init?.method === "POST" ? { id: "created", name: "새 프로젝트" } : empty ? [] : [{ id: "project", name: "팀 기록 서비스", node_count: 3, job_count: 1 }, { id: "empty-project", name: "빈 프로젝트", node_count: 0, job_count: 0 }]);
   if (path.includes("/decisions") || path.includes("decision-candidates")) return json({ ...packet, rows: empty ? [] : packet.rows });
   if (path.includes("reused-decisions")) return json(packet);

@@ -13,7 +13,7 @@ import { Skeleton } from "../../shared/ui/skeleton";
 import "./implementation-package.css";
 
 export type PackageMetadata = { completed_id: string; bundle_id: string; filename: string; available: boolean; completeness: string; task_count: number; total_size: number; source_hash: string; files: { name: string; size: number; sha256: string }[]; limitations: string[] };
-const descriptions: Record<string, string> = { "README.ko.md": "읽는 순서와 자료 범위", "SPEC.ko.md": "승인된 한국어 명세 원문", "TASKS.md": "구현 순서와 완료 조건", "CONSTRAINTS.md": "제품 제약·비범위·금지 동작", "VERIFICATION.md": "실행 전 검증 계획 · 실제 결과 미수집", "manifest.json": "버전·파일 크기·SHA-256" };
+const descriptions: Record<string, string> = { "README.ko.md": "읽는 순서와 자료 범위", "SPEC.ko.md": "승인된 한국어 명세 원문", "TASKS.md": "구현 순서와 완료 조건", "CONSTRAINTS.md": "제품 제약과 비범위, 금지 동작", "VERIFICATION.md": "실행 전 검증 계획. 실제 결과 미수집", "manifest.json": "버전과 파일 크기, SHA-256" };
 const sizeLabel = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KiB` : `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 
 export function ImplementationPackage({ jobId, completedId, label = "구현 묶음 다운로드" }: { jobId: string; completedId?: string; label?: string }) {
@@ -57,7 +57,7 @@ export function ImplementationPackage({ jobId, completedId, label = "구현 묶�
     {data && <><div className="package-badges"><Badge variant="secondary">승인본 {data.completed_id.slice(0, 12)}</Badge><Badge variant="outline">한국어 명세 원문 기준</Badge><Badge variant="outline">{data.completeness === "complete" ? `구조화 작업 ${data.task_count}개` : "작업 연결 자료 부족"}</Badge></div>
       <Collapsible><CollapsibleTrigger className="package-version">버전 전체 값과 해시<CaretDownIcon size={14} aria-hidden /></CollapsibleTrigger><CollapsibleContent><dl><dt>승인 완료본</dt><dd>{data.completed_id}</dd><dt>명세 SHA-256</dt><dd>{data.source_hash}</dd><dt>묶음 식별값</dt><dd>{data.bundle_id}</dd></dl></CollapsibleContent></Collapsible>
       {!!data.limitations.length && <Alert><AlertDescription>{data.limitations.map((line, i) => <p key={i}>{line}</p>)}</AlertDescription></Alert>}
-      <ItemGroup className="package-files">{data.files.map(file => <Item key={file.name} variant="outline" size="sm"><FileTextIcon size={19} aria-hidden /><ItemContent><ItemTitle>{file.name}</ItemTitle><ItemDescription>{descriptions[file.name]}</ItemDescription></ItemContent><span className="package-file-size">{sizeLabel(file.size)}</span></Item>)}</ItemGroup><p className="package-note">전체 자료 {sizeLabel(data.total_size)} · 실제 테스트 결과는 수집하지 않았습니다.</p>
+      <ItemGroup className="package-files">{data.files.map(file => <Item key={file.name} variant="outline" size="sm"><FileTextIcon size={19} aria-hidden /><ItemContent><ItemTitle>{file.name}</ItemTitle><ItemDescription>{descriptions[file.name]}</ItemDescription></ItemContent><span className="package-file-size">{sizeLabel(file.size)}</span></Item>)}</ItemGroup><div className="package-note magi-meta"><span>전체 자료 {sizeLabel(data.total_size)}</span><span>실제 테스트 결과는 수집하지 않았습니다.</span></div>
     </>}
     <p role="status">{downloading ? "ZIP을 준비하고 전송하고 있습니다." : done ? "브라우저에 ZIP 다운로드를 전달했습니다." : ""}</p>
     <DialogFooter><Button disabled={loading || downloading} onClick={() => setRetry(v => v + 1)}>포함 자료 다시 조회</Button><Button className="primary" disabled={!data?.available || loading || downloading} onClick={() => void download()}><DownloadSimpleIcon size={17} aria-hidden />ZIP 받기</Button></DialogFooter>

@@ -16,7 +16,7 @@ const job: Job = { id: "plan", status: "CRITICAL_BLOCKED", state: {
 it("계획 이유와 대기 원인을 키보드로 펼쳐 확인한다", async () => {
   const user = userEvent.setup();
   render(<AgentPlan job={job} />);
-  const summary = screen.getByText("현재 계획 · 메모 명세 보완");
+  const summary = screen.getByRole("button", { name: /현재 계획.*메모 명세 보완/ });
   summary.focus(); await user.keyboard("{Enter}");
   expect(screen.getByText("보관 기간의 사용자 결정이 필요합니다.")).toBeVisible();
   expect(screen.getByRole("status")).toHaveTextContent("보관 기간을 확인해주세요.");
@@ -56,10 +56,10 @@ it("보완 한도에서는 의견 없이 저장된 결과로 추가 실행한다
 it("시스템 중단 시 추가 실행의 한계와 요구사항 확인 완료의 의미를 표시한다", async () => {
   const user = userEvent.setup();
   render(<><AgentPlan job={{ ...job, state: { ...job.state, stop_reason: "no_progress", task_results: [{ action: "interview", revision: 0, status: "completed", reason: "조작 키 확인" }] } }} /><AgentComposer job={job} onAction={vi.fn()} busy={false} /></>);
-  await user.click(screen.getByText("현재 계획 · 메모 명세 보완"));
+  await user.click(screen.getByRole("button", { name: /현재 계획.*메모 명세 보완/ }));
   expect(screen.getByText("진전 없는 반복")).toBeVisible();
   await user.click(screen.getByText("수행한 작업과 근거"));
-  expect(screen.getByText(/확인 작업 완료 · 결정 해결 여부/)).toBeVisible();
+  expect(screen.getByText(/확인 작업 완료, 결정 여부/)).toBeVisible();
   expect(screen.getByText(/저장된 결과로 추가 실행할 수 있습니다/)).toBeVisible();
 });
 
@@ -68,7 +68,7 @@ it("서버가 확정한 중단 조건과 검토 횟수를 표시한다", async (
   render(<AgentPlan job={{ ...job, state: { ...job.state, stop_reason: "repair_limit",
     execution_diagnostic: { stop_code: "repair_limit", target_action: "spec_compile",
       block_reasons: ["review_budget_exhausted"], review_pass_count: 3, review_pass_limit: 3 } } }} />);
-  await userEvent.click(screen.getByText("현재 계획 · 메모 명세 보완"));
+  await userEvent.click(screen.getByRole("button", { name: /현재 계획.*메모 명세 보완/ }));
   expect(screen.getByText("중단 대상: 명세 작성·보완")).toBeVisible();
   expect(screen.getByText("이번 검토·보완 횟수를 모두 사용했습니다.")).toBeVisible();
   expect(screen.getByText("검토 횟수: 3 / 3")).toBeVisible();
@@ -76,6 +76,6 @@ it("서버가 확정한 중단 조건과 검토 횟수를 표시한다", async (
 
 it("구형 중단 상태는 진단을 추측하지 않는다", async () => {
   render(<AgentPlan job={{ ...job, state: { ...job.state, stop_reason: "model_blocked" } }} />);
-  await userEvent.click(screen.getByText("현재 계획 · 메모 명세 보완"));
+  await userEvent.click(screen.getByRole("button", { name: /현재 계획.*메모 명세 보완/ }));
   expect(screen.getByText("저장된 상세 중단 진단이 없습니다.")).toBeVisible();
 });

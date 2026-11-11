@@ -70,7 +70,7 @@ it("평가 설명을 펼치면 평가 이력과 긴 설명 전체를 확인한�
   expect(screen.getByText(reason.trim()).classList.contains("is-clamped")).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "평가 설명 보기" }));
   expect(screen.getByText(reason.trim()).classList.contains("is-clamped")).toBe(false);
-  expect(screen.getByText(/10점 도달.*평가 3회.*1구간 2회차/)).toBeTruthy();
+  expect(screen.getByText("10점 도달")).toBeTruthy(); expect(screen.getByText("평가 3회")).toBeTruthy(); expect(screen.getByText(/최고점 후보: 1구간 2회차/)).toBeTruthy();
 });
 
 it("필터를 바꾸면 페이지와 펼친 항목이 초기화되고 인용 원문을 보존한다", () => {

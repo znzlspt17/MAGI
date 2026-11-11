@@ -152,7 +152,7 @@ export function ImpactReview({ jobId, nodeId, inspect }: { jobId: string; nodeId
       <h4 id={`${id}-inferred`}><SparkleIcon aria-hidden />모델이 제안한 추가 검토 <Badge variant="outline">모델 추정</Badge></h4>
       {!report ? <p className="impact-help">변경 가정을 입력하고 추가 영향 분석을 실행하면 검토 후보가 여기에 표시됩니다.</p> : <>
         {(report.stale || report.status !== "complete") && <Alert><WarningCircleIcon aria-hidden /><AlertTitle>{report.stale ? "이전 기준의 분석 결과입니다" : "분석을 완료하지 못했습니다"}</AlertTitle><AlertDescription>{report.stale ? "현재 명세나 요구사항이 달라졌습니다. 기준을 다시 조회한 뒤 새 가정으로 검토해 주세요." : report.reason}</AlertDescription></Alert>}
-        <p className="impact-help">문맥 {report.coverage.included}/{report.coverage.total}개 사용 · {report.coverage.omitted}개 제외 · {report.coverage.truncated}개 일부 인용. 추정 결과는 확정된 영향이 아닙니다.</p>
+        <div className="impact-help impact-coverage"><span>문맥 {report.coverage.included}/{report.coverage.total}개 사용</span><span>{report.coverage.omitted}개 제외</span><span>{report.coverage.truncated}개 일부 인용</span></div><p className="impact-help">추정 결과는 확정된 영향이 아닙니다.</p>
         {report.inferred.length ? <ItemGroup>{report.inferred.map((item, index) => <Item key={index} variant="outline"><ItemContent>
           <ItemTitle>{item.topic}</ItemTitle><p>{item.effect}</p><ItemDescription>{item.rationale}</ItemDescription>
           <div className="impact-citations">{item.evidence.map((ref, i) => <ImpactCitation key={i} evidence={ref} report={report} inspect={inspect} />)}</div>

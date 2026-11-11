@@ -50,7 +50,6 @@ export default function JobDetailSheet({ id, job, fallback, loading, error, tab,
   return <Sheet open={!!id} onOpenChange={open => { if (!open) close(); }}>
     <SheetContent className="jobs-detail" onCloseAutoFocus={event => { event.preventDefault(); restoreFocus(); }}>
       <SheetHeader>
-        <span className="jobs-eyebrow">JOB DETAILS</span>
         <SheetTitle>작업 상세</SheetTitle>
         <SheetDescription>요청 내용, 생성된 문서와 처리 이력을 확인합니다.</SheetDescription>
         <div className="jobs-detail-heading"><RecordId value={id} />{value && <JobStatus status={value.status} />}</div>
@@ -67,7 +66,7 @@ export default function JobDetailSheet({ id, job, fallback, loading, error, tab,
             </TabsList>
             <TabsContent value="summary">
               <dl className="jobs-detail-meta">
-                <div><dt>사용자 · 현재 소유자</dt><dd><RecordId value={job.owner_id === undefined ? fallback?.owner_id : job.owner_id} /></dd></div>
+                <div><dt>현재 소유자</dt><dd><RecordId value={job.owner_id === undefined ? fallback?.owner_id : job.owner_id} /></dd></div>
                 <div><dt>상태</dt><dd><JobStatus status={job.status} /></dd></div>
                 <div><dt>생성 시각 (KST)</dt><dd>{jobTime(job.created_at || fallback?.created_at)}</dd></div>
               </dl>

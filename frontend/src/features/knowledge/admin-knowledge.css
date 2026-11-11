@@ -1,18 +1,29 @@
 .admin-react,
 .knowledge-react {
   min-width: 0;
-  color: var(--ink, #262434);
+  color: #171717;
 }
 .admin-react {
-  max-width: 1240px;
+  max-width: 2200px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 32px;
 }
 .admin-heading { margin-bottom: 12px; }
 .admin-heading h1 { font-size: 24px; margin: 4px 0 6px; }
-.admin-heading p { margin: 0; font-size: 13px; }
-.admin-heading > a { font-size: 12px; }
+.admin-heading p { margin: 0; font-size: 14px; }
+.admin-heading > a { font-size: 14px; }
 .admin-react > p:empty { display: none; }
+.admin-account-meta, .admin-execution-meta { display: flex; flex-wrap: wrap; gap: 24px; margin: 12px 0; }
+.admin-account-meta > div, .admin-execution-meta > div { display: grid; gap: 4px; min-width: 0; }
+.admin-account-meta dt, .admin-execution-meta dt { display: flex; align-items: center; gap: 8px; color: #525252; font-size: 13px; }
+.admin-account-meta dd, .admin-execution-meta dd { margin: 0; overflow-wrap: anywhere; }
+.admin-execution-meta { flex: 1; }
+.graph-counts { display: flex; flex-wrap: wrap; gap: 8px 24px; padding: 12px 0; }
+.graph-counts strong { color: #171717; font-weight: 600; }
+.knowledge-drawer li > button:has(.graph-result-kind) { display: grid; gap: 4px; }
+.graph-result-kind { color: #0f766e; font-size: 12px; }
+.graph-detail-heading { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.graph-detail-heading span + span { color: #525252; font-size: 14px; font-weight: 400; }
 .admin-react .admin-user { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto auto; gap: 12px; }
 .admin-user > strong { grid-column: 1 / -1; }
 .admin-user > label { min-width: 0; }
@@ -37,30 +48,33 @@
 }
 .admin-heading p,
 .section-heading p {
-  color: #6d687b;
+  color: #525252;
 }
 .admin-nav {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  border-bottom: 1px solid #e7e4ec;
+  border-bottom: 1px solid #e5e5e5;
   padding: 16px 0;
   margin-bottom: 16px;
 }
 .admin-nav a {
-  padding: 7px 12px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 16px;
   border-radius: 6px;
-  color: #6d687b;
+  color: #525252;
   text-decoration: none;
 }
 .admin-nav a[aria-current="page"] {
-  background: #eee8fb;
-  color: #5636a8;
-  font-weight: 650;
+  background: #e7f3f1;
+  color: #0f766e;
+  font-weight: 600;
 }
 .admin-account {
-  background: #f7f6fa;
-  border: 1px solid #e7e4ec;
+  background: #fafafa;
+  border: 1px solid #e5e5e5;
   border-radius: 8px;
   padding: 12px 16px;
 }
@@ -72,8 +86,8 @@
 }
 .admin-content > section {
   background: #fff;
-  border: 1px solid #e7e4ec;
-  padding: 16px;
+  border: 1px solid #e5e5e5;
+  padding: 24px;
   border-radius: 10px;
   margin: 0 0 20px;
 }
@@ -93,7 +107,7 @@
 .admin-user,
 .cost-row {
   padding: 14px 0;
-  border-bottom: 1px solid #e7e4ec;
+  border-bottom: 1px solid #e5e5e5;
 }
 .admin-user strong {
   width: 100%;
@@ -106,7 +120,7 @@
   flex-direction: column;
   gap: 7px;
   font-size: 14px;
-  color: #6d687b;
+  color: #525252;
 }
 .admin-user label { font-size: 12px; }
 .admin-react input,
@@ -116,27 +130,27 @@
   min-width: 0;
   max-width: 100%;
   background: #fff;
-  color: #262434;
-  border: 1px solid #ded9e7;
+  color: #171717;
+  border: 1px solid #d4d4d4;
   border-radius: 6px;
   padding: 7px 10px;
   font: inherit;
 }
 .admin-react button,
 .knowledge-react button {
-  border: 1px solid #ded9e7;
+  border: 1px solid #d4d4d4;
   border-radius: 6px;
   background: #fff;
-  color: #423950;
+  color: #262626;
   padding: 6px 10px;
   font: inherit;
-  font-size: 13px;
-  min-height: var(--control-height);
+  font-size: 14px;
+  min-height: 44px;
   cursor: pointer;
 }
 .admin-react button:hover,
 .knowledge-react button:hover {
-  background: #eee8fb;
+  background: #e7f3f1;
 }
 .admin-react button:disabled,
 .knowledge-react button:disabled {
@@ -162,7 +176,7 @@
   gap: 12px;
   align-items: center;
   padding: 12px 0;
-  border-bottom: 1px solid #e7e4ec;
+  border-bottom: 1px solid #e5e5e5;
 }
 .cleanup-row span {
   overflow-wrap: anywhere;
@@ -177,7 +191,7 @@
 .knowledge-react dialog {
   max-width: min(620px, 90vw);
   padding: 28px;
-  border: 1px solid #ded9e7;
+  border: 1px solid #d4d4d4;
   border-radius: 12px;
   box-shadow: 0 24px 100px #16283c33;
 }
@@ -194,10 +208,10 @@
 }
 .knowledge-controls {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: center;
   flex-wrap: wrap;
-  padding: 14px 0;
+  padding: 16px 0;
   border-top: 1px solid #e2e8ef;
   border-bottom: 1px solid #e2e8ef;
 }
@@ -208,13 +222,13 @@
   min-width: min(100%, 390px);
 }
 .knowledge-controls form select {
-  min-width: 140px;
-  max-width: 250px;
+  min-width: 180px;
+  max-width: 320px;
 }
 .knowledge-controls form input {
   flex: 1;
   min-width: 160px;
-  width: 160px;
+  width: 320px;
 }
 .knowledge-controls button,
 .knowledge-controls .graph-menu > summary {
@@ -222,9 +236,9 @@
   white-space: nowrap;
 }
 .knowledge-controls [aria-pressed="true"] {
-  background: #eee8fb;
-  border-color: #c8b5e9;
-  color: #5636a8;
+  background: #e7f3f1;
+  border-color: #99ccc6;
+  color: #0f766e;
 }
 .knowledge-controls .graph-menu {
   position: relative;
@@ -235,8 +249,8 @@
   font-size: 14px;
 }
 .graph-menu[open] {
-  background: #f7f6fa;
-  border: 1px solid #e7e4ec;
+  background: #fafafa;
+  border: 1px solid #e5e5e5;
   border-radius: 6px;
   padding: 8px;
 }
@@ -246,15 +260,15 @@
 .react-graph-workspace {
   position: relative;
   isolation: isolate;
-  background: radial-gradient(#e7e4ec 0.7px, transparent 0.7px);
-  background-size: 18px 18px;
-  border: 1px solid #e7e4ec;
+  background: #fafafa;
+  border: 1px solid #e5e5e5;
   border-radius: 9px;
   min-height: 560px;
   height: 65vh;
   max-height: 850px;
   overflow: hidden;
 }
+.admin-content .react-graph-workspace { height: clamp(360px, calc(100dvh - 540px), 850px); min-height: 360px; }
 #knowledge-graph {
   position: absolute;
   inset: 0;
@@ -276,11 +290,11 @@
   top: 12px;
   bottom: 12px;
   z-index: 2;
-  width: 320px;
+  width: 360px;
   max-width: calc(100% - 24px);
   overflow: auto;
   background: #fffffff5;
-  border: 1px solid #e7e4ec;
+  border: 1px solid #e5e5e5;
   border-radius: 8px;
   box-shadow: 0 8px 30px #22395310;
   padding: 16px;
@@ -290,14 +304,14 @@
 }
 .inspector-drawer {
   right: 12px;
-  width: 370px;
+  width: 400px;
 }
 .knowledge-drawer header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  border-bottom: 1px solid #e7e4ec;
+  border-bottom: 1px solid #e5e5e5;
   padding-bottom: 10px;
   margin-bottom: 14px;
 }
@@ -323,7 +337,7 @@
   margin: 8px 0 16px;
   border-left: 2px solid #c9d5e3;
   padding-left: 12px;
-  color: #6d687b;
+  color: #525252;
   font-size: 14px;
 }
 .graph-footer {
@@ -336,14 +350,16 @@
 }
 .graph-footer p {
   font-size: 14px;
-  color: #6d687b;
+  color: #525252;
 }
+.graph-hints { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; font-size: 14px; color: #525252; }
+.graph-hints kbd { display: inline-block; padding: 2px 6px; border: 1px solid #d4d4d4; border-radius: 4px; background: #fff; font: inherit; font-size: 12px; }
 #graph-legend {
   display: flex;
   gap: 14px;
   flex-wrap: wrap;
   font-size: 14px;
-  color: #6d687b;
+  color: #525252;
 }
 #graph-legend span {
   display: flex;
@@ -357,7 +373,7 @@
 }
 #knowledge-notice {
   font-size: 14px;
-  color: #6d687b;
+  color: #525252;
   min-height: 20px;
 }
 #admin-error,
@@ -458,10 +474,10 @@
   box-shadow: 0 1px 5px #23364c12;
 }
 .graph-node-label.selected {
-  background: #eee8fb;
-  color: #5636a8;
+  background: #e7f3f1;
+  color: #0f766e;
   font-weight: 600;
-  outline: 1px solid #c8b5e9;
+  outline: 1px solid #99ccc6;
 }
 .graph-node-label[data-priority="search"] {
   background: #fff5d9;

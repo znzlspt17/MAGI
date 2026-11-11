@@ -3,6 +3,7 @@ type AdminUser = { id: string; role?: string; daily_runs?: number; daily_usd?: s
 type Overview = { embedding_status?: string | null; users?: AdminUser[]; executions?: { execution_id: string; job_id: string; kind: string; phase: string; stopping?: boolean }[] };
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
+import { ActivityIcon, ClockIcon, IdentificationCardIcon } from "@phosphor-icons/react";
 import { api, post } from "../../shared/api/api";
 import { useAuth } from "../auth/Auth";
 import Knowledge from "../knowledge/Knowledge";
@@ -13,9 +14,9 @@ import "../knowledge/admin-knowledge.css";
 const views = [
   ["overview", "운영 현황"],
   ["users", "사용자"],
-  ["data", "작업·데이터"],
+  ["data", "작업 데이터"],
   ["knowledge", "지식 그래프"],
-  ["costs", "비용·관측 기준"],
+  ["costs", "비용과 관측 기준"],
   ["logs", "로그"],
 ];
 export default function Admin() {
@@ -74,7 +75,6 @@ export default function Admin() {
     <div className="admin-react">
       <header className="admin-heading">
         <div>
-          <span className="eyebrow">MAGI ADMIN</span>
           <h1>서비스 관리</h1>
           <p>서비스 실행, 사용자와 저장된 기록을 관리합니다.</p>
         </div>
@@ -82,7 +82,7 @@ export default function Admin() {
       </header>
       <details className="admin-account">
         <summary>관리자 계정</summary>
-        <p id="account-identity">사용자 ID: {auth.user?.id} · 권한: 관리자</p>
+        <dl id="account-identity" className="admin-account-meta"><div><dt><IdentificationCardIcon size={16} aria-hidden />사용자 ID</dt><dd>{auth.user?.id}</dd></div><div><dt>권한</dt><dd>관리자</dd></div></dl>
         <button
           id="account-copy"
           onClick={async () => {
@@ -122,7 +122,7 @@ export default function Admin() {
                 <>
                   <p>현재 실행 {data.executions?.filter((item) => item.phase === "running").length || 0}개</p>
                   {(data.executions || []).map((item) => <div key={item.execution_id}>
-                    <span>{item.job_id} · {item.kind} · {item.phase}</span>
+                    <dl className="admin-execution-meta"><div><dt>작업 ID</dt><dd>{item.job_id}</dd></div><div><dt><ActivityIcon size={16} aria-hidden />유형</dt><dd>{item.kind}</dd></div><div><dt><ClockIcon size={16} aria-hidden />상태</dt><dd>{item.phase}</dd></div></dl>
                     <button disabled={item.stopping} onClick={() => void act("/api/admin/stop", { id: item.job_id, execution_id: item.execution_id })}>{item.stopping ? "중지 요청됨" : "이 실행 종료 요청"}</button>
                   </div>)}
                 </>

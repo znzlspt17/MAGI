@@ -55,6 +55,6 @@ export function PromptInput({ onSend, disabled, label, buttonLabel, maxLength = 
       props.onKeyDown?.(event);
       if (!event.defaultPrevented && isSubmitShortcut(event)) { event.preventDefault(); if (canSend) onSend(); }
     }} />
-    <InputGroupAddon align="block-end" className="chat-prompt-footer"><span>Enter로 줄바꿈 · Ctrl/⌘ + Enter로 전송</span><InputGroupButton variant="default" size="sm" disabled={!canSend} onClick={() => { if (canSend) onSend(); }} aria-label={buttonLabel}>{buttonLabel}<ArrowUpIcon size={17} aria-hidden /></InputGroupButton></InputGroupAddon>
+    <InputGroupAddon align="block-end" className="chat-prompt-footer"><span className="magi-meta"><span>Enter로 줄바꿈</span><span>Ctrl/⌘ + Enter로 전송</span></span><InputGroupButton variant="default" size="sm" disabled={!canSend} onClick={() => { if (canSend) onSend(); }} aria-label={buttonLabel}>{buttonLabel}<ArrowUpIcon size={17} aria-hidden /></InputGroupButton></InputGroupAddon>
   </InputGroup>;
 }

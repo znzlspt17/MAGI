@@ -15,7 +15,7 @@ export function NavUser() {
     </SidebarMenuButton></DropdownMenuTrigger>
     <DropdownMenuContent className="account-menu-content" side={isMobile ? "bottom" : "right"} align="end" sideOffset={8}>
       <DropdownMenuLabel className="account-menu-heading">내 계정<span className="account-role">{auth.user.role === "admin" ? "관리자" : "일반 사용자"}</span></DropdownMenuLabel>
-      {auth.usage && <p className="account-usage">오늘 실행 {auth.usage.runs}회 · 제한 없음{auth.usage.limit_reached || auth.usage.runs_exceeded ? " · 관측 기준 초과" : ""}</p>}
+      {auth.usage && <div className="account-usage"><span>오늘 실행 {auth.usage.runs}회</span><span>제한 없음</span>{(auth.usage.limit_reached || auth.usage.runs_exceeded) && <span>관측 기준 초과</span>}</div>}
       <details className="account-details"><summary>계정 상세</summary><p>사용자 ID: {auth.user.id}</p>{auth.usage && <p>사용량 갱신: {auth.usage.resets_at ? formatTime(auth.usage.resets_at) : "확인 중"}</p>}</details>
       <DropdownMenuSeparator />
       <DropdownMenuItem onSelect={() => void navigator.clipboard.writeText(auth.user!.id).then(() => auth.setNotice("사용자 ID를 복사했습니다.")).catch(() => auth.setNotice("표시된 ID를 직접 복사하세요."))}><CopyIcon size={18} aria-hidden />사용자 ID 복사</DropdownMenuItem>

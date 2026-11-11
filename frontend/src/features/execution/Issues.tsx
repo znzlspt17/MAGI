@@ -4,13 +4,13 @@ export function Issues({ result, open = false }: { result: StepResultData; open?
   const render = (items: IssueData[], resolved = false) =>
     items.map((issue, i) => (
       <article className="issue-card" key={i}>
-        <small>
+        <small className="magi-meta"><span>
           {resolved
             ? "해소됨"
             : issue.lifecycle === "persistent"
               ? "계속 남음"
-              : "새 지적"}{" "}
-          · {issue.severity}
+              : "새 지적"}</span>
+          <span>{issue.severity}</span>
         </small>
         <h4>{issue.problem || issue.title || "검토 항목"}</h4>
         {([
@@ -39,19 +39,19 @@ export function Issues({ result, open = false }: { result: StepResultData; open?
             : []
         ).map((e, n) => (
           <blockquote key={n}>
-            {typeof e === "string" ? e : `${e.source || ""} · ${e.quote || ""}`}
+            {typeof e === "string" ? e : <><span>{e.source}</span><p>{e.quote}</p></>}
           </blockquote>
         ))}
       </article>
     ));
   return (
     <details className="issues" open={open || undefined}>
-      <summary>검토 항목 · {result.issues?.length || 0}건</summary>
+      <summary className="magi-meta"><span>검토 항목</span><span>{result.issues?.length || 0}건</span></summary>
       {render(result.issues || [])}
       {!!result.resolved_issues?.length && (
         <details>
-          <summary>
-            다음 검토에서 해소됨 · {result.resolved_issues.length}건
+          <summary className="magi-meta">
+            <span>다음 검토에서 해소됨</span><span>{result.resolved_issues.length}건</span>
           </summary>
           {render(result.resolved_issues, true)}
         </details>

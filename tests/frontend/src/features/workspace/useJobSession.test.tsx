@@ -26,6 +26,10 @@ function SelectionView() {
   return <><p>선택 단계: {session.step}</p><p>현재 실패 코드: {session.failureDetail?.result?.diagnostic?.error_code || "없음"}</p>
     <button onClick={() => session.select("doc")}>이전 문서 선택</button><button onClick={session.refresh}>새로고침</button></>;
 }
+function TabView() {
+  const session = useJobSession();
+  return <><p>현재 탭: {session.tab}</p><p>선택 문서: {session.step}</p><button onClick={() => session.setTab("conversation")}>대화로 이동</button></>;
+}
 beforeEach(() => {
   vi.useFakeTimers(); Socket.instances = []; vi.stubGlobal("WebSocket", Socket);
   mocks.api.mockReset().mockImplementation(async (path: string) => path === "/api/jobs" ? [] : { id, status: "queued" });
@@ -72,4 +76,18 @@ it("수동으로 과거 문서를 선택하고 갱신해도 현재 실행의 실
   expect(screen.getByText("선택 단계: doc")).toBeTruthy();
   expect(screen.getByText("현재 실패 코드: CURRENT_FAILURE")).toBeTruthy();
   expect(mocks.api.mock.calls.some(([path]) => String(path).endsWith("/steps/old-failure"))).toBe(false);
+});
+
+it("승인 후보로 처음 진입하면 현재 명세를 열고 이후 사용자가 선택한 탭을 유지한다", async () => {
+  const job = { id, status: "PASS_PENDING_USER_APPROVAL", execution_id: "new", state: { status: "PASS_PENDING_USER_APPROVAL" }, execution_graph: { nodes: [
+    { id: "candidate", has_document: true, detail_available: true, execution_id: "new" },
+  ] }, completed_documents: [{ id: "old", has_document: true }] };
+  mocks.api.mockImplementation(async (path: string) => path === "/api/jobs" ? [job] : path.includes("/steps/") ? { result: {} } : job);
+  render(<MemoryRouter initialEntries={[`/jobs/${id}`]}><Routes><Route path="/jobs/:id" element={<TabView/>}/></Routes></MemoryRouter>);
+  await act(async () => {});
+  expect(screen.getByText("현재 탭: document")).toBeTruthy();
+  expect(screen.getByText("선택 문서: candidate")).toBeTruthy();
+  await act(async () => { fireEvent.click(screen.getByText("대화로 이동")); });
+  await act(async () => { Socket.instances.at(-1)!.event({ event: "job.snapshot", job_id: id, revision: 1, server_time: new Date().toISOString(), job }); });
+  expect(screen.getByText("현재 탭: conversation")).toBeTruthy();
 });

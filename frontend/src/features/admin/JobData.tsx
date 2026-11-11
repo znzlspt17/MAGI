@@ -108,7 +108,7 @@ export default function JobData({ users, version, busy, refresh }: {
   return <div className="jobs-data">
     <fieldset className="jobs-controls" disabled={disabled} aria-busy={disabled}>
       <header className="jobs-heading">
-        <div><span className="jobs-eyebrow"><DatabaseIcon size={16} aria-hidden /> JOBS & DATA</span><h2 id="job-title">작업·데이터</h2><p>작업과 사용자를 한눈에 확인하고 저장된 기록을 관리합니다.</p></div>
+        <div><h2 id="job-title"><DatabaseIcon size={20} aria-hidden /> 작업 데이터</h2><p>작업과 사용자를 확인하고 저장된 기록을 관리합니다.</p></div>
         <div className="jobs-heading-actions">
           <form id="job-form" onSubmit={event => { event.preventDefault(); open(jobId); }}>
             <label htmlFor="job-id">작업 ID</label><div><input ref={directInput} id="job-id" value={jobId} onChange={event => setJobId(event.target.value)} placeholder="ID로 바로 열기" required /><Button variant="outline" type="submit">조회</Button></div>
@@ -131,10 +131,10 @@ export default function JobData({ users, version, busy, refresh }: {
             : loading ? <p role="status" className="jobs-empty">작업 목록을 불러오는 중…</p>
               : <>
                 <div className="jobs-list-summary"><label className="jobs-check"><input id="cleanup-select-all" type="checkbox" checked={visible.length > 0 && visible.every(item => selected.has(item.id))} disabled={!visible.length}
-                  onChange={event => setSelected(event.target.checked ? new Set(visible.map(item => item.id)) : new Set())} />현재 페이지 전체 선택</label><span>검색 결과 {jobs.length}개 · 선택 {selected.size}개</span></div>
+                  onChange={event => setSelected(event.target.checked ? new Set(visible.map(item => item.id)) : new Set())} />현재 페이지 전체 선택</label><div className="jobs-summary-counts"><span>검색 결과 {jobs.length}개</span><span>선택 {selected.size}개</span></div></div>
                 {!visible.length ? <div className="jobs-empty"><FileTextIcon size={28} aria-hidden /><h3>조회된 작업이 없습니다</h3><p>검색어나 사용자·상태 필터를 변경해 보세요.</p></div> : <div id="cleanup-list">
                   <div className="jobs-table-scroll" tabIndex={0} aria-label="작업 목록 표">
-                    <table><caption className="sr-only">작업 목록 · 최신 생성 시각순</caption><thead><tr><th>선택</th><th>작업 제목</th><th>상태</th><th>사용자</th><th>작업 ID</th><th>생성 시각 (KST)</th><th><span className="sr-only">상세 조회</span></th></tr></thead>
+                    <table><caption className="sr-only">작업 목록, 최신 생성 시각순</caption><thead><tr><th>선택</th><th>작업 제목</th><th>상태</th><th>사용자</th><th>작업 ID</th><th>생성 시각 (KST)</th><th><span className="sr-only">상세 조회</span></th></tr></thead>
                       <tbody>{visible.map(item => <tr key={item.id}>
                         <td>{checkbox(item)}</td><td className="jobs-title-cell"><button type="button" className="jobs-title" onClick={() => open(item.id)}>{item.request || "제목 없는 작업"}</button></td>
                         <td><JobStatus status={item.status} /></td><td><RecordId value={item.owner_id} /></td><td><RecordId value={item.id} /></td><td className="jobs-time">{jobTime(item.created_at)}</td>
@@ -149,7 +149,7 @@ export default function JobData({ users, version, busy, refresh }: {
                     <Button variant="outline" onClick={() => open(item.id)}>상세 조회<ArrowRightIcon size={14} aria-hidden /></Button>
                   </article>)}</div>
                 </div>}
-                <div className="jobs-pagination"><span>{jobs.length ? `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, jobs.length)} / ${jobs.length}개` : "0개"} · 최신 생성 시각순</span><div>
+                <div className="jobs-pagination"><div className="jobs-summary-counts"><span>{jobs.length ? `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, jobs.length)} / ${jobs.length}개` : "0개"}</span><span>최신 생성 시각순</span></div><div>
                   <Button variant="outline" disabled={page === 0} onClick={() => { setPage(value => value - 1); setSelected(new Set()); }}>이전</Button>
                   <Button variant="outline" disabled={(page + 1) * PAGE_SIZE >= jobs.length} onClick={() => { setPage(value => value + 1); setSelected(new Set()); }}>다음</Button>
                 </div></div>
@@ -159,8 +159,8 @@ export default function JobData({ users, version, busy, refresh }: {
       <div className="jobs-management">
         <Card><CardHeader><CardTitle id="cleanup-title">데이터 정리</CardTitle><CardDescription>삭제할 기록을 미리 확인한 뒤 정리합니다.</CardDescription></CardHeader><CardContent>
           <div className="jobs-selection"><span><strong>{selected.size}개</strong> 작업 선택됨</span><Button id="cleanup-selected" variant="outline" disabled={!selected.size || loading || !!catalogError} onClick={() => void preview("jobs")}><TrashIcon size={16} aria-hidden />선택 작업 삭제 미리보기</Button></div>
-          <div id="cleanup-pending">{catalog.pending.map(id => <Button key={id} variant="outline" disabled={loading || !!catalogError} onClick={() => void execute(id, "")}><ArrowsClockwiseIcon size={16} aria-hidden />남은 파일 정리 재시도 · {id}</Button>)}</div>
-          <details className="jobs-danger"><summary><ShieldWarningIcon size={17} aria-hidden />위험 작업 · 전체 기록 삭제</summary><p>모든 작업과 저장된 기록을 영구 삭제합니다. 미리보기에서 대상을 확인하세요.</p><Button id="cleanup-all" variant="outline" disabled={loading || !!catalogError} onClick={() => void preview("all")}>전체 기록 삭제 미리보기</Button></details>
+          <div id="cleanup-pending">{catalog.pending.map(id => <Button key={id} variant="outline" disabled={loading || !!catalogError} onClick={() => void execute(id, "")}><ArrowsClockwiseIcon size={16} aria-hidden />남은 파일 정리 재시도 <span>{id}</span></Button>)}</div>
+          <details className="jobs-danger"><summary><ShieldWarningIcon size={17} aria-hidden />전체 기록 삭제</summary><p>모든 작업과 저장된 기록을 영구 삭제합니다. 미리보기에서 대상을 확인하세요.</p><Button id="cleanup-all" variant="outline" disabled={loading || !!catalogError} onClick={() => void preview("all")}>전체 기록 삭제 미리보기</Button></details>
         </CardContent></Card>
       </div>
     </fieldset>
@@ -170,8 +170,8 @@ export default function JobData({ users, version, busy, refresh }: {
       tab={tab} setTab={setTab} close={close} retry={() => setRetry(value => value + 1)}
       restoreFocus={() => { if (opener.current?.isConnected) opener.current.focus(); else directInput.current?.focus(); }} />
     {operation && <dialog ref={dialog} id="cleanup-dialog" className="jobs-cleanup-dialog" aria-labelledby="cleanup-dialog-title" onCancel={event => { if (disabled) event.preventDefault(); else setOperation(null); }}>
-      <span className="jobs-eyebrow"><ShieldWarningIcon size={17} aria-hidden /> DELETE CONFIRMATION</span><h2 id="cleanup-dialog-title">영구 삭제 확인</h2>
-      <pre id="cleanup-summary">{`대상 작업 ${operation.counts.jobs}개 · 파일 ${operation.counts.files || 0}개\n${(operation.targets || [...selected]).join("\n")}\n다른 작업의 출처 연결 ${operation.external_references || 0}개 제거 · 공통 결정 ${operation.counts.project_decisions || 0}개 신규 재사용 중단 · 제외 폴더 ${(operation.skipped || []).length}개\n삭제한 기록은 복구할 수 없습니다. 미리보기는 10분 동안 유효합니다.`}</pre>
+      <h2 id="cleanup-dialog-title"><ShieldWarningIcon size={20} aria-hidden /> 영구 삭제 확인</h2>
+      <div id="cleanup-summary"><dl className="jobs-cleanup-summary"><div><dt>대상 작업</dt><dd>{operation.counts.jobs}개</dd></div><div><dt>파일</dt><dd>{operation.counts.files || 0}개</dd></div><div><dt>제거할 다른 작업의 출처 연결</dt><dd>{operation.external_references || 0}개</dd></div><div><dt>신규 재사용이 중단되는 공통 결정</dt><dd>{operation.counts.project_decisions || 0}개</dd></div><div><dt>제외 폴더</dt><dd>{(operation.skipped || []).length}개</dd></div></dl><h3>삭제 대상</h3><ul className="jobs-cleanup-targets">{(operation.targets || [...selected]).map(id => <li key={id}>{id}</li>)}</ul><p>삭제한 기록은 복구할 수 없습니다. 미리보기는 10분 동안 유효합니다.</p></div>
       {operation.scope === "all" && <label id="cleanup-confirm-label">계속하려면 “전체 기록 삭제”를 입력하세요.<input id="cleanup-confirm" value={confirmation} autoComplete="off" onChange={event => setConfirmation(event.target.value)} disabled={disabled} /></label>}
       <p id="cleanup-error" role="alert">{cleanupError}</p><div className="jobs-dialog-actions"><Button id="cleanup-cancel" variant="outline" autoFocus disabled={disabled} onClick={() => setOperation(null)}>취소</Button>
         <Button id="cleanup-execute" disabled={disabled || (operation.scope === "all" && confirmation !== "전체 기록 삭제")} onClick={() => void execute(operation.id)}>영구 삭제</Button>

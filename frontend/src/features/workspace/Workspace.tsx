@@ -4,7 +4,7 @@ import { FailureDiagnostic } from "../execution/FailureDiagnostic";
 import { Issues } from "../execution/Issues";
 export { StepResult } from "../execution/StepResult";
 export { StopDiagnostic } from "../execution/StopDiagnostic";
-import { ChatCircleDotsIcon, ClockCounterClockwiseIcon, FileTextIcon, GraphIcon, PlusIcon, SparkleIcon, SquaresFourIcon } from "@phosphor-icons/react";
+import { ChatCircleDotsIcon, ClockCounterClockwiseIcon, FileTextIcon, GraphIcon, PlusIcon, SquaresFourIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { post } from "../../shared/api/api";
@@ -26,8 +26,10 @@ import { ProjectDecisionPicker, ReusedDecisions, type DecisionSelection } from "
 import { questionDetails } from "../conversation/QuestionActions";
 import { ServiceStatusNotice, serviceState } from "./ServiceStatus";
 import type { Job, Step } from "../../shared/types";
-import { Button, Notice, usageLabel } from "../../shared/ui/UI";
+import { Button, Notice, UsageSummary } from "../../shared/ui/UI";
 import { useJobSession } from "./useJobSession";
+import { workspaceStage, workspaceStageMessage, type WorkspaceStage } from "./progress-state";
+import { currentDocumentStep } from "../execution/step-selection";
 export function graphNodes(job: Job): Step[] {
   return job.execution_graph?.nodes || [];
 }
@@ -39,6 +41,11 @@ export default function Workspace() {
   const session = useJobSession();
   const { jobs, job, step, tab, setTab, detail, busy, loading, connection, refresh } = session;
   const [surface, setSurface] = useState("workspace"), [query, setQuery] = useState(""), [filter, setFilter] = useState("");
+  const [reviewPanelOpen, setReviewPanelOpen] = useState(false);
+  const reviewToggle = useRef<HTMLButtonElement>(null);
+  const reviewClose = useRef<HTMLButtonElement>(null);
+  const appendQuestion = useRef<((text: string) => boolean) | null>(null);
+  const focusAddedQuestion = useRef(false);
   const navigation = useRef(location.key), selectedId = useRef(id);
   const [projectId, setProjectId] = useState("");
   const [decisionSelections, setDecisionSelections] = useState<DecisionSelection[]>([]);
@@ -52,6 +59,14 @@ export default function Workspace() {
   const isAdmin = !auth.publicMode || auth.user?.role === "admin",
     blocked = busy || serviceState(auth.publicMode, auth.status).blocked;
   useEffect(() => { setSurface("workspace"); }, [id]);
+  useEffect(() => {
+    if (!reviewPanelOpen || window.innerWidth >= 1920) return;
+    if (focusAddedQuestion.current && id) {
+      const input = document.getElementById(`agent-message-${id}`) || document.getElementById(`feedback-${id}`);
+      if (input) input.focus(); else reviewClose.current?.focus();
+    } else reviewClose.current?.focus();
+    focusAddedQuestion.current = false;
+  }, [reviewPanelOpen, id]);
   const node = job ? [...graphNodes(job), ...(job.completed_documents || [])].find((item: Step) => item.id === step) : undefined;
   useEffect(() => {
     const leave = (event: BeforeUnloadEvent) => {
@@ -111,9 +126,10 @@ export default function Workspace() {
           : j.status === filter)),
   );
   const actualJob = job?.id === id ? job : null;
+  const currentDocument = actualJob ? currentDocumentStep(actualJob) : undefined;
+  const historicalDocument = tab === "document" && !!step && step !== currentDocument;
   const retryStatus = actualJob && ["error", "interrupted"].includes(actualJob.status) && actualJob.execution_id && node?.execution_id === actualJob.execution_id ? actualJob : undefined;
   const result = detail?.result || {};
-  const showConversation = () => setTab("conversation");
   const mainRef = useRef<HTMLElement>(null);
   useEffect(() => {
     // 실시간 갱신에는 반응하지 않고 화면 전환에만 위치를 초기화한다.
@@ -147,10 +163,9 @@ export default function Workspace() {
         reviewOnly={evidenceOnly}
         onShowDocument={() => setEvidenceOnly(false)}
         onQuestion={question => {
-          const key = `draft:${auth.user?.id || "local"}:${actualJob.id}:feedback`;
-          const prior = sessionStorage.getItem(key)?.trim();
-          sessionStorage.setItem(key, prior ? `${prior}\n\n${question}` : question);
-          showConversation();
+          if (historicalDocument) { auth.setNotice("현재 검토본에서 수정 의견을 작성해주세요."); return; }
+          if (appendQuestion.current?.(question)) { focusAddedQuestion.current = true; setReviewPanelOpen(true); }
+          else auth.setNotice("현재 작업에서 수정 의견을 추가할 수 없습니다.");
         }}
       />
     ) : tab !== "history" ? (
@@ -162,7 +177,7 @@ export default function Workspace() {
 
   </> : null;
   return (
-    <SidebarProvider className="shell" style={{ "--sidebar-width": "200px" } as CSSProperties}>
+    <SidebarProvider className="shell" style={{ "--sidebar-width": "272px" } as CSSProperties}>
       <AppSidebar>
         <Button
           className="primary new-job"
@@ -228,38 +243,33 @@ export default function Workspace() {
         </div>
         <main ref={mainRef}>
           <Notice>{auth.notice || connection}</Notice>
+          {surface === "workspace" && <WorkspaceSteps stage={id && !actualJob ? null : workspaceStage(actualJob)} message={workspaceStageMessage(actualJob)} interrupted={!!actualJob && ["error", "interrupted"].includes(actualJob.status)} />}
           {surface === "knowledge" ? (
             <Knowledge selectedJobId={id} />
           ) : (
             <>
               {!id ? (
                 <section className="chat-welcome">
-                  <div className="welcome-mark"><SparkleIcon weight="duotone" size={28} aria-hidden /></div>
-                  <h2>무엇을 만들고 싶으신가요?</h2>
+                  <h2>만들고 싶은 기능을 알려주세요</h2>
                   <p>완벽하게 정리하지 않아도 괜찮습니다.<br />요청을 바탕으로 필요한 내용을 함께 구체화합니다.</p>
-                  <ProjectDecisionPicker key={auth.user?.id || "local"} projectId={projectId} onProject={setProjectId} selections={decisionSelections} onSelections={setDecisionSelections} />
                   <label htmlFor="request-text">개발 요청</label>
                   <PromptInput id="request-text" label="개발 요청" buttonLabel={decisionSelections.length ? `선택한 결정 ${decisionSelections.length}개와 함께 생성` : "명세 생성 시작"} rows={5} value={request} disabled={blocked}
                     placeholder="예: 팀이 매주 진행 상황을 공유할 수 있는 보고서 생성 기능을 만들어주세요."
                     onChange={(event) => { setRequest(event.target.value); sessionStorage.setItem(draftKey, event.target.value); }} onSend={() => void generate()} />
                   <div className="request-guidance"><span>만들고 싶은 것</span><span>사용할 사람</span><span>지켜야 할 조건</span></div>
+                  <details className="request-options"><summary>프로젝트와 공통 결정{decisionSelections.length > 0 && <span className="request-selection-count">선택 {decisionSelections.length}개</span>}</summary><ProjectDecisionPicker key={auth.user?.id || "local"} projectId={projectId} onProject={setProjectId} selections={decisionSelections} onSelections={setDecisionSelections} /></details>
                   <p className="subtle">요청과 답변은 명세 생성을 위해 OpenAI에 전송됩니다.</p>
                 </section>
               ) : actualJob ? (
                 <>
                   <ReusedDecisions key={actualJob.id} jobId={actualJob.id} count={actualJob.reused_decision_count || 0} />
                   {tab !== "conversation" && <CompletedDocuments job={actualJob} select={selectStep} />}
-                  <div role="tabpanel" id={`workspace-panel-${tab}`} aria-labelledby={`workspace-tab-${tab}`} tabIndex={0}>
-                  {tab === "conversation" ? (
-                    <>
-                    {["queued", "running"].includes(actualJob.status) && <Button disabled={busy} onClick={() => void mutate("stop", undefined).catch(() => {})}>이 작업 중지</Button>}
-                  <Conversation key={actualJob.id} job={actualJob} select={selectStep} onAction={mutate} busy={busy} failureDetail={session.failureDetail} />
-                    </>
-                  ) : (
+                  <div role="tabpanel" id={`workspace-panel-${tab}`} aria-labelledby={`workspace-tab-${tab}`} tabIndex={0} className="workspace-stage-panel" data-view={tab} data-review-open={reviewPanelOpen}>
+                  {tab !== "conversation" && (
                     <div className="document-action-layout">
                       <section className="document-panel">
-                        {detail?.change_review && <details className="document-change-review"><summary>명세 변경 검토 · {detail.change_review.changes?.length || 0}건</summary><ChangeReview review={detail.change_review} /></details>}
-                        {tab === "history" && actualJob.usage && <p className="subtle">{usageLabel(actualJob.usage)}</p>}
+                        {detail?.change_review && <details className="document-change-review"><summary><span>명세 변경 검토</span><span>{detail.change_review.changes?.length || 0}건</span></summary><ChangeReview review={detail.change_review} /></details>}
+                        {tab === "history" && actualJob.usage && <UsageSummary usage={actualJob.usage} />}
                         {tab === "history" && (
                           <>
                             <ExecutionTimeline key={actualJob.id} job={actualJob} nodes={graphNodes(actualJob)} selected={step} select={session.select} detail={selectedDetail()} />
@@ -271,11 +281,15 @@ export default function Workspace() {
                           {selectedDetail()}
                         </>}
                       </section>
-                      <aside className="action-panel">
-                        <section className="action-card document-chat-cta"><p>답변·수정·승인은 대화에서 진행합니다.</p><Button className="primary" onClick={showConversation}><ChatCircleDotsIcon size={18} aria-hidden />대화에서 답변하기</Button></section>
-                      </aside>
                     </div>
                   )}
+                  {historicalDocument && <aside className="historical-document-notice"><h2>이전 시점의 명세</h2><p>이 문서는 읽기 전용입니다. 현재 검토본에서 수정하거나 승인할 수 있습니다.</p>{currentDocument ? <Button className="primary" onClick={() => selectStep(currentDocument)}>현재 검토본 열기</Button> : <Button onClick={() => setTab("conversation")}>대화에서 현재 상태 확인</Button>}</aside>}
+                  {tab === "document" && !historicalDocument && <button type="button" ref={reviewToggle} className="button review-panel-toggle" aria-expanded={reviewPanelOpen} aria-controls="workspace-conversation" onClick={() => setReviewPanelOpen(open => !open)}>{reviewPanelOpen ? "대화와 검토 닫기" : "대화와 검토 열기"}</button>}
+                  <aside id="workspace-conversation" className="workspace-conversation" aria-label={tab === "document" ? "대화와 검토 동작" : "대화"} hidden={tab === "history" || historicalDocument} onKeyDown={event => { if (event.key === "Escape" && reviewPanelOpen && window.innerWidth < 1920) { setReviewPanelOpen(false); reviewToggle.current?.focus(); } }}>
+                    {tab === "document" && <button type="button" ref={reviewClose} className="button review-panel-close" onClick={() => { setReviewPanelOpen(false); reviewToggle.current?.focus(); }}>대화와 검토 닫기</button>}
+                    {tab === "conversation" && ["queued", "running"].includes(actualJob.status) && <Button disabled={busy} onClick={() => void mutate("stop", undefined).catch(() => {})}>이 작업 중지</Button>}
+                    <Conversation key={actualJob.id} job={actualJob} select={selectStep} onAction={mutate} busy={busy} failureDetail={session.failureDetail} documentMode={tab === "document"} appendQuestionRef={appendQuestion} />
+                  </aside>
                   </div>
 
                 </>
@@ -294,6 +308,11 @@ export default function Workspace() {
   );
 }
 
+function WorkspaceSteps({ stage, message, interrupted }: { stage: WorkspaceStage | null; message: string; interrupted: boolean }) {
+  const steps: [WorkspaceStage, string][] = [["request", "요청 작성"], ["questions", "질문 답변"], ["review", "명세 검토"], ["final", "최종 확정"]];
+  return <nav className="workspace-steps" aria-label="명세 작업 단계"><ol>{steps.map(([key, title], index) => <li key={key} aria-current={stage === key ? "step" : undefined}><span className="workspace-step-number" aria-hidden>{index + 1}</span><span>{title}</span></li>)}</ol>{(!stage || interrupted) && <p role="status">{message}</p>}</nav>;
+}
+
 function CompletedDocuments({
   job,
   select,
@@ -303,13 +322,13 @@ function CompletedDocuments({
 }) {
   const [selected, setSelected] = useState("");
   return (
-    <details className="completed-documents"><summary>완료 명세·다운로드</summary><div className="completed-document-controls">
+    <details className="completed-documents"><summary>완료 명세와 다운로드</summary><div className="completed-document-controls">
       {(job.latest_completed || job.status === "FINALIZED") && <ImplementationPackage key={`${job.id}:${job.latest_completed?.id || "latest"}`} jobId={job.id} completedId={job.latest_completed?.id} label="최근 승인본 구현 묶음" />}
       <span>
         {job.status === "FINALIZED"
           ? "최근 완료본"
           : job.latest_completed
-            ? "현재 작업 중인 초안 · 이전 완료본은 별도 보존됩니다."
+            ? "현재 작업 중인 초안입니다. 이전 완료본은 별도로 보존됩니다."
             : "아직 승인된 완료 명세가 없습니다."}
       </span>
       {job.latest_completed?.step_id && (

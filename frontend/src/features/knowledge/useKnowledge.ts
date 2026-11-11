@@ -44,7 +44,7 @@ export function useKnowledge({ admin, selectedJobId, onDeleted }: { admin: boole
     [labels, setLabels] = useState(8),
     [paused, setPaused] = useState(false),
     [relation, setRelation] = useState(
-      "끌어서 이동 · 휠로 확대 · Esc 선택 해제",
+      "",
     ),
     [refresh, setRefresh] = useState(0),
     [focused, setFocused] = useState(false),
@@ -94,7 +94,7 @@ export function useKnowledge({ admin, selectedJobId, onDeleted }: { admin: boole
     selection.current++;
     setSelected(null);
     setGroup(null);
-    setRelation("끌어서 이동 · 휠로 확대 · Esc 선택 해제");
+    setRelation("");
   };
   useEffect(() => {
     active.current = true;

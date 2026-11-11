@@ -104,7 +104,7 @@ export const statusLabel = (status?: string) =>
     failed: "오류",
     interrupted: "중단됨",
     NEEDS_USER_INPUT: "요구사항 확인 필요",
-    PASS_PENDING_USER_APPROVAL: "명세 문서 검토 통과 · 사용자 승인 대기",
+    PASS_PENDING_USER_APPROVAL: "검토를 마친 명세의 승인 대기",
     CRITICAL_BLOCKED: "명세 진행 중단",
     FINALIZED: "최종 완료",
     error: "오류",
@@ -129,4 +129,8 @@ export function usageLabel(usage?: Record<string, unknown>) {
   };
   const cache = usage.cache_rate && typeof usage.cache_rate === "object" && "value" in usage.cache_rate ? usage.cache_rate.value : undefined;
   return `제공자 호출 ${token(usage.calls)}회 · 입력 ${token(usage.input_tokens)}${coverage("input_token_coverage")} · 출력 ${token(usage.output_tokens)}${coverage("output_token_coverage")} · OpenAI 캐시 ${token(usage.cached_tokens)} · 적중률 ${typeof cache === "number" ? (cache * 100).toFixed(1) + "%" : "알 수 없음"}${usage.recording_incomplete ? " · 일부 기록 누락" : ""}`;
+}
+
+export function UsageSummary({ usage }: { usage?: Record<string, unknown> }) {
+  return <div className="magi-meta subtle" aria-label="사용량">{usageLabel(usage).split(" · ").map((part, index) => <span className="magi-meta-item" key={index}>{part}</span>)}</div>;
 }

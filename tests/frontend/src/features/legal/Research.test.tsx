@@ -12,7 +12,8 @@ it("네트워크 요청 없이 논문 출처와 적용 범위를 표시한다", 
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("연구 출처 및 적용 방식");
   expect(screen.getAllByText(/RubricRefine: Improving Tool-Use Agent Reliability/).length).toBeGreaterThan(0);
   expect(screen.getByText(/Will LeVine, Brendan Raffel Evers, Sam Saltwick, Abhay Venkatesh/)).toBeTruthy();
-  expect(screen.getByText("2026년 · arXiv:2605.09730v5")).toBeTruthy();
+  expect(screen.getByText("2026년")).toBeTruthy();
+  expect(screen.getByText("arXiv:2605.09730v5")).toBeTruthy();
   expect(screen.getByRole("link", { name: /논문 원문/ }).getAttribute("href")).toBe("https://arxiv.org/html/2605.09730v5");
   expect(screen.getByText(/충족·미충족·판단 불가로 판정/)).toBeTruthy();
   expect(screen.getByText(/정확성이나 요구사항의 완전성을 보장하지/)).toBeTruthy();

@@ -6,8 +6,8 @@ export function StopDiagnostic({ value }: { value?: StopDiagnosticData }) {
     <h3>{value.stop_reason === "repair_limit" ? "검토·보완 횟수 소진" : value.stop_reason === "no_progress" ? "동일 결함 반복" : "진행 중단 진단"}</h3>
     <p>{value.cause}</p>
     {value.recording_incomplete && <p>남은 결함 또는 보완 이력 기록이 부족합니다. 저장된 내용만 표시합니다.</p>}
-    {!!value.completed_work?.length && <section><h3>수행한 작업 · 작업 전체 누적</h3><ul>
-      {value.completed_work.map((work) => <li key={work.action}>{({ spec_compile: "초안 작성·보완", checklist_critic: "명세 검토", review_resolution: "해결 방법 판단" } as Record<string, string>)[work.action || ""]} · {work.count}회 완료</li>)}
+    {!!value.completed_work?.length && <section><h3>전체 누적 수행 작업</h3><ul>
+      {value.completed_work.map((work) => <li className="magi-meta" key={work.action}><span>{({ spec_compile: "초안 작성과 보완", checklist_critic: "명세 검토", review_resolution: "해결 방법 판단" } as Record<string, string>)[work.action || ""]}</span><span>{work.count}회 완료</span></li>)}
     </ul><p>작업 완료 횟수는 개별 수정의 반영이나 결함 해소를 의미하지 않습니다.</p></section>}
     <h3>남은 문제와 해결 방향</h3>
     {(value.issues || []).map((issue, index) => <article className="issue-card" key={issue.issue_id || index}>

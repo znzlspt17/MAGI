@@ -105,7 +105,7 @@ export default function AdminLogs() {
       <button type="submit">검색</button>
     </form>
     <p role="alert">{error}</p><p role="status">{notice}</p>
-    <div className="logs-summary" aria-live="polite"><span>{result ? `${result.items.length}건 · 기준 ${formatKst(result.end)}` : busy ? "로그를 불러오는 중…" : "조회 결과 없음"}</span><span>{automatic ? "자동 갱신 중" : "갱신 일시정지"}</span></div>
+    <div className="logs-summary" aria-live="polite">{result ? <><span>조회 결과 {result.items.length}건</span><span>기준 {formatKst(result.end)}</span></> : <span>{busy ? "로그를 불러오는 중…" : "조회 결과 없음"}</span>}<span>{automatic ? "자동 갱신 중" : "갱신 일시정지"}</span></div>
     <div className="logs-list" aria-busy={busy} onWheel={() => setAutomatic(false)} onTouchMove={() => setAutomatic(false)}>
       {result?.items.length === 0 && <p className="logs-empty">조건에 맞는 로그가 없습니다.</p>}
       {result?.items.map((row, index) => <details className={`logs-row logs-${row.level}`} key={`${row.timestamp}:${index}`} onToggle={e => { if (e.currentTarget.open) setAutomatic(false); }}>

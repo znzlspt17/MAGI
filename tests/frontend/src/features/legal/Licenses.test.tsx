@@ -19,3 +19,10 @@ it("고지 파일 응답 실패를 사용자에게 알린다", async () => {
   render(<Licenses />);
   await waitFor(() => expect(screen.getByRole("status").textContent).toContain("불러오지 못했습니다"));
 });
+
+it("고지 목록이 비어 있으면 로딩을 마치고 빈 상태를 안내한다", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => [] }));
+  render(<Licenses />);
+  expect(await screen.findByText("표시할 라이선스 고지가 없습니다.")).toBeTruthy();
+  expect(screen.queryByText("라이선스 고지를 불러오는 중입니다.")).toBeNull();
+});

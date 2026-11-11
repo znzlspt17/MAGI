@@ -43,13 +43,13 @@ function ProposalQuestion({ item, disabled, onQuestion }: {
       </FieldLabel>
     </Field>)}<Field className="question-choice-field"><FieldLabel className="choice-card" data-selected={custom}><input type={form.input_type === "single_choice" ? "radio" : "checkbox"}
       name={id} checked={custom} onChange={event => { setCustom(event.target.checked); if (form.input_type === "single_choice") setSelected([]); }} />직접 입력</FieldLabel></Field></div>}
-    {form?.recommendation && <div className="question-recommendation"><p>추천 이유 · 모델 안내: {form.recommendation.reason}</p>
+    {form?.recommendation && <div className="question-recommendation"><p>모델이 안내한 추천 이유: {form.recommendation.reason}</p>
       {form.recommendation.assumptions.map((assumption, index) => <p key={index}>추천 전제: {assumption}</p>)}</div>}
     {(textOnly || custom) && <Field><FieldLabel htmlFor={`${id}-answer`}>답변 직접 입력</FieldLabel>
-      <ExpandableTextarea id={`${id}-answer`} label={`${item.question} · 직접 입력`} value={answer} disabled={disabled}
+      <ExpandableTextarea id={`${id}-answer`} label={`${item.question} 직접 입력`} value={answer} disabled={disabled}
         onChange={event => setAnswer(event.target.value)} /></Field>}
     <Field><FieldLabel htmlFor={`${id}-detail`}>추가 설명 (선택)</FieldLabel>
-      <ExpandableTextarea id={`${id}-detail`} label={`${item.question} · 추가 설명 (선택)`} value={detail} disabled={disabled}
+      <ExpandableTextarea id={`${id}-detail`} label={`${item.question} 추가 설명 (선택)`} value={detail} disabled={disabled}
         onChange={event => setDetail(event.target.value)} /></Field>
     <Button disabled={disabled || !response} onClick={append}>답변을 수정 의견에 추가</Button>
     {added && <p role="status">수정 의견 초안에 추가했습니다. 내용을 확인한 뒤 전송하세요.</p>}
@@ -67,12 +67,12 @@ const reasons: Record<string, string> = {
 
 function ChangeItem({ item, review }: { item: SpecChange; review: ChangeReviewData }) {
   return <li><details className="change-item">
-    <summary><span className="change-kind">{kinds[item.change]}</span> {item.summary || `${(item.after || item.before)?.section || "명세"} · 의미 미분석`}</summary>
+    <summary><span className="change-kind">{kinds[item.change]}</span> {item.summary || `${(item.after || item.before)?.section || "명세"} 의미 미분석`}</summary>
     {item.rationale && <p>{item.rationale}</p>}
     {item.meaning === "uncertain" && <p>문맥이 부족하여 의미 판정을 보류했습니다.</p>}
     {item.status === "unanalysed" && <p>{reasons[item.reason] || "아직 의미를 분석하지 못했습니다."}</p>}
     <div className="change-originals">{([ ["이전", item.before], ["현재", item.after] ] as const).map(([label, location]) =>
-      <div key={label}><h5>{label}</h5>{location ? <><p className="subtle">{location.section} · {location.line}행</p><pre>{location.text}</pre></> : <p>해당 본문 없음</p>}</div>)}
+      <div key={label}><h5>{label}</h5>{location ? <><div className="subtle magi-meta"><span>{location.section}</span><span>{location.line}행</span></div><pre>{location.text}</pre></> : <p>해당 본문 없음</p>}</div>)}
     </div>
     {!!item.evidence?.length && <div><h5>사용자 입력 근거</h5>{item.evidence.map((ref, index) => {
       const source = review.sources.find(value => value.source_id === ref.source_id);
@@ -94,7 +94,7 @@ export function ChangeReview({ review, onQuestion, disabled = false }: { review?
     <h3>이전 검토본에서 달라진 내용</h3>
     {review.status === "no_baseline" ? <p>첫 승인 후보입니다. 비교할 이전 검토본이 없습니다.</p> : <>
       {review.remaining === null ? <p role="status">변경 범위를 확인하지 못했습니다.</p> : review.status === "unchanged" ? <p>비교 가능한 본문 변경이 없습니다. 의미의 안전성을 보증하는 결과는 아닙니다.</p> :
-        <p role="status">본문 변경 {review.changes.length}건 중 {review.analysed}건 분석 · {review.remaining === null ? "남은 범위 확인 불가" : `${review.remaining}건 미분석`}</p>}
+        <div className="magi-meta" role="status"><span>본문 변경 {review.changes.length}건 중 {review.analysed}건 분석</span><span>{review.remaining === null ? "남은 범위 확인 불가" : `${review.remaining}건 미분석`}</span></div>}
       {["failed", "partial", "running"].includes(review.status) && <p className="change-warning">일부 또는 전체 변경 분석을 완료하지 못했습니다. 원문을 확인한 후 승인할 수 있습니다.</p>}
       {requested.length > 0 && <section><h4>요청 반영</h4><ul>{requested.map(item => <ChangeItem key={item.id} item={item} review={review} />)}</ul></section>}
       {other.length > 0 && <section><h4>함께 달라진 내용</h4><ul>{other.map(item => <ChangeItem key={item.id} item={item} review={review} />)}</ul></section>}

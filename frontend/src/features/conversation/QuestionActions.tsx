@@ -13,7 +13,7 @@ import { Badge } from "../../shared/ui/badge";
 import { Alert, AlertTitle, AlertDescription } from "../../shared/ui/alert";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "../../shared/ui/collapsible";
 import "./question-guidance.css";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, type RefObject } from "react";
 import { useAuth } from "../auth/Auth";
 import { Button, Notice } from "../../shared/ui/UI";
 import type { Job, QuestionForm, ReviewQuestion, SavedAnswer } from "../../shared/types";
@@ -74,6 +74,7 @@ export function QuestionActions({
   onRequirementReview,
   controlsTarget,
   onAppendFeedback,
+  appendFeedbackRef,
 }: {
   job: Job;
   onAction: (action: string, payload: unknown) => Promise<void>;
@@ -81,6 +82,7 @@ export function QuestionActions({
   conversational?: boolean;
   controlsTarget?: HTMLElement | null;
   onAppendFeedback?: (answer: string) => boolean;
+  appendFeedbackRef?: RefObject<((text: string) => boolean) | null>;
   onReview?: () => void;
   onRequirementReview?: () => void;
 }) {
@@ -100,18 +102,33 @@ export function QuestionActions({
   const requiresAcceptance = job.state?.rubric_review?.requires_acceptance === true;
   const [approvedExecution, setApprovedExecution] = useState(() => sessionStorage.getItem(prefix + "approved-execution") || "");
   const submitting = useRef(false);
+  const questionFields = useRef<Record<string, HTMLFieldSetElement | null>>({});
   const executionKey = `${job.id}:${job.execution_id}:${job.status}`;
+  function appendFeedback(text: string) {
+    const value = feedback.trim() ? `${feedback}\n\n${text}` : text;
+    if (value.length > 20000) return false;
+    setFeedback(value);
+    sessionStorage.setItem(prefix + "feedback", value);
+    document.getElementById(`feedback-${job.id}`)?.focus();
+    return true;
+  }
+  useEffect(() => {
+    if (!appendFeedbackRef) return;
+    appendFeedbackRef.current = appendFeedback;
+    return () => { appendFeedbackRef.current = null; };
+  }, [appendFeedbackRef, feedback, prefix, job.id]);
   useEffect(() => { setReplayConsent(false); }, [executionKey]);
   const disabled = busy || pending || approvedExecution === executionKey || serviceState(publicMode, status).blocked;
   const retryApproval = job.action === "approve" && job.retry_status === "PASS_PENDING_USER_APPROVAL" && !job.read_only;
   const actionClass = conversational ? "action-card conversation-action" : "action-card";
   // 상태는 본문에 유지하고 하단 컨트롤만 포털로 옮긴다.
   const controls = (content: ReactNode) => controlsTarget === undefined ? content : (controlsTarget ? createPortal(content, controlsTarget) : null);
-  const answeredCount = questions.filter((raw, index) => {
+  const questionAnswered = (raw: string, index: number) => {
     const q = questionDetails(raw, index), form = forms[q.id];
     const draft = drafts[`${q.id}:${form?.form_version || "text"}`] || initial(form);
     return draft.ids.length > 0 || ((!form || form.input_type === "text" || draft.custom) && !!draft.text.trim());
-  }).length;
+  };
+  const answeredCount = questions.filter(questionAnswered).length;
   async function perform(action: string, payload: unknown) {
     if (disabled || submitting.current) return false;
     submitting.current = true;
@@ -252,13 +269,21 @@ export function QuestionActions({
         <h3>
           {job.state?.awaiting_input_reason === "review"
             ? "요구사항 확인 필요"
-            : "답변이 필요한 질문"}{" "}
-          · {questions.length}개
+            : "답변이 필요한 질문"}
+          <span className="question-count">{questions.length}개</span>
         </h3>
         <p>
           답변한 항목만 제출할 수 있습니다. 남은 질문은 다음 단계에서 다시
           표시됩니다.
         </p>
+        <nav className="question-navigation" aria-label="질문 탐색"><ol>{questions.map((raw, index) => {
+          const question = questionDetails(raw, index), answered = questionAnswered(raw, index);
+          return <li key={`${index}:${question.id}`}><button type="button" className="question-navigation-item" data-answered={answered} aria-label={`질문 ${index + 1} ${answered ? "작성됨" : "미작성"}`} title={question.label} onClick={() => {
+            const field = questionFields.current[question.id];
+            field?.scrollIntoView?.({ block: "start", behavior: "auto" });
+            field?.focus();
+          }}><span>{index + 1}</span><span>{answered ? "작성됨" : "미작성"}</span></button></li>;
+        })}</ol></nav>
         {questions.map((raw, index) => {
           const q = questionDetails(raw, index),
             form = forms[q.id],
@@ -268,7 +293,7 @@ export function QuestionActions({
             (r) => r.question_id === q.id,
           );
           return (
-            <FieldSet key={key} disabled={busy || pending} className="question-form">
+            <FieldSet key={key} ref={element => { questionFields.current[q.id] = element; }} tabIndex={-1} disabled={busy || pending} className="question-form">
               <FieldLegend>
                 {index + 1}. {form?.question || q.label}
               </FieldLegend>
@@ -331,11 +356,11 @@ export function QuestionActions({
                     </FieldLabel></Field>
                   ),
                 )}
-              {form && form.input_type !== "text" && form.recommendation !== undefined && (form.recommendation ? <Collapsible defaultOpen={!conversational}><CollapsibleTrigger className="question-evidence-trigger">추천 이유와 전제 · 모델 안내</CollapsibleTrigger><CollapsibleContent><Alert className="question-recommendation" role="note" aria-label="추천 이유와 전제"><LightbulbIcon size={19} aria-hidden /><AlertTitle>추천 이유 · 모델 안내</AlertTitle><AlertDescription><p>{form.recommendation.option_ids.map(id => form.options.find(option => option.id === id)?.label).filter(Boolean).join(" + ")}</p><p>{form.recommendation.reason}</p>{form.recommendation.assumptions.map((assumption, n) => <p key={n}>추천 전제: {assumption}</p>)}<p className="recommendation-boundary">추천과 전제는 안내입니다. 직접 선택하고 답변을 제출해야 결정됩니다.</p></AlertDescription></Alert></CollapsibleContent></Collapsible> : <p className="question-recommendation-unavailable">현재 정보로는 추천을 정하기 어렵습니다</p>)}
+              {form && form.input_type !== "text" && form.recommendation !== undefined && (form.recommendation ? <Collapsible defaultOpen={!conversational}><CollapsibleTrigger className="question-evidence-trigger">모델 추천 이유와 전제</CollapsibleTrigger><CollapsibleContent><Alert className="question-recommendation" role="note" aria-label="추천 이유와 전제"><LightbulbIcon size={19} aria-hidden /><AlertTitle>모델이 안내한 추천 이유</AlertTitle><AlertDescription><p>{form.recommendation.option_ids.map(id => form.options.find(option => option.id === id)?.label).filter(Boolean).join(" + ")}</p><p>{form.recommendation.reason}</p>{form.recommendation.assumptions.map((assumption, n) => <p key={n}>추천 전제: {assumption}</p>)}<p className="recommendation-boundary">추천과 전제는 안내입니다. 직접 선택하고 답변을 제출해야 결정됩니다.</p></AlertDescription></Alert></CollapsibleContent></Collapsible> : <p className="question-recommendation-unavailable">현재 정보로는 추천을 정하기 어렵습니다</p>)}
               {(!form || form.input_type === "text" || draft.custom) && (
                 <ExpandableTextarea
                   disabled={busy || pending}
-                  label={`${form?.question || q.label}${form ? " · 직접 입력" : ""}`}
+                  label={`${form?.question || q.label}${form ? " 직접 입력" : ""}`}
                   aria-describedby={
                     context ? `question-context-${q.id}` : undefined
                   }
@@ -393,11 +418,7 @@ export function QuestionActions({
       {approval && <RequirementReview key={`${job.id}:${job.execution_id || job.status}`} jobId={job.id} compact onOpen={onRequirementReview || onReview} />}
       {approval && <ChangeReview key={job.id} review={job.change_review} disabled={disabled || job.read_only || (!!job.state?.plan && !onAppendFeedback)} onQuestion={question => {
         if (job.state?.plan) return onAppendFeedback?.(question) ?? false;
-        const value = feedback.trim() ? `${feedback}\n\n${question}` : question;
-        if (value.length > 20000) return false;
-        setFeedback(value); sessionStorage.setItem(prefix + "feedback", value);
-        document.getElementById(`feedback-${job.id}`)?.focus();
-        return true;
+        return appendFeedback(question);
       }} />}
       {!job.state?.plan && controls(<div className="chat-feedback-controls"><label htmlFor={`feedback-${job.id}`}>{job.can_continue ? "추가 요청 내용" : "수정 의견 보내기"}</label>
       <PromptInput

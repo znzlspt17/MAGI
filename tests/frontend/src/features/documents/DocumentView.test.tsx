@@ -37,7 +37,7 @@ it('이모지가 앞에 있는 한국어 근거를 코드 포인트 위치로 �
  const evidence={item_id:'A',section:'architecture',quote,start,end:start+Array.from(quote).length,line:3,shared:false,provenance:'recorded_block'};
  vi.mocked(api).mockResolvedValue({status:'ready',message:'확인',basis:{id:'basis',source_hash:'snapshot'},review_status:'pending_approval',summary:{total:1,spec_linked:1,acceptance_linked:0,verification_linked:0},rows:[{id:'REQ-1',text:'기록 보관',group:'mandatory_requirements',spec_status:'linked',acceptance_status:'unconfirmed',verification_status:'unconfirmed',test_status:'not_collected',specification:[evidence],acceptance:[],verification:[],specification_total:1,acceptance_total:0,verification_total:0}],unlinked:[],unlinked_total:0,total:1,has_more:false,offset:0});
  const view=render(<DocumentView jobId="job" stepId="read" document={{...korean,kind:'candidate'}}/>);
- await screen.findByText('기록 보관');click('architecture · 3행');click('명세 원문 위치로 이동');
+ await screen.findByText('기록 보관');click('architecture 3행');click('명세 원문 위치로 이동');
  expect(view.container.querySelector('mark')?.textContent).toBe(quote);
  expect(view.container.querySelector('pre')?.textContent).toBe(korean.content);
  expect(screen.getByLabelText('선택한 근거의 명세 원문')).toBeTruthy();

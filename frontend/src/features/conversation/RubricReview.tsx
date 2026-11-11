@@ -50,7 +50,7 @@ function ReviewContent({ review }: { review: Review }) {
     <p className={`rubric-reason${descriptionOpen ? "" : " is-clamped"}`}>{review.score_reason}</p>
     <Collapsible open={descriptionOpen} onOpenChange={setDescriptionOpen}>
       <CollapsibleTrigger className="rubric-text-trigger">평가 설명 {descriptionOpen ? "접기" : "보기"}<CaretDownIcon size={14} aria-hidden /></CollapsibleTrigger>
-      <CollapsibleContent><p className="rubric-meta">{stop} · 평가 {review.round}회 · 최고점 후보: {review.selected_cycle}구간 {review.selected_round}회차</p></CollapsibleContent>
+      <CollapsibleContent><div className="rubric-meta magi-meta"><span>{stop}</span><span>평가 {review.round}회</span><span>최고점 후보: {review.selected_cycle}구간 {review.selected_round}회차</span></div></CollapsibleContent>
     </Collapsible>
     {!!review.remaining_issues.length && <div className="rubric-issues"><h4>남은 결함</h4><ul>{review.remaining_issues.map(issue => <li key={issue.issue_id}>
       <div className="rubric-issue-meta"><Badge variant="outline">{severities[issue.severity] || issue.severity}</Badge><span>{issue.issue_id}</span></div>
@@ -70,7 +70,7 @@ function ReviewContent({ review }: { review: Review }) {
           <Collapsible open={expanded === item.rubric_id} onOpenChange={open => setExpanded(open ? item.rubric_id : null)}>
             <CollapsibleTrigger className="rubric-item-trigger"><span className="rubric-item-meta"><Verdict value={item.verdict} /><strong>{item.rubric_id}</strong><span>{item.requirement_id}</span></span><span className="rubric-condition">{item.condition}</span><CaretDownIcon size={16} aria-hidden /></CollapsibleTrigger>
             <CollapsibleContent className="rubric-detail">
-              <p className="rubric-detail-meta">요구사항 {item.requirement_id} · {importance[item.importance]}</p>
+              <p className="rubric-detail-meta magi-meta"><span>요구사항 {item.requirement_id}</span><span>{importance[item.importance]}</span></p>
               <section><h5>평가 조건</h5><p>{item.condition}</p></section>
               <section><h5>판정 사유</h5><p>{item.reason}</p></section>
               <section><h5>요구사항 근거</h5>{item.basis.length ? item.basis.map((basis, index) => <div className="rubric-quote" key={index}><span>{labelReference(basis.reference)}</span><blockquote>{basis.quote}</blockquote></div>) : <p>기록된 요구사항 근거가 없습니다.</p>}</section>

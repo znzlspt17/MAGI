@@ -3,6 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Conversation } from "@/features/conversation/Conversation";
+import { useRef } from "react";
 import type { Job } from "@/shared/types";
 
 vi.mock("@/features/auth/Auth", () => ({ useAuth: () => ({ publicMode: false, user: null, status: {} }) }));
@@ -36,6 +37,34 @@ const proposalJob = (planned: boolean, id = "proposal"): Job => ({ id, status: "
     question_form: { question_id: "C", question: "버전을 지정할까요?", form_version: "v1", input_type: "single_choice",
       options: [{ id: "keep", label: "미정으로 유지" }, { id: "set", label: "버전 지정" }] },
   }] } });
+
+it.each([true, false])("문서의 질문을 현재 의견 초안에 추가해 제출한다 (계획형=%s)", async planned => {
+  sessionStorage.clear();
+  const action = vi.fn().mockResolvedValue(undefined);
+  function Harness() {
+    const append = useRef<((text: string) => boolean) | null>(null);
+    return <><button onClick={() => append.current?.("문서에서 추가한 질문")}>문서 질문 추가</button><Conversation job={proposalJob(planned)} select={vi.fn()} onAction={action} busy={false} appendQuestionRef={append} /></>;
+  }
+  render(<Harness />);
+  await userEvent.click(screen.getByRole("button", { name: "문서 질문 추가" }));
+  const input = screen.getByRole("textbox", { name: planned ? "수정 의견 또는 추가 요청" : "수정 의견 보내기" });
+  expect(input).toHaveValue("문서에서 추가한 질문");
+  await userEvent.click(screen.getByRole("button", { name: planned ? "의견 보내기" : "수정 요청" }));
+  expect(action).toHaveBeenCalledExactlyOnceWith(planned ? "message" : "revise", "문서에서 추가한 질문");
+});
+
+it("답변 대기 중 문서 질문을 추가하면 접힌 의견 입력을 열고 초점을 이동한다", async () => {
+  sessionStorage.clear();
+  function Harness() {
+    const append = useRef<((text: string) => boolean) | null>(null);
+    return <><button onClick={() => append.current?.("확인이 필요한 명세")}>문서 질문 추가</button><Conversation job={{ id: "waiting-question", status: "NEEDS_USER_INPUT", state: { blocking_questions: ["[Q] 대상"], plan: { goal: "확인" }, allowed_actions: ["message"] } }} select={vi.fn()} onAction={vi.fn()} busy={false} appendQuestionRef={append} /></>;
+  }
+  render(<Harness />);
+  await userEvent.click(screen.getByRole("button", { name: "문서 질문 추가" }));
+  const input = screen.getByRole("textbox", { name: "수정 의견 또는 추가 요청" });
+  expect(input).toHaveValue("확인이 필요한 명세");
+  expect(input).toHaveFocus();
+});
 
 it.each([true, false])("계획형=%s 제안 답변은 보이는 초안에 추가하고 하단 전송에서만 제출한다", async planned => {
   sessionStorage.clear();

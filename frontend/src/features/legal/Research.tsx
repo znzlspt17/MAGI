@@ -17,13 +17,12 @@ export function Research() {
   return <main className="research-page">
     <a className="brand" href="/">MAGI</a>
     <header className="research-header">
-      <span className="eyebrow">RESEARCH & APPLICATION</span>
       <h1><BookOpenIcon weight="duotone" size={32} aria-hidden />연구 출처 및 적용 방식</h1>
       <p className="research-lead">작업별 루브릭을 이용한 명세 검토와 반복 개선</p>
       <p>이 보고서는 MAGI가 RubricRefine의 어떤 절차를 참고했는지, 명세 작성에 맞춰 무엇을 바꿨는지, 현재 무엇까지 확인할 수 있는지를 설명합니다.</p>
       <div className="research-source"><p lang="en"><cite>RubricRefine: Improving Tool-Use Agent Reliability with Training-Free Pre-Execution Refinement</cite></p>
         <p lang="en">Will LeVine, Brendan Raffel Evers, Sam Saltwick, Abhay Venkatesh</p>
-        <p>2026년 · arXiv:2605.09730v5</p>
+        <dl className="research-source-meta"><div><dt>발행 연도</dt><dd>2026년</dd></div><div><dt>논문 식별자</dt><dd>arXiv:2605.09730v5</dd></div></dl>
         <a href={paper} target="_blank" rel="noreferrer">논문 원문 보기 (v5, 새 창)</a>
       </div>
     </header>
@@ -151,7 +150,7 @@ export function Research() {
         <dt>정체 허용 횟수</dt><dd>최고점을 개선하지 못한 평가가 연속 몇 번 발생하면 종료할지를 정하는 값입니다.</dd>
         <dt>후보 해시</dt><dd>검토·승인하려는 문서의 내용이 같은지 확인하는 식별값입니다.</dd></dl>
       <h3>참고문헌</h3><p lang="en"><cite>LeVine, W., Evers, B. R., Saltwick, S., &amp; Venkatesh, A. (2026). RubricRefine: Improving Tool-Use Agent Reliability with Training-Free Pre-Execution Refinement.</cite> arXiv:2605.09730v5.</p>
-      <p><a href={`${paper}#S3`} target="_blank" rel="noreferrer">논문 3절: 방법</a> · <a href={`${paper}#S4`} target="_blank" rel="noreferrer">4절: 실험</a> · <a href={`${paper}#A4`} target="_blank" rel="noreferrer">부록 D: 알고리즘</a> · <a href={`${paper}#A5`} target="_blank" rel="noreferrer">부록 E: 프롬프트</a></p>
+      <nav className="research-references" aria-label="원 논문 참고 링크"><a href={`${paper}#S3`} target="_blank" rel="noreferrer">논문 3절: 방법</a><a href={`${paper}#S4`} target="_blank" rel="noreferrer">4절: 실험</a><a href={`${paper}#A4`} target="_blank" rel="noreferrer">부록 D: 알고리즘</a><a href={`${paper}#A5`} target="_blank" rel="noreferrer">부록 E: 프롬프트</a></nav>
       <h3>구현 대응표</h3><p>아래 이름은 이 보고서의 설명을 코드 책임과 대조하기 위한 모듈 이름입니다. 운영 환경의 데이터 위치를 나타내지 않습니다.</p>
       <div className="research-table" role="region" aria-label="구현 대응 표 스크롤 영역" tabIndex={0}><table><caption>구현 대응표</caption><thead><tr><th scope="col">구현 모듈</th><th scope="col">담당</th></tr></thead><tbody>
         <tr><th scope="row"><code>rubric</code></th><td>기준 생성·검증, 평가 연결과 점수 상한 검증</td></tr>

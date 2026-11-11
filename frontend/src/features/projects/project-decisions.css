@@ -34,3 +34,6 @@ body:has(.pd-dialog) [data-slot=dialog-overlay] { position: fixed; inset: 0; z-i
 .project-decisions [data-slot=alert], .pd-dialog [data-slot=alert] { margin: .8rem 0; padding: .8rem; background: var(--color-secondary); border-radius: var(--radius-md); }
 .pd-skeleton { display: block; height: 5rem; margin: .8rem 0; background: var(--color-secondary); border-radius: var(--radius-md); }
 @media (max-width: 760px) { .pd-controls { align-items: stretch; flex-direction: column; } .pd-controls [data-slot=native-select-wrapper], .pd-controls select { width: 100%; } .pd-dialog { padding: 1rem; } .pd-dialog [data-slot=dialog-footer] > button { width: 100%; } }
+.pd-evidence-meta, .pd-counts { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.pd-evidence-meta { color: #525252; font-size: 12px; }
+.pd-count { color: #525252; font-variant-numeric: tabular-nums; }

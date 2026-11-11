@@ -62,13 +62,14 @@ it("25개 단위로 페이지를 나누고 페이지 이동·새로고침 시 �
   mount(); const table = await screen.findByRole("table");
   expect(within(table).getAllByRole("checkbox")).toHaveLength(25);
   fireEvent.click(screen.getByLabelText("현재 페이지 전체 선택"));
-  expect(screen.getByText("검색 결과 27개 · 선택 25개")).toBeTruthy();
+  expect(screen.getByText("검색 결과 27개")).toBeTruthy();
+  expect(screen.getByText("선택 25개")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "다음" }));
   expect(within(table).getAllByRole("checkbox")).toHaveLength(2);
-  expect(screen.getByText("검색 결과 27개 · 선택 0개")).toBeTruthy();
+  expect(screen.getByText("선택 0개")).toBeTruthy();
   fireEvent.click(screen.getByLabelText("현재 페이지 전체 선택"));
   fireEvent.click(screen.getByRole("button", { name: "목록 새로고침" }));
-  await waitFor(() => expect(screen.getByText("검색 결과 27개 · 선택 0개")).toBeTruthy());
+  await waitFor(() => expect(screen.getByText("선택 0개")).toBeTruthy());
 });
 it("직접 링크의 상세·빈 탭·닫기 동작과 다른 쿼리 매개변수를 유지한다", async () => {
   mount("/admin/data?job_id=recent&keep=1");
@@ -104,7 +105,7 @@ it("선택한 작업만 미리보고 전체 삭제의 확인 문구와 복구 �
   expect(post).toHaveBeenCalledWith("/api/admin/cleanup/preview", { scope: "jobs", ids: ["recent"] });
   fireEvent.click(screen.getByRole("button", { name: "취소" }));
   vi.mocked(post).mockResolvedValueOnce({ id: "all-preview", scope: "all", counts: { jobs: 3 } });
-  fireEvent.click(screen.getByText("위험 작업 · 전체 기록 삭제"));
+  fireEvent.click(screen.getByText("전체 기록 삭제"));
   fireEvent.click(screen.getByRole("button", { name: "전체 기록 삭제 미리보기" }));
   const confirm = await screen.findByRole("dialog", { name: "영구 삭제 확인" });
   expect(within(confirm).getByRole<HTMLButtonElement>("button", { name: "영구 삭제" }).disabled).toBe(true);
@@ -113,6 +114,6 @@ it("선택한 작업만 미리보고 전체 삭제의 확인 문구와 복구 �
   vi.mocked(post).mockResolvedValueOnce({ state: "completed" });
   fireEvent.click(within(confirm).getByRole("button", { name: "영구 삭제" }));
   await waitFor(() => expect(post).toHaveBeenCalledWith("/api/admin/cleanup/execute", { id: "all-preview", confirmation: "전체 기록 삭제" }));
-  fireEvent.click(await screen.findByRole("button", { name: "남은 파일 정리 재시도 · pending" }));
+  fireEvent.click(await screen.findByRole("button", { name: "남은 파일 정리 재시도 pending" }));
   await waitFor(() => expect(post).toHaveBeenCalledWith("/api/admin/cleanup/execute", { id: "pending", confirmation: "" }));
 });

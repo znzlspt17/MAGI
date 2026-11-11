@@ -23,8 +23,8 @@ it("모델 호출 요약을 키보드로 열어 단계별 설정과 추론 사�
   expect(toggle).toHaveAttribute("aria-expanded", "true");
   expect(screen.getByText((_, element) => element?.textContent === malicious, { selector: "p" })).toBeVisible();
   expect(document.querySelector("img")).toBeNull();
-  expect(screen.getByText(/입력 42 · 출력 17 · 추론 0/)).toBeVisible();
-  expect(screen.getByText(/입력 알 수 없음 · 출력 알 수 없음 · 추론 알 수 없음/)).toBeVisible();
+  expect(screen.getByText("입력 42 토큰")).toBeVisible(); expect(screen.getByText("출력 17 토큰")).toBeVisible(); expect(screen.getByText("추론 0 토큰")).toBeVisible();
+  expect(screen.getByText("입력 알 수 없음 토큰")).toBeVisible(); expect(screen.getByText("출력 알 수 없음 토큰")).toBeVisible(); expect(screen.getByText("추론 알 수 없음 토큰")).toBeVisible();
   expect(screen.getByText(/요약 일부가 생략되었습니다/)).toBeVisible();
   expect(screen.getByText("요약 미제공")).toBeVisible();
   expect(screen.getByText(/2회차/)).toBeVisible();
@@ -46,7 +46,7 @@ it("명세 생성 안의 검토 기준 실패와 보정 횟수를 기본 화면�
   expect(screen.getByText(/실패 단계:/).parentElement).toHaveTextContent("검토 기준 생성");
   expect(screen.getByText(/검토 기준의 근거 인용을 확정 요구사항에서 찾지 못했습니다/)).toBeVisible();
   expect(screen.getByText("요구사항 참조: REQ-1")).toBeVisible();
-  expect(screen.getByText(/검증 4회 · 자동 보정 3회/)).toBeVisible();
+  expect(screen.getByText("검증 4회")).toBeVisible(); expect(screen.getByText("자동 보정 3회")).toBeVisible();
   expect(screen.queryByText("상세 결과 기록 없음")).not.toBeInTheDocument();
 });
 
@@ -54,7 +54,7 @@ it("불완전한 과거 보정 기록의 횟수를 추측하지 않는다", () =
   render(<StepResult node={{ id: "failed", status: "failed" }} detail={{ result: { diagnostic: {
     attempts: [{ attempt: 2 }],
   } } }} />);
-  expect(screen.queryByText(/검증 \d+회 · 자동 보정/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/자동 보정 \d+회/)).not.toBeInTheDocument();
   expect(screen.getByText(/검증 및 자동 보정 횟수를 확인할 수 없습니다/)).toBeVisible();
 });
 
@@ -79,8 +79,8 @@ it("루브릭 생성 상태와 항목별 판정 집계를 표시한다", () => {
   render(<StepResult node={{ id: "review", stage: "checklist_critic" }} detail={{ result: {
     rubric_summary: { status: "evaluated", policy_version: 1, item_count: 4, PASS: 2, FAIL: 1, UNDETERMINED: 1 },
   } }} />);
-  expect(screen.getByText("검사 기준 4개 · 평가 완료")).toBeVisible();
-  expect(screen.getByText("충족 2 · 미충족 1 · 판단 불가 1")).toBeVisible();
+  expect(screen.getByText("검사 기준 4개")).toBeVisible(); expect(screen.getByText("평가 완료")).toBeVisible();
+  expect(screen.getByText("충족 2")).toBeVisible(); expect(screen.getByText("미충족 1")).toBeVisible(); expect(screen.getByText("판단 불가 1")).toBeVisible();
 });
 
 it("작업 계획의 목표·판단 근거·대상·예상 결과를 표시한다", () => {
@@ -91,7 +91,7 @@ it("작업 계획의 목표·판단 근거·대상·예상 결과를 표시한�
   expect(screen.getByText("이미 확인한 답변을 반영합니다.")).toBeVisible();
   expect(screen.getByText("보스 격파 후 무기 유지")).toBeVisible();
   expect(screen.getByText("수정된 초안")).toBeVisible();
-  expect(screen.getByText("기존 답변 반영 · 예정")).toBeVisible();
+  expect(screen.getByText("기존 답변 반영")).toBeVisible(); expect(screen.getByText("예정")).toBeVisible();
 });
 
 it("과거 계획 기록이 없는 경우 명시하고 해결 판단의 다음 행동을 표시한다", () => {

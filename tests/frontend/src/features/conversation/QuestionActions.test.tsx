@@ -16,6 +16,15 @@ const forms: Record<string, QuestionForm>={
 const job=(id='first'):Job=>({id,status:'NEEDS_USER_INPUT',state:{blocking_questions:['[S] 운영체제','[M] 기능','[T] 추가 설명'],question_forms:forms,saved_answers:[]}});
 const group=(name:string)=>within(screen.getByRole('group',{name:new RegExp(name)}));
 describe('질문 답변',()=>{
+ it('질문 탐색에서 작성 여부를 확인하고 선택한 질문으로 이동한다',()=>{
+  render(<QuestionActions job={job()} onAction={vi.fn()} busy={false}/>);
+  expect(screen.getByRole('button',{name:'질문 1 미작성'})).toBeTruthy();
+  expect(screen.getByRole('button',{name:'질문 2 미작성'})).toBeTruthy();
+  fireEvent.click(group('운영체제').getByRole('radio',{name:'Windows'}));
+  expect(screen.getByRole('button',{name:'질문 1 작성됨'})).toBeTruthy();
+  fireEvent.click(screen.getByRole('button',{name:'질문 2 미작성'}));
+  expect(screen.getByRole('group',{name:/기능/})).toBe(document.activeElement);
+ });
  it('훼손된 저장 초안을 무시하고 기존 답변을 복원한다',()=>{
   sessionStorage.setItem('draft:owner:first:S:S-v1',JSON.stringify({ids:42,custom:false,text:{}}));
   const current=job();
@@ -52,7 +61,7 @@ describe('질문 답변',()=>{
    id:'C',change:'modified',before:null,after:null,status:'unanalysed',reason:'analysis_failed',question:'다른 기기에서도 이어서 볼까요?'}]}};
   render(<QuestionActions job={value} onAction={action} busy={false}/>);
   expect((screen.getByRole('button',{name:'이 명세 승인'}) as HTMLButtonElement).disabled).toBe(false);
-  fireEvent.change(screen.getByRole('textbox',{name:'다른 기기에서도 이어서 볼까요? · 직접 입력'}),{target:{value:'기기별로 분리'}});
+  fireEvent.change(screen.getByRole('textbox',{name:'다른 기기에서도 이어서 볼까요? 직접 입력'}),{target:{value:'기기별로 분리'}});
   fireEvent.click(screen.getByRole('button',{name:'답변을 수정 의견에 추가'}));
   expect((screen.getByRole('textbox',{name:'수정 의견 보내기'}) as HTMLTextAreaElement).value).toBe('확인 제안: 다른 기기에서도 이어서 볼까요?\n답변: 기기별로 분리');
   expect(action).not.toHaveBeenCalled();

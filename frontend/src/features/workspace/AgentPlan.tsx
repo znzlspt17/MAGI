@@ -18,7 +18,7 @@ export function AgentPlan({ job, onDocument }: { job: Job; onDocument?: (stepId:
   if (!state || !plan?.goal) return null;
   const results = state.task_results || [];
   return <Collapsible className="agent-plan" defaultOpen={["running", "queued"].includes(job.status)}>
-    <CollapsibleTrigger className="agent-plan-trigger">현재 계획 · {plan.goal}</CollapsibleTrigger>
+    <CollapsibleTrigger className="agent-plan-trigger"><span>현재 계획</span><span>{plan.goal}</span></CollapsibleTrigger>
     <CollapsibleContent className="agent-plan-body">
       <p><strong>{actionLabels[plan.action || ""] || "다음 작업 확인"}</strong></p>
       <p>{plan.reason}</p>
@@ -37,9 +37,9 @@ export function AgentPlan({ job, onDocument }: { job: Job; onDocument?: (stepId:
       </div> : <p>저장된 상세 중단 진단이 없습니다.</p>)}
       {state.wait_reason && <p role="status">{state.wait_reason}</p>}
       {!!results.length && <details><summary>수행한 작업과 근거</summary><ol>{results.map((result, index) => <li key={index}>
-        {actionLabels[result.action] || result.action} · 변경 {result.revision + 1} · {result.status === "reused" ? "이전 결과 재사용" : result.action === "interview" ? "확인 작업 완료 · 결정 해결 여부는 질문 상태 참조" : "작업 완료"}<p>{result.reason}</p>
+        <div className="magi-meta"><span className="magi-meta-item">{actionLabels[result.action] || result.action}</span><span className="magi-meta-item">변경 {result.revision + 1}</span><span className="magi-meta-item">{result.status === "reused" ? "이전 결과 재사용" : result.action === "interview" ? "확인 작업 완료, 결정 여부는 질문 상태 참조" : "작업 완료"}</span></div><p>{result.reason}</p>
       </li>)}</ol></details>}
-      {!!state.document_versions?.length && <p>명세 버전 {state.document_versions.length}개 · 최신 변경 {(state.revision || 0) + 1}</p>}
+      {!!state.document_versions?.length && <div className="magi-meta"><span>명세 버전 {state.document_versions.length}개</span><span>최신 변경 {(state.revision || 0) + 1}</span></div>}
       {onDocument && state.document_versions?.map((version, index) => version.step_id &&
         <Button key={`${index}:${version.hash}`} onClick={() => onDocument(version.step_id!)}>명세 버전 {index + 1} 열기</Button>)}
     </CollapsibleContent>

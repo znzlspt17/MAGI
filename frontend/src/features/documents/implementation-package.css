@@ -1,5 +1,5 @@
-.implementation-package { position: fixed; z-index: 90; top: 50%; left: 50%; transform: none; translate: -50% -50%; width: min(640px, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow: auto; padding: 1.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-xl); background: var(--color-popover); color: var(--color-popover-foreground); box-shadow: 0 20px 60px #26243430; }
-body:has(.implementation-package) [data-slot=dialog-overlay] { position: fixed; inset: 0; z-index: 89; background: #26243455; }
+.implementation-package { position: fixed; z-index: 90; top: 50%; left: 50%; transform: none; translate: -50% -50%; width: min(640px, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow: auto; padding: 1.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-xl); background: var(--color-popover); color: var(--color-popover-foreground); box-shadow: 0 20px 60px #17171730; }
+body:has(.implementation-package) [data-slot=dialog-overlay] { position: fixed; inset: 0; z-index: 89; background: #17171755; }
 .implementation-package [data-slot=dialog-header] { display: grid; gap: .5rem; padding-right: 2rem; margin-bottom: 1rem; }
 .implementation-package [data-slot=dialog-title] { margin: 0; font-size: 1.2rem; }
 .implementation-package [data-slot=dialog-description], .package-note { color: var(--color-muted-foreground); line-height: 1.7; font-size: .85rem; }

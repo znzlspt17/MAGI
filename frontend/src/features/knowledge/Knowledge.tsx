@@ -54,7 +54,6 @@ export default function Knowledge({
     >
       <header className="section-heading">
         <div>
-          <span className="eyebrow">KNOWLEDGE</span>
           <h2 id="knowledge-title"><GraphIcon weight="duotone" size={26} aria-hidden />
             {admin ? "프로젝트 지식 그래프" : "결정과 명세 지식 그래프"}
           </h2>
@@ -78,7 +77,7 @@ export default function Knowledge({
               <option value="">프로젝트 선택</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name} · {p.id.slice(0, 8)}
+                  {p.name} (식별자 {p.id.slice(0, 8)})
                 </option>
               ))}
             </select>
@@ -114,7 +113,7 @@ export default function Knowledge({
             <option value="">전체 세션</option>
             {sessions.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.request || "대화 세션"} · {s.id.slice(0, 8)}
+                {s.request || "대화 세션"} (식별자 {s.id.slice(0, 8)})
               </option>
             ))}
           </select>
@@ -252,12 +251,17 @@ export default function Knowledge({
           </button>
         )}
       </div>
-      <p id="knowledge-notice" role="status" aria-live="polite">
-        {notice ||
-          (busy
-            ? "조회 중…"
-            : `화면 ${display.nodes.length}개 (명세 묶음 ${display.nodes.filter((n) => n.virtual).length}개) · 조회 항목 ${display.rawCount}개 · 실제 관계 ${display.rawEdges}개${graph.has_more ? " · 100개 제한으로 일부 표시" : ""}${display.rawCount && !display.rawEdges ? " · 현재 범위에 관계 없음" : ""}${results ? " · 검색 " + results.length + "개" : ""}`)}
-      </p>
+      <div id="knowledge-notice" role="status" aria-live="polite">
+        {notice || (busy ? "조회 중…" : <div className="graph-counts">
+          <span>화면 항목 <strong>{display.nodes.length}개</strong></span>
+          <span>명세 묶음 <strong>{display.nodes.filter((n) => n.virtual).length}개</strong></span>
+          <span>조회 항목 <strong>{display.rawCount}개</strong></span>
+          <span>실제 관계 <strong>{display.rawEdges}개</strong></span>
+          {results && <span>검색 결과 <strong>{results.length}개</strong></span>}
+          {graph.has_more && <span>100개 제한으로 일부 표시</span>}
+          {!!display.rawCount && !display.rawEdges && <span>현재 범위에 관계 없음</span>}
+        </div>)}
+      </div>
       <div className="react-graph-workspace">
         <KnowledgeGraph
           display={display}
@@ -291,10 +295,10 @@ export default function Knowledge({
           <aside
             id="knowledge-list"
             className="knowledge-drawer results-drawer"
-            aria-label="지식 항목 · 검색 결과"
+            aria-label="지식 항목과 검색 결과"
           >
             <header>
-              <strong>지식 항목 · 검색 결과</strong>
+              <strong>지식 항목과 검색 결과</strong>
               <button
                 id="graph-list-close"
                 aria-label="목록 닫기"
@@ -307,7 +311,7 @@ export default function Knowledge({
               {(results || graph.nodes).map((n) => (
                 <li key={n.id}>
                   <button onClick={() => void showNode(n.id)}>
-                    {kinds[n.kind] || n.kind} · {n.body.slice(0, 90)}
+                    <span className="graph-result-kind">{kinds[n.kind] || n.kind}</span><span>{n.body.slice(0, 90)}</span>
                   </button>
                   {n.matches?.map((m, i) => (
                     <blockquote key={i}>{m.quote}</blockquote>
@@ -361,8 +365,8 @@ export default function Knowledge({
               ) : (
                 selected && (
                   <>
-                    <h3>
-                      {kinds[selected.kind]} ·{" "}
+                    <h3 className="graph-detail-heading">
+                      <span>{kinds[selected.kind]}</span><span>
                       {selected.active === false
                         ? "대체된 항목"
                         : (
@@ -371,7 +375,7 @@ export default function Knowledge({
                               proposed: "LLM 제안",
                               assumption: "가정",
                             } as Record<string, string>
-                          )[selected.attrs?.status || ""] || "현재 항목"}
+                          )[selected.attrs?.status || ""] || "현재 항목"}</span>
                     </h3>
                     {selected.attrs?.origin === "demo" && (
                       <p>데모 실행에서 가져온 자료입니다.</p>
@@ -427,7 +431,7 @@ export default function Knowledge({
                             <li key={e.id || i}>
                               <button onClick={() => void showNode(other)}>
                                 {e.source === selected.id ? "→" : "←"}{" "}
-                                {edgeLabels[e.kind] || e.kind} ·{" "}
+                                <span className="graph-result-kind">{edgeLabels[e.kind] || e.kind}</span>{" "}
                                 {(
                                   e.other_body ||
                                   display.originals.get(other)?.body ||
@@ -468,9 +472,9 @@ export default function Knowledge({
             </span>
           ))}
         </div>
-        <p id="graph-relation" role="status">
-          {relation}
-        </p>
+        <div id="graph-relation" className="graph-hints" role="status">
+          {relation ? <span>{relation}</span> : <><span>끌어서 이동</span><span>휠로 확대</span><span><kbd>Esc</kbd> 선택 해제</span></>}
+        </div>
         <div className="button-row">
           <button
             id="graph-zoom-in"

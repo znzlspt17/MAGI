@@ -23,7 +23,7 @@ describe("승인 전 변경 검토", () => {
     fireEvent.click(detail.querySelector("summary")!);
     expect(within(detail).getByText("Store per account.")).toBeTruthy();
     expect(within(detail).getByText("Store per device.")).toBeTruthy();
-    expect(within(detail).getAllByText("## Storage · 3행")).toHaveLength(2);
+    expect(within(detail).getAllByText("## Storage")).toHaveLength(2); expect(within(detail).getAllByText("3행")).toHaveLength(2);
   });
 
   it("질문은 수정 의견으로 연결하고 표현 변경은 접어 둔다", () => {
@@ -31,7 +31,7 @@ describe("승인 전 변경 검토", () => {
     render(<ChangeReview review={{ ...review, changes: [change, { ...change, id: "W", meaning: "wording", question: "" }] }} onQuestion={select} />);
     const button = screen.getByRole("button", { name: "답변을 수정 의견에 추가" });
     expect((button as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByRole("textbox", { name: `${change.question} · 직접 입력` }), { target: { value: "기기별로 분리해주세요." } });
+    fireEvent.change(screen.getByRole("textbox", { name: `${change.question} 직접 입력` }), { target: { value: "기기별로 분리해주세요." } });
     fireEvent.click(button);
     expect(select).toHaveBeenCalledWith(`확인 제안: ${change.question}\n답변: 기기별로 분리해주세요.`);
     expect(screen.getByText("표현만 달라진 내용 1건").closest("details")?.open).toBe(false);

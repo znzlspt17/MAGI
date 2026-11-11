@@ -11,6 +11,14 @@ const connection = { id: "one", name: "문서 서버", url: "https://example.tes
   tools: [{ name: "search", description: "문서 검색", read_only_hint: true, destructive_hint: false, enabled: true, schema_changed: false, available: true, disabled_reason: null },
     { name: "write", description: "쓰기", read_only_hint: false, destructive_hint: true, enabled: false, schema_changed: false, available: false, disabled_reason: "읽기 전용 아님" }] };
 
+it("연결 활성 여부와 연결 상태를 각각 확인할 수 있다", async () => {
+  vi.mocked(api).mockResolvedValue({ connections: [connection] });
+  render(<McpSettings />);
+  await screen.findByText("문서 서버");
+  expect(screen.getByText("비활성")).toBeTruthy();
+  expect(screen.getByText("연결됨")).toBeTruthy();
+});
+
 it("등록된 조회 도구만 선택할 수 있고 활성 연결 적용 범위를 표시한다", async () => {
   vi.mocked(api).mockResolvedValue({ connections: [connection] });
   render(<McpSettings />);

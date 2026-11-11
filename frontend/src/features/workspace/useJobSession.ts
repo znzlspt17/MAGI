@@ -2,7 +2,7 @@ import { decodeStepDetail, type StepDetail } from "../execution/execution-detail
 import { decodeJob, decodeJobs } from "./job-response";
 import { decodeEvent } from "./event-response";
 import { applyProgress, type ProgressState } from "./progress-state";
-import { automaticStep } from "../execution/step-selection";
+import { automaticStep, currentDocumentStep } from "../execution/step-selection";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/Auth";
@@ -49,6 +49,7 @@ export function useJobSession() {
   const [deletedIds, setDeletedIds] = useState<{ owner?: string; ids: string[] }>({ ids: [] });
   selected.current = id;
   const views = useRef(new Map<string, { step: string; tab: string; manual: boolean }>());
+  const openedJobs = useRef(new Set<string>());
   const refresh = useCallback(() => setRevision(value => value + 1), []);
   const jobs = useResource<Job[]>("/api/jobs", revision, auth.user?.id, auth.setNotice, decodeJobs);
   const current = useResource<Job>(id ? `/api/jobs/${encodeURIComponent(id)}` : undefined, revision, auth.user?.id, auth.setNotice, decodeJob);
@@ -77,6 +78,7 @@ export function useJobSession() {
 
   useEffect(() => {
     views.current.clear();
+    openedJobs.current.clear();
   }, [auth.user?.id]);
   useEffect(() => {
     const saved = id ? views.current.get(id) : undefined;
@@ -86,11 +88,19 @@ export function useJobSession() {
   }, [id]);
   useEffect(() => {
     if (!id || job?.id !== id) return;
+    // 2026-11-09: 처음 열린 승인 후보만 문서로 안내하고 이후 사용자 선택은 실시간 갱신이 덮지 않는다.
+    if (!openedJobs.current.has(id)) {
+      openedJobs.current.add(id);
+      const initialStatus = job.state?.status || job.status;
+      if (!views.current.has(id) && ["PASS_PENDING_USER_APPROVAL", "waiting_approval", "FINALIZED"].includes(initialStatus) && currentDocumentStep(job)) setTab("document");
+    }
     const requested = new URLSearchParams(location.search).get("completed_id");
     if (requested && !manual.current && nodes.some(item => item.id === requested)) {
       manual.current = true; setStep(requested); setTab("document");
     } else if (!manual.current || !nodes.some(item => item.id === step)) {
-      setStep(automaticStep(nodes, job.status === "error" ? job.status : job.state?.status || job.status));
+      const status = job.status === "error" ? job.status : job.state?.status || job.status;
+      const current = currentDocumentStep(job);
+      setStep(["PASS_PENDING_USER_APPROVAL", "waiting_approval", "FINALIZED"].includes(status) && current ? current : automaticStep(nodes, status));
     }
     if (!["queued", "running"].includes(job.status) && ["작업을 대기열에 넣었습니다.", "새 작업을 대기열에 넣었습니다."].includes(auth.notice)) auth.setNotice("");
   }, [id, job, location.search]);

@@ -16,11 +16,11 @@ it("문서 상태와 실제 테스트를 분리하고 인용·수정 의견·전
   render(<RequirementReview jobId="job" stepId="step" sourceHash="source" onLocate={locate} onQuestion={question} />);
   await screen.findByText("사용자별 기록 격리");
   expect(screen.getByText("명세 근거 연결 1/25")).toBeTruthy();
-  expect(screen.getByText("명세 문서 검토 통과 · 사용자 승인 대기")).toBeTruthy();
+  expect(screen.getByText("검토를 마친 명세의 승인 대기")).toBeTruthy();
   expect(screen.getByText("결과 미수집", { exact: true })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "수정 의견에 추가" }));
   expect(question).toHaveBeenCalledWith(expect.stringContaining("REQ-001"));
-  fireEvent.click(screen.getByRole("button", { name: "architecture · 3행" }));
+  fireEvent.click(screen.getByRole("button", { name: "architecture 3행" }));
   fireEvent.click(screen.getByRole("button", { name: "명세 원문 위치로 이동" }));
   expect(locate).toHaveBeenCalledWith(evidence);
   fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
@@ -68,7 +68,7 @@ it("이전 작업의 늦은 응답이 새 선택을 덮지 않는다", async () 
 it("자료 부족·기준 불일치·조회 실패·재시도를 구분한다", async () => {
   vi.mocked(api).mockResolvedValueOnce({ ...report, status: "limited" }).mockResolvedValueOnce(report).mockRejectedValueOnce(new Error("조회 실패"));
   const view = render(<RequirementReview jobId="old" />);
-  await screen.findByText(/요구사항별 연결 자료 부족/);
+  await screen.findByText(/요구사항별 연결 자료가 부족/);
   view.rerender(<RequirementReview jobId="new" sourceHash="different" />);
   await screen.findByText(/기준 문서가 다릅니다/);
   fireEvent.click(screen.getByRole("button", { name: "근거표 다시 조회" }));
@@ -88,7 +88,7 @@ it("부모 화면이 갱신돼도 펼친 근거와 인용을 유지한다", asyn
   await screen.findByText("사용자별 기록 격리");
   fireEvent.click(screen.getByRole("button", { name: "REQ-001 연결 근거 전체 보기" }));
   await waitFor(() => expect(document.querySelector(".rr-evidence")).toBeTruthy());
-  fireEvent.click(within(document.querySelector(".rr-evidence") as HTMLElement).getByRole("button", { name: "architecture · 3행" }));
+  fireEvent.click(within(document.querySelector(".rr-evidence") as HTMLElement).getByRole("button", { name: "architecture 3행" }));
   await screen.findByRole("dialog");
   const calls = vi.mocked(api).mock.calls.length;
   view.rerender(<RequirementReview jobId="job" onLocate={() => {}} />);

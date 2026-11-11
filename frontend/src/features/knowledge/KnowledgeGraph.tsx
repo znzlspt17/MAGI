@@ -153,7 +153,7 @@ export default function Graph({
     cy.on("tap", "edge", (e) => {
       const d = e.target.data();
       callbacks.current.onRelation(
-        `${e.target.source().data("label")} → ${edgeLabels[d.kind] || d.kind} → ${e.target.target().data("label")} · ${d.count}개 실제 관계`,
+        `${e.target.source().data("label")}에서 ${e.target.target().data("label")}까지 ${edgeLabels[d.kind] || d.kind} 관계 ${d.count}개`,
       );
     });
     cy.on("tap", (e) => {
