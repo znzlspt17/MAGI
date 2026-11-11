@@ -165,6 +165,7 @@ Stack에서 입력받는 나머지 변수는 다음과 같습니다.
 | `PUBLIC_ORIGIN` | 공개 HTTPS origin |
 | `OPENAI_API_KEY`, `GOOGLE_OAUTH_ID`, `GOOGLE_OAUTH_SECRET` | 모델·로그인 인증 설정 |
 | `SUBJECT_PEPPER`, `INTERNAL_KEY` | 기존 계정 식별·내부 인증 설정 |
+| `MAGI_MCP_ENCRYPTION_KEY` | MCP 연결 사용 시 필요한 Fernet 암호화 키. backend에 전달하며 기존 인증정보 복구를 위해 안전하게 보관 |
 | `DB_NAME`, `DB_USER`, `DB_PASSWORD` | 기존 전용 DB와 서비스 계정 |
 | `RABBITMQ_USER`, `RABBITMQ_PASSWORD` | RabbitMQ 초기 전용 계정. backend·gateway에도 같은 값을 주입 |
 | `DB_SSLMODE` | Compose 기본값 `disable` |

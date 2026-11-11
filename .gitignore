@@ -18,6 +18,11 @@ build/
 .vscode/
 .idea/
 .codex/
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+/docs/MAGI_DESIGN_SYSTEM.ko.md
+/tests/frontend/qa/README.md
 
 # 비밀 설정과 인증 자료
 .env
@@ -111,3 +116,4 @@ desktop.ini
 /sites
 docs/UI_UX_AUDIT.ko.md
 docs/LOGGING.ko.md
+tests/frontend/qa/README.md
