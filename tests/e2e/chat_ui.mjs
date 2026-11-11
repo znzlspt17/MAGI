@@ -43,6 +43,8 @@ try {
  let revision=0;
  const refresh=()=>page.evaluate(({job,revision})=>window.__sockets.find(socket=>socket.readyState===1).emit({event:'job.snapshot',job_id:job.id,revision,server_time:new Date().toISOString(),job}),{job:structuredClone(job),revision:++revision});
  await page.goto(process.argv[3]+'/jobs/'+id);
+ await page.waitForFunction(()=>document.querySelector('[role="tab"][aria-selected="true"]')?.textContent.includes('명세'));
+ await page.getByRole('tab',{name:'대화',exact:true}).click();
  await page.getByRole('button',{name:'이어서 요청하기',exact:true}).waitFor();
  assert.equal(await page.getByRole('tab',{name:'대화',exact:true}).getAttribute('aria-selected'),'true');
  assert.equal(await page.getByRole('tab',{name:'실행 이력',exact:true}).count(),0);
@@ -85,7 +87,7 @@ try {
  await input.fill('문서 탭에 다녀와도 유지되는 초안');
  await page.locator('.chat-turn.magi').first().getByRole('button',{name:'이 시점의 명세 열기'}).click();
  await page.getByRole('heading',{name:'이전 명세',exact:true}).waitFor();
- assert.equal(await page.locator('#job-actions').count(),0,'과거 문서에는 승인·수정 폼을 두지 않는다.');
+ assert.equal(await page.locator('#job-actions').isVisible(),false,'과거 문서에는 승인·수정 폼을 보여주지 않는다.');
  events.at(-1).summary+='\n백그라운드 갱신';await refresh();
  await page.getByRole('heading',{name:'이전 명세',exact:true}).waitFor();
  assert.equal(await page.getByRole('tab',{name:'명세',exact:true}).getAttribute('aria-selected'),'true');
@@ -93,7 +95,7 @@ try {
  await page.getByRole('textbox',{name:'추가 요청 내용'}).waitFor();
  await page.getByRole('navigation',{name:'작업 기록'}).getByRole('link').filter({hasText:'오프라인 메모'}).click();
  await page.getByRole('heading',{name:'이전 명세',exact:true}).waitFor();
- await page.getByRole('button',{name:'대화에서 답변하기'}).click();
+ await page.getByRole('tab',{name:'대화',exact:true}).click();
  assert.equal(await input.inputValue(),'문서 탭에 다녀와도 유지되는 초안');
  const viewport=page.locator('.chat-viewport');
  await viewport.hover();await page.mouse.wheel(0,-20000);

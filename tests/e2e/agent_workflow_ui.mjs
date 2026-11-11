@@ -34,7 +34,7 @@ try {
    return route.fulfill({json:structuredClone(body)});
   });
   await page.goto(process.argv[3]+'/jobs/'+id);
-  const plan=page.getByRole('button',{name:'현재 계획 · 오프라인 메모 앱의 명세 보완'});
+  const plan=page.getByRole('button',{name:/현재 계획\s*오프라인 메모 앱의 명세 보완/});
   await plan.focus();await plan.press('Enter');
   await page.getByText('저장 정책은 사용자 결정을 확인한 뒤 명세에 반영합니다.').waitFor({state:'visible'});
   assert(await page.getByRole('textbox',{name:'메모를 며칠 동안 보관할까요?'}).isVisible());
