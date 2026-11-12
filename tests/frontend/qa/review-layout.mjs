@@ -13,7 +13,8 @@ const path = '/jobs/' + 'a'.repeat(32) + '?role=user&status=PASS_PENDING_USER_AP
 const cases = [
   ...[1920,2560].map(width=>({name:`review-${width}`,width,query:''})),
   ...[390,1440,1919,1920,2240,2560].map(width=>({name:`long-${width}`,width,query:'&qa=layout-long',long:true})),
-  {name:'zoom-equivalent-200',width:960,height:540,scale:2,query:'&qa=layout-long',long:true},
+  // 2026-11-12: 축소된 viewport와 DPR만 모사하며 브라우저 확대 조작은 검증하지 않는다.
+  {name:'viewport-960-dpr-2',width:960,height:540,scale:2,query:'&qa=layout-long',long:true},
   ...['approved','unknown'].flatMap(state=>[1920,2560].map(width=>({name:`${state}-${width}`,width,query:`&review_state=${state}`}))),
   ...['error','loading','empty'].flatMap(state=>[1920,2560].map(width=>({name:`${state}-${width}`,width,state,query:`&qa=${state}&target=requirement-review`}))),
   ...['limited','unavailable'].flatMap(state=>[1920,2560].map(width=>({name:`${state}-${width}`,width,state,query:`&review_kind=${state}`}))),

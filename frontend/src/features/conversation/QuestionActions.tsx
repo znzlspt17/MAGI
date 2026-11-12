@@ -13,7 +13,7 @@ import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 import { Item, ItemContent, ItemTitle, ItemDescription, ItemActions } from "../../shared/ui/item";
 import { SealCheckIcon, LightbulbIcon } from "@phosphor-icons/react";
-import { Field, FieldSet, FieldLegend, FieldLabel, FieldDescription, FieldError } from "../../shared/ui/field";
+import { FieldSet, FieldLegend, FieldError } from "../../shared/ui/field";
 import { Text } from "@astryxdesign/core/Text";
 import { Alert, AlertTitle, AlertDescription } from "../../shared/ui/alert";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "../../shared/ui/collapsible";

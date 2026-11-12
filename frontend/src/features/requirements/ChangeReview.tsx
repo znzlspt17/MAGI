@@ -7,7 +7,7 @@ import "./change-review.css";
 import "../conversation/question-guidance.css";
 import { useId, useState } from "react";
 import { ExpandableTextarea } from "../../shared/ui/PromptInput";
-import { Field, FieldSet, FieldLegend, FieldLabel, FieldDescription } from "../../shared/ui/field";
+import { Field, FieldSet, FieldLegend, FieldLabel } from "../../shared/ui/field";
 import { Text } from "@astryxdesign/core/Text";
 
 function ProposalQuestion({ item, disabled, onQuestion }: {

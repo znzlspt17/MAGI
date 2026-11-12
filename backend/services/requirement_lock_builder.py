@@ -232,11 +232,6 @@ def _normalization_error(category: str, details: list[str]) -> RequirementNormal
     return error
 
 
-def _contains_hangul(value: str) -> bool:
-    from backend.infrastructure.output_language import prose, has_hangul
-    return has_hangul(prose(value))
-
-
 def _korean_or_technical(value: str) -> bool:
     from backend.infrastructure.output_language import prose, has_hangul, technical_only
     body = prose(value).strip()

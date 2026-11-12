@@ -6,7 +6,6 @@ from typing import Sequence
 import copy
 import hashlib
 from dataclasses import replace
-from typing import Callable
 
 from backend.config import Config
 from backend.errors import InvalidStateError
@@ -335,17 +334,3 @@ def _question_is_answered(question: str, ids: set[str], answers: Sequence[object
         getattr(answer, "question", "") and getattr(answer, "question") in question
         for answer in answers
     )
-
-
-def _notify_progress(
-    callback: Callable[[dict[str, str]], None] | None,
-    stage: str,
-    state: str,
-) -> None:
-    """Deliver non-essential progress updates without affecting the engine run."""
-    if callback is None:
-        return
-    try:
-        callback({"stage": stage, "state": state})
-    except Exception:
-        return

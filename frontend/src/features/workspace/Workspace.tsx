@@ -10,7 +10,6 @@ export { StopDiagnostic } from "../execution/StopDiagnostic";
 import { ChatCircleDotsIcon, ClockCounterClockwiseIcon, FileTextIcon, GraphIcon, PlusIcon, SquaresFourIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { post } from "../../shared/api/api";
 import { useAuth } from "../auth/Auth";
 import { ChangeReview } from "../requirements/ChangeReview";
 import { AppSidebar } from "./AppSidebar";
@@ -22,11 +21,10 @@ import { SidebarGroup, SidebarGroupLabel, SidebarInset, SidebarMenu, SidebarMenu
 import { Tabs, TabsList, TabsTrigger } from "../../shared/ui/tabs";
 import { Conversation } from "../conversation/Conversation";
 import { DocumentView } from "../documents/DocumentView";
-import { ExecutionTimeline, ResearchResult } from "../execution/ExecutionTimeline";
+import { ExecutionTimeline } from "../execution/ExecutionTimeline";
 import { ImplementationPackage } from "../documents/ImplementationPackage";
 import Knowledge from "../knowledge/Knowledge";
 import { ProjectDecisionPicker, ReusedDecisions, type DecisionSelection } from "../projects/ProjectDecisions";
-import { questionDetails } from "../conversation/QuestionActions";
 import { ServiceStatusNotice, serviceState } from "./ServiceStatus";
 import type { Job, Step } from "../../shared/types";
 import { Button, Notice, UsageSummary } from "../../shared/ui/UI";
@@ -42,7 +40,7 @@ export default function Workspace() {
     location = useLocation(),
     { id } = useParams();
   const session = useJobSession();
-  const { jobs, jobsReady, job, step, tab, setTab, detail, busy, loading, connection, refresh } = session;
+  const { jobs, jobsReady, job, step, tab, setTab, detail, busy, loading, connection } = session;
   const [surface, setSurface] = useState("workspace"), [query, setQuery] = useState(""), [filter, setFilter] = useState("");
   const [reviewPanelOpen, setReviewPanelOpen] = useState(false);
   const reviewToggle = useRef<HTMLButtonElement>(null);

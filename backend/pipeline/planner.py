@@ -17,10 +17,6 @@ Action = Literal["project_context", "knowledge_search", "web_research", "intervi
                  "review_resolution", "compose_candidate", "ask_user", "blocked"]
 
 
-def repair_stop_reason(state, config):
-    return evaluate_execution(state, config).stop_reason
-
-
 class PlannedTask(BaseModel):
     id: str
     title: str
