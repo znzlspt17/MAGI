@@ -1,9 +1,9 @@
 @import url("../features/knowledge/admin-knowledge.css");
 @layer components {
 :root {
-  font-family: Inter, "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
-  color: #2E2936;
-  background: #F8F7FC;
+  font-family: "Segoe UI", "Malgun Gothic", system-ui, sans-serif;
+  color: #171717;
+  background: #FAFAFA;
   font-synthesis: none;
   --radius: 12px;
   --control-height: 34px;
@@ -30,7 +30,7 @@ summary {
 }
 a:not(.astryx-button):focus-visible,
 summary:focus-visible {
-  outline: 3px solid #776095;
+  outline: 3px solid #171717;
 }
 a:not(.astryx-button) {
   color: var(--color-accent);
@@ -46,7 +46,7 @@ textarea {
   max-width: 100%;
 }
 label textarea {
-  margin-top: 10px;
+  margin-top: 8px;
 }
 fieldset {
   min-width: 0;
@@ -64,7 +64,7 @@ h4 {
 }
 h1 {
   font-size: 24px;
-  letter-spacing: -1px;
+  letter-spacing: 0;
   margin: 10px 0;
 }
 h2 {
@@ -75,8 +75,8 @@ h3 {
 }
 .eyebrow {
   font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 2px;
+  font-weight: 600;
+  letter-spacing: 0;
   color: var(--color-accent);
   display: block;
 }
@@ -95,8 +95,8 @@ h3 {
   gap: 12px;
   text-decoration: none;
   font-size: 20px;
-  font-weight: 800;
-  color: #2E2936;
+  font-weight: 600;
+  color: #171717;
 }
 .brand small {
   display: block;
@@ -104,7 +104,7 @@ h3 {
   color: var(--color-text-secondary);
   font-weight: 400;
   margin-top: 4px;
-  letter-spacing: 0.5px;
+  letter-spacing: 0;
 }
 .brand-mark {
   display: grid;
@@ -132,7 +132,7 @@ h3 {
 .history h2 {
   font-size: 12px;
   color: var(--color-text-secondary);
-  letter-spacing: 1px;
+  letter-spacing: 0;
   display: flex;
   justify-content: space-between;
   margin: 15px 0 0;
@@ -151,11 +151,11 @@ h3 {
   font-size: 14px;
 }
 .history nav a:hover {
-  background: #F8F7FC;
+  background: #FAFAFA;
 }
 .history nav a[aria-current] {
   background: var(--color-accent-muted);
-  color: #5F467D;
+  color: #171717;
 }
 .history nav strong {
   font-weight: 600;
@@ -225,7 +225,7 @@ h3 {
   background: #fff;
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  box-shadow: 0 12px 40px #2E293615;
+  box-shadow: 0 12px 40px #17171715;
   width: 310px;
   padding: 20px;
   display: grid;
@@ -272,7 +272,7 @@ h3 {
 }
 .workflow-progress li[aria-current] {
   color: var(--color-accent);
-  font-weight: 700;
+  font-weight: 600;
   border-color: var(--color-accent);
 }
 .request-form {
@@ -281,11 +281,11 @@ h3 {
   background: #fff;
   padding: 36px;
   max-width: 800px;
-  box-shadow: 0 10px 40px #2E293610;
+  box-shadow: 0 10px 40px #17171710;
 }
 .request-form h2 {
   font-size: 30px;
-  letter-spacing: -0.8px;
+  letter-spacing: 0;
   margin: 16px 0;
 }
 .request-form > p {
@@ -342,7 +342,7 @@ h3 {
   gap: 10px;
   font-size: 14px;
   color: var(--color-text-secondary);
-  padding: 18px 0;
+  padding: 0;
 }
 .document-action-layout {
   display: grid;
@@ -387,7 +387,7 @@ h3 {
 }
 .question-form legend {
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.6;
   margin-bottom: 12px;
   white-space: pre-line;
@@ -458,7 +458,7 @@ h3 {
   max-height: 75vh;
 }
 .markdown-view code {
-  background: #F1EEF8;
+  background: #F4F4F5;
   border-radius: 3px;
   padding: 2px 4px;
   font-size: 0.9em;
@@ -479,24 +479,24 @@ h3 {
   padding: 8px;
 }
 .markdown-view th {
-  background: #F1EEF8;
+  background: #F4F4F5;
 }
 .markdown-view img {
   max-width: 100%;
 }
 .markdown-view blockquote {
   margin-left: 0;
-  border-left: 3px solid #DDD6E8;
+  border-left: 3px solid #D4D4D8;
   padding-left: 16px;
   color: var(--color-text-secondary);
 }
 .document-toc {
-  background: #F1EEF8;
+  background: #F4F4F5;
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  padding: 12px;
+  padding: 8px 12px;
   font-size: 14px;
-  margin: 15px 0;
+  margin: 8px 0;
 }
 .document-toc summary {
   cursor: pointer;
@@ -556,11 +556,11 @@ h3 {
 .issues summary {
   cursor: pointer;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
 }
 .issue-card {
   padding: 15px;
-  border: 1px solid #efdad3;
+  border: 1px solid var(--color-border);
   border-radius: 12px;
   margin: 15px 0;
   font-size: 12px;
@@ -573,7 +573,7 @@ h3 {
   margin: 8px 0;
 }
 .issue-card blockquote {
-  border-left: 2px solid #DDD6E8;
+  border-left: 2px solid #D4D4D8;
   padding-left: 12px;
   margin: 15px 0;
 }

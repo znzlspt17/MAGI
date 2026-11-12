@@ -210,7 +210,8 @@ export function useJobSession() {
   const listed = (listBase?.owner === auth.user?.id ? listBase?.jobs || jobs.data || [] : jobs.data || []).map(item => ({ ...item, ...changes[item.id]?.job }));
   for (const entry of Object.values(changes)) if (!listed.some(item => item.id === entry.job.id)) listed.unshift(entry.job);
   const removed = deletedIds.owner === auth.user?.id ? deletedIds.ids : [];
-  return { jobs: listed.filter(item => !removed.includes(item.id)), job, step, tab, setTab, busy, loading: current.loading, connection, refresh, command,
+  // 2026-11-12: 빈 목록을 조회 중 상태와 구별해 잘못된 빈 안내를 막는다.
+  return { jobsReady: jobs.data !== null || (!!listBase && listBase.owner === auth.user?.id), jobs: listed.filter(item => !removed.includes(item.id)), job, step, tab, setTab, busy, loading: current.loading, connection, refresh, command,
     failureDetail: failureDetail.error ? { unavailable: true, message: failureDetail.error } : failureDetail.data,
     detail: detail.error ? { unavailable: true, message: detail.error } : node?.detail_available ? detail.data : { unavailable: true, message: "이 단계의 상세 기록이 저장되지 않았습니다." },
     select: (value: string) => { manual.current = true; setStep(value); setDetailRevision(previous => previous + 1); },

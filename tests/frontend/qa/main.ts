@@ -33,7 +33,8 @@ window.fetch = async (input, init) => {
   if (path === "/api/me/usage") return json({ runs: 2, remaining_runs: 8 });
   if (path === "/api/service/status") return scenario === "service-error" ? json({ error: "연결 확인 실패" }, 503) : json({ ready: scenario !== "busy", active_count: scenario === "busy" ? 1 : 0, queued_count: 0, max_parallel: 1, own_active_count: 0 });
   const affected = !target || path.includes(target);
-  if (scenario === "loading" && affected) return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("취소", "AbortError"))));
+  // 2026-11-12: 응답을 보류한 요청이 실제로 시작된 뒤 로딩 상태를 캡처한다.
+  if (scenario === "loading" && affected) { globalThis.document.documentElement.dataset.qaPending = path; return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("취소", "AbortError")))); }
   if (scenario === "error" && affected) return json({ error: "검증용 조회 실패입니다. 다시 시도해주세요." }, 503);
   const empty = scenario === "empty" && affected;
   if (path === "/api/mcp/connections" && (!init?.method || init.method === "GET")) return json({ connections: empty ? [] : [mcpConnection] });

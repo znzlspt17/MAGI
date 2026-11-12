@@ -82,6 +82,12 @@ export default function Graph({
             "text-background-padding": "3px",
           },
         },
+        // 2026-11-12: 노드 종류를 색상 없이도 구별한다.
+        { selector: 'node[kind = "input"]', style: { shape: "ellipse" } },
+        { selector: 'node[kind = "decision"]', style: { shape: "diamond" } },
+        { selector: 'node[kind = "requirement"]', style: { shape: "rectangle" } },
+        { selector: 'node[kind = "spec"]', style: { shape: "hexagon" } },
+        { selector: 'node[kind = "review"]', style: { shape: "triangle" } },
         {
           selector: "node[?virtual]",
           style: { shape: "round-rectangle", width: 48, height: 34 },

@@ -3,12 +3,12 @@
 .service-status-banner { flex: 1; min-width: 0; }
 .service-status-banner.inline { width: 100%; margin: 10px 0; }
 .account-header { flex-wrap: wrap; gap: 12px; }
-.brand { letter-spacing: -.6px; }
-.brand-mark { background: var(--color-accent); box-shadow: 0 5px 12px var(--color-accent-muted); flex-shrink: 0; }
+.brand { letter-spacing: 0; }
+.brand-mark { background: var(--color-accent); box-shadow: none; flex-shrink: 0; }
 .brand small { letter-spacing: 0; font-size: 12px; }
 .primary-nav svg { flex-shrink: 0; }
 .main-group { padding: 0; }
-.main-group [data-slot="sidebar-group-label"] { padding: 0 12px; color: var(--color-text-secondary); font-size: 12px; letter-spacing: 1px; margin-bottom: 6px; }
+.main-group [data-slot="sidebar-group-label"] { padding: 0 12px; color: var(--color-text-secondary); font-size: 12px; letter-spacing: 0; margin-bottom: 6px; }
 .navigation [data-slot="sidebar-menu"] { list-style: none; padding: 0; margin: 0; }
 .navigation .session-menu-link { height: auto; display: block; white-space: normal; }
 .sidebar-footer [data-slot="sidebar-menu"] { list-style: none; padding: 0; margin: 0; }
@@ -20,23 +20,23 @@
 .history nav small { font-size: 12px; color: var(--color-text-secondary); }
 .history-empty { padding: 12px 8px; color: var(--color-text-secondary); font-size: 12px; line-height: 1.6; }
 .sidebar-footer p { color: var(--color-text-secondary); font-size: 12px; line-height: 1.7; border-top: 1px solid var(--color-border); padding-top: 16px; margin: 0 0 4px; }
-.sidebar-footer a { display: flex; align-items: center; gap: 7px; color: var(--color-text-secondary); text-decoration: none; }
+.sidebar-footer a { display: flex; align-items: center; gap: 8px; color: var(--color-text-secondary); text-decoration: none; }
 .sidebar-footer a:hover { color: var(--color-accent); }
 .account-header { background: transparent; padding: 6px 24px; border-bottom-color: var(--color-border); }
-.account-header > p:first-child::before { content: ""; display: inline-block; width: 6px; height: 6px; background: #438268; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+.account-header > p:first-child::before { content: ""; display: inline-block; width: 6px; height: 6px; background: var(--color-success); border-radius: 50%; margin-right: 8px; vertical-align: middle; }
 .account-header > p[role="status"] { flex: 1; }
 .desktop-sidebar-trigger { flex-shrink: 0; }
-.workspace-header h1 { font-size: 24px; letter-spacing: -.7px; margin: 12px 0; }
+.workspace-header h1 { font-size: 24px; letter-spacing: 0; margin: 12px 0; }
 .workspace-header p { font-size: 14px; }
-.workspace-header .eyebrow { font-size: 12px; letter-spacing: 2px; color: var(--color-text-secondary); }
+.workspace-header .eyebrow { font-size: 12px; letter-spacing: 0; color: var(--color-text-secondary); }
 .workflow-progress { max-width: 800px; margin: 28px auto 28px; gap: 8px; }
 .workflow-progress li { border-width: 1px; font-size: 12px; color: var(--color-text-secondary); padding-bottom: 14px; }
-.workflow-progress li span { opacity: 1; font-size: 12px; letter-spacing: 1px; }
+.workflow-progress li span { opacity: 1; font-size: 12px; letter-spacing: 0; }
 .request-form { margin: 0 auto; padding: 24px; box-shadow: 0 8px 32px var(--color-shadow); border-radius: 18px; }
-.request-form .eyebrow { font-size: 12px; letter-spacing: 2px; color: var(--color-text-secondary); }
+.request-form .eyebrow { font-size: 12px; letter-spacing: 0; color: var(--color-text-secondary); }
 .request-form h2 { font-size: 24px; margin: 12px 0; }
 .request-form > p { font-size: 14px; }
-.request-form textarea { background: var(--color-background-surface); border-color: var(--color-border); min-height: 120px; font-size: 15px; box-shadow: none; padding: 17px; }
+.request-form textarea { background: var(--color-background-surface); border-color: var(--color-border); min-height: 120px; font-size: 15px; box-shadow: none; padding: 16px; }
 .request-form textarea::placeholder { color: var(--color-text-secondary); }
 .request-guidance { justify-content: flex-start; gap: 20px; flex-wrap: wrap; font-size: 12px; }
 .request-form > .primary { min-height: 36px; border-radius: 8px; }
@@ -56,7 +56,7 @@
 /* 2026-11-11: 넓은 문서 화면만 읽기 폭을 확장하고 다른 화면의 기존 폭은 유지한다. */
 .markdown-view { max-width: var(--magi-document-reading-width, 80ch); margin: var(--magi-document-reading-margin, 0 auto); }
 .markdown-view p { line-height: 1.75; }
-.document-controls { align-items: center; gap: 7px; }
+.document-controls { align-items: center; gap: 8px; }
 .action-card { border-radius: 12px; padding: var(--spacing-4); background: var(--color-background-surface); }
 .step-result:empty { display: none; }
 .failure-diagnostic { margin: var(--spacing-3) 0; padding: var(--spacing-4); border: 1px solid var(--color-border); border-radius: 12px; overflow-wrap: anywhere; }
@@ -78,7 +78,7 @@
   .navigation .history { display: flex; }
   .account-header { padding: 12px 18px; gap: 8px; }
   .workspace-header h1 { font-size: 25px; }
-  .workflow-progress { margin: 24px 0; gap: 7px; }
+  .workflow-progress { margin: 24px 0; gap: 8px; }
   .workflow-progress li { font-size: 12px; }
   .request-form { padding: 24px 20px; }
   .request-form h2 { font-size: 24px; }

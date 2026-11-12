@@ -13,7 +13,7 @@ const cases=[
  ['failure',job+'?role=user&status=error'],['final',job+'?role=user&status=FINALIZED'],
  ['mcp','/settings/mcp?role=user'],['privacy','/privacy?role=guest'],['licenses','/licenses?role=guest'],['research','/research?role=guest'],
  ...['overview','users','data','knowledge','costs','logs'].map(view=>['admin-'+view,'/admin/'+view+'?role=admin']),
- ...['long','empty','error','loading'].map(state=>[state,'/?role=user&qa='+state]),
+ ...['long','empty','error'].map(state=>[state,'/?role=user&qa='+state]), ['loading','/?role=user&qa=loading'],
  ['mcp-error','/settings/mcp?role=user&qa=error'],['mcp-empty','/settings/mcp?role=user&qa=empty'],
  ['knowledge-user','/?role=user'],['project-picker','/?role=user'],
 ];
@@ -30,8 +30,17 @@ try{
   for(const [name,path] of selectedCases){
    errors=[];
    try{
-    await page.goto(base+path,{waitUntil:'networkidle'});
+    await page.goto(base+path,{waitUntil:'domcontentloaded'});
     await page.locator('#root > *').first().waitFor();
+   await page.evaluate(async()=>{await document.fonts.ready; await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+    const expectedText={login:'Google로 로그인',new:'만들고 싶은 기능을 알려주세요',questions:'우선 지원할 사용 환경',review:'팀 기록 서비스 명세',running:'요청을 처리하고 있습니다',failure:'작업이 중단되었습니다',final:'팀 기록 서비스 명세',mcp:'문서 검색 서버',privacy:'MAGI 정보 처리 안내',licenses:'배포에 포함된 라이선스',research:'연구 출처 및 적용 방식','admin-overview':'현재 실행 1개',error:'검증용 조회 실패입니다','mcp-error':'검증용 조회 실패입니다','mcp-empty':'등록된 연결이 없습니다.'};
+    if(expectedText[name])await page.getByText(expectedText[name],{exact:false}).first().waitFor();
+    if((name==='long'||name==='empty') && width===390)await page.getByRole('button',{name:'메뉴 열기',exact:true}).click();
+    if(name==='loading')await page.locator('html[data-qa-pending]').waitFor({state:'attached'});
+    if(name==='long')await page.locator('.history nav a').nth(31).waitFor({state:'attached'});
+    if(name==='empty')await page.getByText('작업 기록이 없습니다.',{exact:true}).waitFor();
+    if((name==='long'||name==='empty') && width===390)await page.keyboard.press('Escape');
+    if(name==='admin-users')await page.locator('.admin-user').first().waitFor({state:'attached'});
     if(name==='admin-data')await page.locator('.jobs-table-scroll tbody tr,.jobs-mobile-item').first().waitFor({state:'attached'});
     if(name==='admin-costs')await page.locator('.usage-cards').waitFor();
     if(name==='admin-logs')await page.locator('.logs-row').first().waitFor({state:'attached'});

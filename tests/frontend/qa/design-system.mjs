@@ -29,22 +29,22 @@ async function inspect(page,name,width){
  check(`${name}: no page overflow`,()=>assert.ok(data.viewport.scroll<=width+1));
  check(`${name}: white work surface`,()=>assert.equal(data.frame.background,'rgb(255, 255, 255)'));
  check(`${name}: white header within frame`,()=>assert.equal(data.header.background,'rgb(255, 255, 255)'));
- check(`${name}: rounded frame`,()=>assert.equal(data.frame.radius,width<768?'12px':'18px'));
- check(`${name}: outer top`,()=>assert.ok(Math.abs(data.frame.top-(width<768?8:12))<=1));
- check(`${name}: outer right`,()=>assert.ok(Math.abs(width-data.frame.right-(width<768?8:12))<=1));
+ check(`${name}: square frame`,()=>assert.equal(data.frame.radius,'0px'));
+ check(`${name}: outer top`,()=>assert.ok(Math.abs(data.frame.top)<=1));
+ check(`${name}: outer right`,()=>assert.ok(Math.abs(width-data.frame.right)<=1));
  if(width>=768){
   check(`${name}: matching frame top`,()=>assert.ok(Math.abs(data.frame.top-data.sidebar.top)<=1));
   check(`${name}: matching frame bottom`,()=>assert.ok(Math.abs(data.frame.bottom-data.sidebar.bottom)<=1));
-  check(`${name}: frame gap`,()=>assert.ok(Math.abs(data.frame.left-data.sidebar.right-12)<=1));
+  check(`${name}: frame gap`,()=>assert.ok(Math.abs(data.frame.left-data.sidebar.right)<=1));
  }
  if(data.tabs){check(`${name}: underline tabs only`,()=>assert.ok(data.tabs.background==='rgba(0, 0, 0, 0)' || data.tabs.background==='transparent'));}
  // 모바일 메뉴를 열면 뒤의 검토 패널은 닫힌다. 숨긴 작성창의 라벨은 검사하지 않는다.
  if(data.composer && data.composer.width>0 && data.textarea.height>0){
   check(`${name}: one composer border`,()=>assert.equal(data.borders.length,1,JSON.stringify(data.borders)));
   check(`${name}: one visible input label`,()=>assert.equal(data.visibleLabels.length,1,JSON.stringify(data.visibleLabels)));
-  check(`${name}: composer radius`,()=>assert.equal(data.composer.radius,'12px'));
+  check(`${name}: composer radius`,()=>assert.equal(data.composer.radius,'28px'));
   check(`${name}: send aligned right`,()=>assert.ok(data.send.right>=data.composer.right-20));
-  if(name.startsWith('new-'))check(`${name}: caller rows respected`,()=>assert.equal(data.rows,5));
+  if(name.startsWith('new-'))check(`${name}: caller rows respected`,()=>assert.equal(data.rows,1));
  }
  if(data.menu){
   check(`${name}: menu width`,()=>assert.ok(Math.abs((data.menuSurface||data.menu).width-280)<=1,JSON.stringify(data.menuSurface||data.menu)));
@@ -61,10 +61,11 @@ try{
  for(const width of [390,1440,1919,1920,2560]){
   const page=await browser.newPage({viewport:{width,height:width===390?844:1080},reducedMotion:'reduce'});
   for(const view of ['new','review']){
-   await page.goto(base+(view==='new'?'/?role=admin':`/jobs/${'a'.repeat(32)}?role=admin&status=PASS_PENDING_USER_APPROVAL`),{waitUntil:'networkidle'});
-   await page.locator('.workspace-content h1').waitFor();
+   await page.goto(base+(view==='new'?'/?role=admin':`/jobs/${'a'.repeat(32)}?role=admin&status=PASS_PENDING_USER_APPROVAL`),{waitUntil:'domcontentloaded'});
+   await page.locator('.workspace-topbar h1').waitFor();
+   await page.evaluate(async()=>{await document.fonts.ready; await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
    if(view==='review' && width<1920)await page.getByRole('button',{name:'대화와 검토 열기',exact:true}).click();
-   if(view==='review')await page.locator('.rr-compact .rr-review-status').waitFor();
+   if(view==='review'){await page.locator('.rr-compact .rr-review-status').waitFor();const stage=page.locator('.workspace-steps[role=status]'); await stage.waitFor();}
    await inspect(page,`${view}-${width}`,width);
    if(view==='new'){
     await page.locator('.chat-prompt textarea').focus();

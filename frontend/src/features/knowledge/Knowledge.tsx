@@ -437,7 +437,7 @@ export default function Knowledge({
         <div id="graph-legend">
           {Object.entries(kinds).map(([k, v]) => (
             <span key={k}>
-              <i style={{ background: colors[k] }} />
+              <i data-kind={k} aria-hidden style={{ background: colors[k] }} />
               {v}
             </span>
           ))}

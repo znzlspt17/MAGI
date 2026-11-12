@@ -24,7 +24,7 @@ try {
     const {width,name}=config;
     const page = await browser.newPage({viewport:{width,height:config.height || 1080},deviceScaleFactor:config.scale || 1,reducedMotion:'reduce'});
     const errors=[]; page.on('pageerror', error => errors.push(error.message));
-    await page.goto(base + path + config.query, {waitUntil:'networkidle'});
+    await page.goto(base + path + config.query, {waitUntil:'domcontentloaded'});
     if(width<1920) await page.getByRole('button',{name:'대화와 검토 열기',exact:true}).click();
     const compact=page.locator('.rr-compact');
     if(config.state==='loading') await compact.getByRole('status',{name:'요구사항 근거 조회 중'}).waitFor();

@@ -5,7 +5,7 @@
 .impact-review header h3 { margin: var(--spacing-1-5) 0 var(--spacing-2); font-size: 18px; line-height: 1.5; }
 .impact-review p { line-height: 1.7; overflow-wrap: anywhere; margin: var(--spacing-1-5) 0; }
 .impact-review header > p, .impact-help, .impact-review [data-slot="field-description"] { color: var(--color-muted-foreground); font-size: 12px; }
-.impact-eyebrow { color: var(--color-primary); font-size: 12px; font-weight: 600; letter-spacing: .04em; }
+.impact-eyebrow { color: var(--color-primary); font-size: 12px; font-weight: 600; letter-spacing: 0; }
 .impact-review [data-slot="field"] { gap: var(--spacing-2); }
 .impact-review [data-slot="field-label"] { align-items: flex-start; justify-content: flex-start; text-align: left; font-size: 14px; font-weight: 600; }
 .impact-review [data-slot="field-error"] { color: var(--color-destructive); font-size: 14px; }

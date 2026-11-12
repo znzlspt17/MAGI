@@ -1,12 +1,12 @@
 @layer components {
 .research-page { max-width: 960px; margin: 0 auto; padding: 28px var(--spacing-6) var(--spacing-10); overflow-wrap: anywhere; line-height: 1.8; }
 .research-page > header { padding: var(--spacing-4) 0; }
-.research-page h1 { display: flex; align-items: center; gap: var(--spacing-2); font-size: 24px; letter-spacing: -.7px; line-height: 1.5; }
+.research-page h1 { display: flex; align-items: center; gap: var(--spacing-2); font-size: 24px; letter-spacing: 0; line-height: 1.5; }
 .research-page h1 svg { flex-shrink: 0; }
 .research-page h2 { font-size: 18px; margin: 0 0 var(--spacing-3); scroll-margin-top: var(--spacing-6); }
 .research-page h3 { font-size: 16px; margin: 22px 0 var(--spacing-2); }
 .research-page p { margin: 10px 0; color: var(--color-text-secondary); }
-.research-page .research-lead { font-size: 14px; font-weight: 650; color: var(--color-text-primary); }
+.research-page .research-lead { font-size: 14px; font-weight: 600; color: var(--color-text-primary); }
 .research-source { border-left: 3px solid var(--primary, var(--color-text-accent)); padding: 3px var(--spacing-4); margin: var(--spacing-6) 0 var(--spacing-2); }
 .research-source p { margin: var(--spacing-1) 0; }
 .research-source-meta { display: flex; flex-wrap: wrap; gap: var(--spacing-6); margin: var(--spacing-4) 0; }
@@ -38,13 +38,13 @@
 .research-page a:focus-visible, .research-table:focus-visible { outline: 3px solid var(--color-text-accent); outline-offset: 3px; }
 .research-table { max-width: 100%; overflow-x: auto; margin: var(--spacing-5) 0; border: 1px solid var(--color-border); border-radius: 8px; }
 .research-table table { width: 100%; min-width: 570px; border-collapse: collapse; text-align: left; font-size: 14px; line-height: 1.65; }
-.research-table caption { padding: var(--spacing-3) 14px; background: var(--color-background-body); text-align: left; font-weight: 700; }
+.research-table caption { padding: var(--spacing-3) 14px; background: var(--color-background-body); text-align: left; font-weight: 600; }
 .research-table th, .research-table td { padding: 11px 14px; border-top: 1px solid var(--color-border); vertical-align: top; }
 .research-table thead th { background: var(--color-background-body); }
 .research-table tbody th { width: 20%; }
 .research-page pre { overflow-x: auto; padding: var(--spacing-4); border-radius: 8px; background: var(--color-background-muted); color: var(--color-text-primary); line-height: 1.7; font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .research-example { margin: var(--spacing-5) 0; padding: var(--spacing-0-5) var(--spacing-4) 10px; border-left: 3px solid var(--primary, var(--color-text-accent)); background: var(--color-background-body); }
-.research-glossary dt { margin-top: var(--spacing-3); font-weight: 700; }
+.research-glossary dt { margin-top: var(--spacing-3); font-weight: 600; }
 .research-glossary dd { margin: var(--spacing-0-5) 0 0; color: var(--color-text-secondary); }
 @media (max-width: 767px) {
   .research-page { padding: 30px 18px; }

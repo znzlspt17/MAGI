@@ -42,7 +42,7 @@ export default function Workspace() {
     location = useLocation(),
     { id } = useParams();
   const session = useJobSession();
-  const { jobs, job, step, tab, setTab, detail, busy, loading, connection, refresh } = session;
+  const { jobs, jobsReady, job, step, tab, setTab, detail, busy, loading, connection, refresh } = session;
   const [surface, setSurface] = useState("workspace"), [query, setQuery] = useState(""), [filter, setFilter] = useState("");
   const [reviewPanelOpen, setReviewPanelOpen] = useState(false);
   const reviewToggle = useRef<HTMLButtonElement>(null);
@@ -180,10 +180,10 @@ export default function Workspace() {
 
   </> : null;
   return (
-    <SidebarProvider className="shell" style={{ "--sidebar-width": "272px" } as CSSProperties}>
+    <SidebarProvider className="shell" style={{ "--sidebar-width": "260px" } as CSSProperties}>
       <AppSidebar>
         <Button
-          className="new-job" variant="default"
+          className="new-job" variant="ghost"
           onClick={() => {
             navigate("/");
             setSurface("workspace");
@@ -191,19 +191,19 @@ export default function Workspace() {
         >
           <PlusIcon size={18} aria-hidden />새 작업
         </Button>
-        <SidebarGroup className="main-group"><SidebarGroupLabel>작업 공간</SidebarGroupLabel><nav className="primary-nav"><SidebarMenu>
+        <SidebarGroup className="main-group"><nav className="primary-nav" aria-label="작업 공간 메뉴"><SidebarMenu>
           <SidebarMenuItem><SidebarMenuButton asChild isActive={surface === "workspace"}><Button
             aria-current={surface === "workspace" ? "page" : undefined}
             onClick={() => setSurface("workspace")}
           >
-            <SquaresFourIcon weight="duotone" size={20} aria-hidden />작업 공간
+            <SquaresFourIcon size={18} aria-hidden />작업 공간
           </Button></SidebarMenuButton></SidebarMenuItem>
           <SidebarMenuItem><SidebarMenuButton asChild isActive={surface === "knowledge"}><Button
             disabled={false}
             aria-current={surface === "knowledge" ? "page" : undefined}
             onClick={() => setSurface("knowledge")}
           >
-            <GraphIcon weight="duotone" size={20} aria-hidden />지식 검색
+            <GraphIcon size={18} aria-hidden />지식 검색
           </Button></SidebarMenuButton></SidebarMenuItem>
         </SidebarMenu></nav></SidebarGroup>
         <SidebarGroup className="history">
@@ -226,6 +226,7 @@ export default function Workspace() {
           </h2></SidebarGroupLabel>
           <nav aria-label="작업 기록"><SidebarMenu>
             {!filtered.length && (query || filter) && <li className="history-empty" role="status">조건에 맞는 작업이 없습니다.</li>}
+            {!filtered.length && !query && !filter && jobsReady && <li className="history-empty" role="status">작업 기록이 없습니다.</li>}
             {filtered.map((item) => <SidebarMenuItem key={item.id}><SessionLink job={item} active={id === item.id} onSelect={() => setSurface("workspace")} /></SidebarMenuItem>)}
           </SidebarMenu></nav>
         </SidebarGroup>
@@ -239,7 +240,7 @@ export default function Workspace() {
         </Stack>
         <main ref={mainRef}>
           <Notice>{auth.notice || connection}</Notice>
-          {surface === "workspace" && <WorkspaceSteps stage={id && !actualJob ? null : workspaceStage(actualJob)} message={workspaceStageMessage(actualJob)} interrupted={!!actualJob && ["error", "interrupted"].includes(actualJob.status)} />}
+          {surface === "workspace" && id && <WorkspaceSteps stage={id && !actualJob ? null : workspaceStage(actualJob)} message={workspaceStageMessage(actualJob)} interrupted={!!actualJob && ["error", "interrupted"].includes(actualJob.status)} />}
           {surface === "knowledge" ? (
             <Knowledge selectedJobId={id} />
           ) : (
@@ -247,11 +248,11 @@ export default function Workspace() {
               {!id ? (
                 <section className="chat-welcome">
                   <h2>만들고 싶은 기능을 알려주세요</h2>
-                  <p>완벽하게 정리하지 않아도 괜찮습니다.<br />요청을 바탕으로 필요한 내용을 함께 구체화합니다.</p>
-                  <PromptInput id="request-text" label="개발 요청" buttonLabel={decisionSelections.length ? `선택한 결정 ${decisionSelections.length}개와 함께 생성` : "명세 생성 시작"} rows={5} value={request} disabled={blocked}
+
+                  <PromptInput id="request-text" label="개발 요청" buttonLabel={decisionSelections.length ? `선택한 결정 ${decisionSelections.length}개와 함께 생성` : "명세 생성 시작"} rows={1} value={request} disabled={blocked}
                     placeholder="예: 팀이 매주 진행 상황을 공유할 수 있는 보고서 생성 기능을 만들어주세요."
                     onChange={(event) => { setRequest(event.target.value); sessionStorage.setItem(draftKey, event.target.value); }} onSend={() => void generate()} />
-                  <Stack direction="horizontal" wrap="wrap" className="request-guidance"><span>만들고 싶은 것</span><span>사용할 사람</span><span>지켜야 할 조건</span></Stack>
+
                   <details className="request-options"><summary>프로젝트와 공통 결정{decisionSelections.length > 0 && <span className="request-selection-count">선택 {decisionSelections.length}개</span>}</summary><ProjectDecisionPicker key={auth.user?.id || "local"} projectId={projectId} onProject={setProjectId} selections={decisionSelections} onSelections={setDecisionSelections} /></details>
                   <p className="subtle">요청과 답변은 명세 생성을 위해 OpenAI에 전송됩니다.</p>
                 </section>
@@ -304,8 +305,9 @@ export default function Workspace() {
 }
 
 function WorkspaceSteps({ stage, message, interrupted }: { stage: WorkspaceStage | null; message: string; interrupted: boolean }) {
-  const steps: [WorkspaceStage, string][] = [["request", "요청 작성"], ["questions", "질문 답변"], ["review", "명세 검토"], ["final", "최종 확정"]];
-  return <nav className="workspace-steps" aria-label="명세 작업 단계"><ol>{steps.map(([key, title], index) => <li key={key} aria-current={stage === key ? "step" : undefined}><span className="workspace-step-number" aria-hidden>{index + 1}</span><span>{title}</span></li>)}</ol>{(!stage || interrupted) && <p role="status">{message}</p>}</nav>;
+  const titles: Record<WorkspaceStage, string> = { request: "요청 작성", questions: "질문 답변", review: "명세 검토", final: "최종 확정" };
+  // 2026-11-12: 중단 안내를 우선하고 현재 단계를 짧게 표시한다.
+  return <p className="workspace-steps" role="status">{interrupted || !stage ? message : `현재 단계: ${titles[stage]}`}</p>;
 }
 
 function CompletedDocuments({

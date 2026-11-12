@@ -1,7 +1,7 @@
 @layer components {
 .mcp-page { max-width: 1280px; margin: 0 auto; padding: var(--spacing-8); overflow-wrap: anywhere; line-height: 1.6; }
 .mcp-page header { padding: var(--spacing-4) 0; }
-.mcp-page h1 { font-size: 24px; letter-spacing: -.7px; margin: var(--spacing-2) 0; }
+.mcp-page h1 { font-size: 24px; letter-spacing: 0; margin: var(--spacing-2) 0; }
 .mcp-page h2 { font-size: 18px; }
 .mcp-page h3 { margin: 0 0 var(--spacing-2); font-size: 18px; }
 .mcp-page h4 { margin: 22px 0 var(--spacing-1); }

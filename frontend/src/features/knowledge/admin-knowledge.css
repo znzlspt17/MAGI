@@ -349,6 +349,11 @@
   height: 8px;
   border-radius: 50%;
 }
+/* 2026-11-12: 범례 형태를 그래프의 노드 종류와 일치시킨다. */
+#graph-legend i[data-kind="decision"] { border-radius: 0; transform: rotate(45deg); }
+#graph-legend i[data-kind="requirement"] { border-radius: 0; }
+#graph-legend i[data-kind="spec"] { border-radius: 0; clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); }
+#graph-legend i[data-kind="review"] { border-radius: 0; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
 #knowledge-notice {
   font-size: 14px;
   color: var(--color-text-secondary);
