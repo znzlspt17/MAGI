@@ -39,6 +39,13 @@ def test_benchmark_never_publishes():
     assert 'publish' not in (ROOT / '.github/workflows/benchmark-ci.yml').read_text(encoding='utf-8').lower()
 
 
+def test_benchmark_caches_are_isolated_per_variant_and_head_revision():
+    jobs = workflow('benchmark-ci.yml')['jobs']
+    revision = '${{ github.event.pull_request.head.sha }}'
+    assert jobs['baseline_prepare']['with']['cache_prefix'] == 'benchmark-baseline-' + revision
+    assert jobs['optimized_prepare']['with']['cache_prefix'] == 'benchmark-optimized-' + revision
+
+
 def test_scan_failure_cannot_be_masked_by_diagnostics():
     steps = workflow('prepare-arm64.yml')['jobs']['build']['steps']
     scans = [step for step in steps if step.get('name', '').startswith('Scan ')]

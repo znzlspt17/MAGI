@@ -15,7 +15,7 @@ jobs:
     needs: baseline_verify
     uses: ./.github/workflows/prepare-arm64.yml
     with:
-      cache_prefix: benchmark-baseline
+      cache_prefix: benchmark-baseline-${{ github.event.pull_request.head.sha }}
       artifact_name: benchmark-baseline
       transfer_images: false
   optimized_verify:
@@ -25,7 +25,7 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/ci-speedup'
     uses: ./.github/workflows/prepare-arm64.yml
     with:
-      cache_prefix: benchmark-optimized
+      cache_prefix: benchmark-optimized-${{ github.event.pull_request.head.sha }}
       artifact_name: benchmark-optimized
   optimized_load:
     needs: [optimized_verify, optimized_prepare]

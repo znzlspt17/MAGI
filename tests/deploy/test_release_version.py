@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_workflow_generates_readable_release_id():
-    workflow = (ROOT / '.github/workflows/build-arm64.yml').read_text(encoding='utf-8')
+    workflow = (ROOT / '.github/workflows/prepare-arm64.yml').read_text(encoding='utf-8')
     assert 'from deploy.version import release_id' in workflow
     assert 'GITHUB_ENV' in workflow
     assert 'github.sha }}-${{ github.run_id' not in workflow
@@ -25,7 +25,7 @@ def test_product_versions_are_consistent():
 
 
 def test_workflow_exports_release_id_for_later_steps(tmp_path, monkeypatch):
-    workflow = (ROOT / '.github/workflows/build-arm64.yml').read_text(encoding='utf-8')
+    workflow = (ROOT / '.github/workflows/prepare-arm64.yml').read_text(encoding='utf-8')
     step = workflow.split('- name: Set readable release ID', 1)[1].split('      - uses:', 1)[0]
     script = step.split("python - <<'PY'\n", 1)[1].split('\n          PY', 1)[0]
     github_env = tmp_path / 'github-env'
