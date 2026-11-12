@@ -1,0 +1,36 @@
+name: Load checked ARM64 images
+
+on:
+  workflow_call:
+    inputs:
+      artifact_id:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          version: v0.22.0
+          driver-opts: image=moby/buildkit:v0.20.2
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          artifact-ids: ${{ inputs.artifact_id }}
+          path: output
+      - name: Load and validate checked images
+        run: |
+          docker load -i output/images.tar
+          docker pull --platform linux/arm64 rabbitmq:4@sha256:485319d42170eab53d8a030e1cc49d95e41f5d325479fa504736db8091981eb7
+          python -c 'import os; from pathlib import Path; from deploy.artifacts import verify_release; verify_release(Path("output/release"), os.environ["GITHUB_SHA"])'

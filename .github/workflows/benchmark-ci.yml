@@ -1,0 +1,34 @@
+name: Benchmark CI without registry changes
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  baseline_verify:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/ci-speedup'
+    uses: znzlspt17/MAGI/.github/workflows/verify.yml@0d256f0d8a0baa6ea48209a33bdddd3b49bce248
+  baseline_prepare:
+    needs: baseline_verify
+    uses: ./.github/workflows/prepare-arm64.yml
+    with:
+      cache_prefix: benchmark-baseline
+      artifact_name: benchmark-baseline
+      transfer_images: false
+  optimized_verify:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/ci-speedup'
+    uses: ./.github/workflows/verify.yml
+  optimized_prepare:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'codex/ci-speedup'
+    uses: ./.github/workflows/prepare-arm64.yml
+    with:
+      cache_prefix: benchmark-optimized
+      artifact_name: benchmark-optimized
+  optimized_load:
+    needs: [optimized_verify, optimized_prepare]
+    uses: ./.github/workflows/load-arm64.yml
+    with:
+      artifact_id: ${{ needs.optimized_prepare.outputs.artifact_id }}

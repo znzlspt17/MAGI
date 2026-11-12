@@ -71,7 +71,7 @@ def test_workflows_call_release_api_without_cli():
     root = Path(__file__).resolve().parents[2]
     imported = set()
     blocks = 0
-    for name in ("verify.yml", "build-arm64.yml"):
+    for name in ("verify.yml", "prepare-arm64.yml", "build-arm64.yml"):
         content = (root / ".github/workflows" / name).read_text(encoding="utf-8")
         assert "deploy/release.py" not in content
         body = None
@@ -90,3 +90,51 @@ def test_workflows_call_release_api_without_cli():
         assert body is None
     assert blocks == 6
     assert imported == {"release_inputs", "smoke", "summarize_scans", "publish"}
+
+
+def test_release_requires_the_current_commit_before_image_checks(tmp_path, monkeypatch):
+    (tmp_path / 'release.json').write_text(json.dumps({'source_commit': 'other'}), encoding='utf-8')
+    verify = Mock(side_effect=AssertionError('잘못된 커밋에서는 이미지를 확인하지 않는다.'))
+    monkeypatch.setattr(artifacts, 'verify_images', verify)
+    with pytest.raises(ValueError, match='커밋'):
+        artifacts.verify_release(tmp_path, 'expected')
+    verify.assert_not_called()
+
+
+def test_release_checks_loaded_images_and_scans_for_matching_commit(tmp_path, monkeypatch):
+    manifest = {'source_commit': 'expected'}
+    (tmp_path / 'release.json').write_text(json.dumps(manifest), encoding='utf-8')
+    verify = Mock()
+    monkeypatch.setattr(artifacts, 'verify_images', verify)
+    monkeypatch.setattr(artifacts, 'summarize_scans', lambda output: True)
+    artifacts.verify_release(tmp_path, 'expected')
+    verify.assert_called_once_with(manifest)
+
+
+def test_release_rejects_invalid_or_missing_scan_after_loading(tmp_path, monkeypatch):
+    (tmp_path / 'release.json').write_text(json.dumps({'source_commit': 'expected'}), encoding='utf-8')
+    monkeypatch.setattr(artifacts, 'verify_images', Mock())
+    monkeypatch.setattr(artifacts, 'summarize_scans', lambda output: False)
+    with pytest.raises(ValueError, match='보안 검사'):
+        artifacts.verify_release(tmp_path, 'expected')
+
+
+@pytest.mark.parametrize('role', ['gateway', 'backend', 'caddy', 'rabbitmq'])
+@pytest.mark.parametrize('field,bad', [('Id', 'sha256:other'), ('Architecture', 'amd64'), ('Os', 'windows')])
+def test_release_rejects_changed_loaded_image(tmp_path, monkeypatch, role, field, bad):
+    manifest = {
+        'source_commit': 'expected',
+        'images': {name: {'tag': name + ':release', 'id': 'sha256:good'} for name in artifacts.ROLES},
+        'external_images': {'rabbitmq': {'reference': artifacts.RABBITMQ, 'id': 'sha256:good', 'platform': 'linux/arm64'}},
+    }
+    (tmp_path / 'release.json').write_text(json.dumps(manifest), encoding='utf-8')
+    monkeypatch.setattr(artifacts, 'summarize_scans', lambda output: True)
+    def run(*args, **kwargs):
+        inspected_role = 'rabbitmq' if args[-1] == artifacts.RABBITMQ else args[-1].split(':')[0]
+        image = {'Id': 'sha256:good', 'Architecture': 'arm64', 'Os': 'linux'}
+        if inspected_role == role:
+            image[field] = bad
+        return json.dumps([image])
+    monkeypatch.setattr(artifacts, 'run', run)
+    with pytest.raises(ValueError, match='이미지'):
+        artifacts.verify_release(tmp_path, 'expected')

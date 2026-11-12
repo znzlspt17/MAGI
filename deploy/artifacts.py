@@ -142,6 +142,16 @@ def verify_images(manifest):
         raise ValueError('검사한 RabbitMQ 이미지와 일치하지 않습니다.')
 
 
+def verify_release(output, expected_commit):
+    """전달된 검사 결과와 이미지가 이 실행의 커밋에 속하는지 확인한다."""
+    manifest = json.loads((output / 'release.json').read_text(encoding='utf-8'))
+    if manifest.get('source_commit') != expected_commit:
+        raise ValueError('릴리스의 소스 커밋이 현재 실행과 다릅니다.')
+    if not summarize_scans(output):
+        raise ValueError('보안 검사를 통과하지 못한 릴리스입니다.')
+    verify_images(manifest)
+
+
 def publish(output, repository, images_file):
     """운영 비밀 없이 CI의 레지스트리 인증을 사용하고 전체 게시 성공 후 주소를 기록한다."""
     repository = repository.lower()
