@@ -1,0 +1,181 @@
+name: Prepare ARM64 images
+
+on:
+  workflow_call:
+    outputs:
+      artifact_id:
+        value: ${{ jobs.build.outputs.artifact_id }}
+    inputs:
+      cache_prefix:
+        type: string
+        default: magi
+      artifact_name:
+        type: string
+        default: release-images
+      transfer_images:
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    outputs:
+      artifact_id: ${{ steps.transfer.outputs.artifact-id }}
+    env:
+      DOCKER_BUILD_RECORD_UPLOAD: "false"
+      DOCKER_BUILD_SUMMARY: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Set readable release ID
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from deploy.version import release_id
+          release = release_id(Path('pyproject.toml'), os.environ['GITHUB_RUN_NUMBER'], os.environ['GITHUB_RUN_ATTEMPT'])
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env_file:
+              env_file.write(f'RELEASE_ID={release}\n')
+          PY
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+          image: tonistiigi/binfmt:qemu-v9.2.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          version: v0.22.0
+          driver-opts: image=moby/buildkit:v0.20.2
+      - name: Build ARM64 gateway with cache
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/arm64
+          target: gateway
+          tags: magi-gateway:${{ env.RELEASE_ID }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          load: true
+          push: false
+          provenance: false
+          cache-from: type=gha,version=2,scope=${{ inputs.cache_prefix }}-gateway-arm64
+          cache-to: type=gha,version=2,scope=${{ inputs.cache_prefix }}-gateway-arm64,mode=max
+      - name: Build ARM64 backend with cache
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/arm64
+          target: backend
+          tags: magi-backend:${{ env.RELEASE_ID }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          load: true
+          push: false
+          provenance: false
+          cache-from: type=gha,version=2,scope=${{ inputs.cache_prefix }}-backend-arm64
+          cache-to: type=gha,version=2,scope=${{ inputs.cache_prefix }}-backend-arm64,mode=max
+      - name: Smoke-check local ARM64 images
+        id: images
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from deploy.artifacts import smoke
+          smoke(Path("output/release"), os.environ["RELEASE_ID"])
+          PY
+      - name: Scan backend fixable critical vulnerabilities
+        id: scan_backend
+        if: ${{ !cancelled() && steps.images.outcome == 'success' }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.0
+          image-ref: magi-backend:${{ env.RELEASE_ID }}
+          scanners: vuln
+          format: json
+          output: output/release/backend.vulnerabilities.json
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Scan gateway fixable critical vulnerabilities
+        id: scan_gateway
+        if: ${{ !cancelled() && steps.images.outcome == 'success' }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.0
+          image-ref: magi-gateway:${{ env.RELEASE_ID }}
+          scanners: vuln
+          format: json
+          output: output/release/gateway.vulnerabilities.json
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Scan Caddy fixable critical vulnerabilities
+        id: scan_caddy
+        if: ${{ !cancelled() && steps.images.outcome == 'success' }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.0
+          image-ref: magi-caddy:${{ env.RELEASE_ID }}
+          scanners: vuln
+          format: json
+          output: output/release/caddy.vulnerabilities.json
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Scan RabbitMQ fixable critical vulnerabilities
+        id: scan_rabbitmq
+        if: ${{ !cancelled() && steps.images.outcome == 'success' }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_PLATFORM: linux/arm64
+        with:
+          version: v0.76.0
+          image-ref: rabbitmq:4@sha256:485319d42170eab53d8a030e1cc49d95e41f5d325479fa504736db8091981eb7
+          scanners: vuln
+          format: json
+          output: output/release/rabbitmq.vulnerabilities.json
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Show vulnerability IDs and fixed versions even on failure
+        if: ${{ !cancelled() && steps.images.outcome == 'success' }}
+        env:
+          BACKEND: ${{ steps.scan_backend.outcome }}
+          GATEWAY: ${{ steps.scan_gateway.outcome }}
+          CADDY: ${{ steps.scan_caddy.outcome }}
+          RABBITMQ: ${{ steps.scan_rabbitmq.outcome }}
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from deploy.artifacts import summarize_scans
+          raise SystemExit(0 if summarize_scans(Path("output/release")) else 1)
+          PY
+          test "$BACKEND" = success && test "$GATEWAY" = success && test "$CADDY" = success && test "$RABBITMQ" = success
+      - name: Save checked images for the next job
+        if: ${{ inputs.transfer_images }}
+        run: docker save -o output/images.tar "magi-gateway:$RELEASE_ID" "magi-backend:$RELEASE_ID" "magi-caddy:$RELEASE_ID"
+      - name: Transfer checked images and reports
+        id: transfer
+        if: ${{ inputs.transfer_images }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.artifact_name }}-${{ github.run_attempt }}
+          path: |
+            output/images.tar
+            output/release/*.json
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+      - name: Preserve scan diagnostics
+        if: ${{ !cancelled() && steps.images.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.artifact_name }}-reports-${{ github.run_attempt }}
+          path: output/release/*.json
+          retention-days: 14
+          if-no-files-found: error

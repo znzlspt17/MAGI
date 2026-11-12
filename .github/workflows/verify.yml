@@ -8,8 +8,48 @@ permissions:
   contents: read
 
 jobs:
-  verify:
-    if: github.event_name != 'push' || github.ref_name == github.event.repository.default_branch
+  static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install locked Python dependencies
+        run: |
+          python -m pip install uv==0.10.0
+          uv sync --locked --no-dev --extra test --group gateway
+      - name: Python contracts
+        run: uvx --from mypy==1.18.2 mypy --python-executable .venv/bin/python
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: Install locked dependencies
+        run: |
+          python -m pip install uv==0.10.0
+          uv sync --locked --no-dev --extra test --group gateway
+          npm install --global pnpm@11.25.0
+          pnpm --dir frontend install --frozen-lockfile
+      - name: Frontend types and tests
+        run: |
+          .venv/bin/python resources/licenses/python_notices.py --output frontend/static/vendor/python
+          pnpm --dir frontend typecheck
+          pnpm --dir frontend test
+  integration:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     services:
@@ -55,16 +95,10 @@ jobs:
           uv sync --locked --no-dev --extra test --group gateway
           npm install --global pnpm@11.25.0
           pnpm --dir frontend install --frozen-lockfile
-      - name: Python contracts and architecture
-        run: |
-          uvx --from mypy==1.18.2 mypy --python-executable .venv/bin/python
-          .venv/bin/python -m pytest -q tests/architecture/test_architecture.py
       - name: Frontend tests and production assets
         run: |
           .venv/bin/python resources/licenses/python_notices.py --output frontend/static/vendor/python
-          pnpm --dir frontend typecheck
-          pnpm --dir frontend test
-          pnpm --dir frontend build
+          pnpm --dir frontend exec vite build
       - name: Install browser for acceptance scenarios
         run: |
           # 2026-11-12: Azure 미러 DNS 장애 시 공식 Ubuntu 미러로 패키지를 받는다.
@@ -80,10 +114,29 @@ jobs:
           RABBITMQ_USER: ci-magi
           RABBITMQ_PASSWORD: ci-only-rabbit
           CI_RABBITMQ_CONTAINER: ${{ job.services.rabbitmq.id }}
-        run: .venv/bin/python -m pytest -q
+        run: .venv/bin/python -m pytest -q --durations=30 --junitxml=output/pytest-integration.xml
       - name: Check deployment inputs
         run: |
           .venv/bin/python - <<'PY'
           from deploy.artifacts import release_inputs
           release_inputs()
           PY
+      - name: Preserve pytest timings
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pytest-integration-${{ github.run_attempt }}
+          path: output/pytest-integration.xml
+          retention-days: 7
+          if-no-files-found: ignore
+  verify:
+    if: ${{ always() }}
+    needs: [static, frontend, integration]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every verification job
+        env:
+          STATIC: ${{ needs.static.result }}
+          FRONTEND: ${{ needs.frontend.result }}
+          INTEGRATION: ${{ needs.integration.result }}
+        run: test "$STATIC" = success && test "$FRONTEND" = success && test "$INTEGRATION" = success

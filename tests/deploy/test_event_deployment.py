@@ -45,7 +45,7 @@ def test_portainer_stack_and_ci_share_pinned_broker():
     verify = yaml.safe_load((ROOT / '.github/workflows/verify.yml').read_text(encoding='utf-8'))
     services = compose['services']
     broker = services['rabbitmq']
-    assert broker['image'] == verify['jobs']['verify']['services']['rabbitmq']['image'] == RABBITMQ
+    assert broker['image'] == verify['jobs']['integration']['services']['rabbitmq']['image'] == RABBITMQ
     assert '@sha256:' in RABBITMQ and 'management' not in RABBITMQ
     assert 'ports' not in broker and broker['networks'] == ['events']
     assert broker['mem_limit'] == broker['memswap_limit'] == '512m'
@@ -59,7 +59,7 @@ def test_portainer_stack_and_ci_share_pinned_broker():
         assert services[role]['environment']['RABBITMQ_HOST'] == 'rabbitmq'
         assert services[role]['environment']['RABBITMQ_PASSWORD'] == broker['environment']['RABBITMQ_DEFAULT_PASS']
     assert 'rabbitmq' in SCAN_ROLES
-    workflow = yaml.safe_load((ROOT / '.github/workflows/build-arm64.yml').read_text(encoding='utf-8'))
+    workflow = yaml.safe_load((ROOT / '.github/workflows/prepare-arm64.yml').read_text(encoding='utf-8'))
     step = next(s for s in workflow['jobs']['build']['steps'] if s.get('name') == 'Scan RabbitMQ fixable critical vulnerabilities')
     assert step['with']['image-ref'] == RABBITMQ and step['with']['exit-code'] == '1'
     assert step['env']['TRIVY_PLATFORM'] == 'linux/arm64'
