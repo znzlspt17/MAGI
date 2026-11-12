@@ -19,6 +19,7 @@ it('공백 요청은 버튼과 단축키로 전송하지 않고 입력 후 전�
  fireEvent.keyDown(input,{key:'Enter',ctrlKey:true});expect(send).not.toHaveBeenCalled();
  fireEvent.change(input,{target:{value:'새 요청'}});expect(button).toBeEnabled();
  fireEvent.keyDown(input,{key:'Enter',ctrlKey:true});expect(send).toHaveBeenCalledOnce();
+ fireEvent.click(button);expect(send).toHaveBeenCalledTimes(2);
 });
 it('크게 쓰기 초안을 동기화하고 닫으면 포커스를 돌려준다',async()=>{
  const user=userEvent.setup(),send=vi.fn();render(<Editor send={send}/>);

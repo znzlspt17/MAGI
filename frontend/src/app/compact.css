@@ -22,7 +22,16 @@ a:not(.astryx-button):focus-visible, summary:focus-visible { outline: 2px solid 
 [data-slot="input-group"][data-mode="composer"] [data-slot="input-group-addon"] { width: auto; flex: 0 0 auto; align-items: center; padding: 0; }
 [data-slot="input-group"][data-mode="composer"] [data-slot="input-group-addon"] > span { display: none; }
 [data-slot="input-group"][data-mode="composer"] [data-slot="input-group-addon"] > button { width: 44px; height: 44px; min-height: 44px; padding: 0; border-radius: 50%; font-size: 0; }
-[data-slot="input-group"][data-mode="composer"] .expandable-input { flex: 1 1 auto; }
+[data-slot="input-group"][data-mode="composer"] .expandable-input { flex: 1 1 auto; display: flex; align-items: flex-end; }
+/* 2026-11-12: 작성창의 확대와 전송을 같은 하단 조작 행에 두고 입력 줄과 중심을 맞춘다. */
+
+[data-slot="input-group"][data-mode="composer"] .expandable-input > .astryx-field { flex: 1 1 0; min-width: 0; }
+[data-slot="input-group"][data-mode="composer"] .expandable-input textarea { width: 100%; padding: 10px 12px; }
+[data-slot="input-group"][data-mode="composer"] .expand-input { position: static; flex: 0 0 44px; width: 44px; height: 44px; min-width: 44px; min-height: 44px; }
+[data-slot="input-group"][data-mode="composer"] .expand-input svg { width: 17px; height: 17px; }
+/* 2026-11-12: 주요 전송 동작은 독립 아이콘으로 표시해 숨은 글자 간격을 없앤다. */
+[data-slot="input-group"][data-mode="composer"] [data-slot="input-group-addon"] > button svg { width: 28px; height: 28px; }
+
 [data-slot="input-group"][data-mode="composer"] textarea { font-size: 16px; }
 [data-slot="input-group"][data-mode="composer"] [data-slot="input-group-addon"] > button { margin-left: auto; }
 .shell { min-height: 100dvh; padding: 0; gap: 0; background: var(--color-background-body); }
@@ -199,7 +208,7 @@ body :is(.admin-react, .mcp-page, .login-page, .research-page, .licenses-page, .
 .workspace-stage-panel[data-view="document"] .spec-confirmation [data-slot="item-actions"] { flex: 1 1 100%; display: flex; flex-wrap: wrap; justify-content: stretch; gap: 8px; }
 .workspace-stage-panel[data-view="document"] .spec-confirmation [data-slot="item-actions"] > button { flex: 1 1 100%; min-width: 0; white-space: normal; }
 /* 2026-11-11: Astryx 버튼의 한 줄 말줄임을 검토 패널에서만 해제한다. */
-.workspace-stage-panel[data-view="document"] .workspace-conversation :is(.rr-compact .rr-header, .spec-confirmation [data-slot="item-actions"], .chat-prompt-footer) button { height: auto; min-height: 32px; white-space: normal; overflow-wrap: anywhere; }
+.workspace-stage-panel[data-view="document"] .workspace-conversation :is(.rr-compact .rr-header, .spec-confirmation [data-slot="item-actions"]) button { height: auto; min-height: 32px; white-space: normal; overflow-wrap: anywhere; }
 .workspace-stage-panel[data-view="document"] .workspace-conversation :is(.rr-compact .rr-header, .spec-confirmation [data-slot="item-actions"], .chat-prompt-footer) button > span > span { overflow: visible; text-overflow: clip; white-space: normal; overflow-wrap: anywhere; }
 .workspace-stage-panel[data-view="document"] .workspace-conversation .chat-prompt-footer { flex-wrap: wrap; min-width: 0; }
 .workspace-stage-panel[data-view="history"] .document-action-layout { min-height: 0; overflow: auto; }
