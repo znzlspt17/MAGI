@@ -50,7 +50,14 @@ it('숨겨진 탭의 실시간 상태 이벤트는 HTTP 요청 없이 상태를 
  expect(vi.mocked(api).mock.calls.filter(([path])=>path==='/api/service/status')).toHaveLength(calls);
  expect(vi.mocked(api).mock.calls.filter(([path])=>path==='/api/me/usage')).toHaveLength(usageCalls);
 });
-beforeEach(()=>{vi.mocked(post).mockReset().mockResolvedValue({});vi.mocked(api).mockImplementation(async(path:string)=>path==='/api/auth/info'?{public:true,login_available:true}:path==='/api/me'?{id:'owner',role:'user',csrf:'fake-csrf',identity_kind:'google'}:path==='/api/service/status'?{ready:true,active_count:0,own_active_count:0}:{runs:1,remaining_runs:3});sessionStorage.clear();});
+beforeEach(()=>{Object.defineProperty(navigator,'locks',{configurable:true,value:{request:(_name:string, callback:()=>unknown)=>callback()}});vi.mocked(post).mockReset().mockResolvedValue({});vi.mocked(api).mockImplementation(async(path:string)=>path==='/api/auth/info'?{public:true,login_available:true}:path==='/api/me'?{id:'owner',role:'user',csrf:'fake-csrf',identity_kind:'google'}:path==='/api/service/status'?{ready:true,active_count:0,own_active_count:0}:{runs:1,remaining_runs:3});sessionStorage.clear();});
+it('잠금이 없으면 익명 세션을 안전하지 않게 발급하지 않는다',async()=>{
+ Object.defineProperty(navigator,'locks',{configurable:true,value:undefined});
+ vi.mocked(api).mockImplementation(async path=>{if(path==='/api/auth/info')return {public:true};throw new ApiError('expired',401);});
+ render(<AuthProvider><Account/></AuthProvider>);
+ expect((await screen.findByRole('alert')).textContent).toContain('브라우저');
+ expect(post).not.toHaveBeenCalled();
+});
 afterEach(()=>{cleanup();vi.useRealTimers();vi.clearAllMocks();vi.restoreAllMocks();history.replaceState(null,'','/');});
 it('미로그인 방문자는 익명 세션으로 바로 작업 공간을 연다',async()=>{
  let created=false;
