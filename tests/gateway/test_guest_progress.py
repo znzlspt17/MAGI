@@ -97,3 +97,31 @@ def test_scope_change_detected_by_event_refreshes_snapshot_before_event():
     serve_progress(socket, Client(), Hub())
     assert [message['event'] for message in socket.messages[:4]] == ['ready', 'jobs.snapshot', 'jobs.snapshot', 'jobs.changed']
     assert socket.messages[2]['jobs'] == [{'id': job}]
+
+
+def test_internal_route_owner_filters_event_without_reaching_websocket():
+    class Client:
+        def call(self, method, params=None):
+            if method == 'progress.authorize':
+                return {'id': 'account', 'owner_ids': ['account', 'guest']}
+            if method == 'progress.list':
+                return {'jobs': [], 'revisions': {}}
+            raise AssertionError(method)
+    class Hub:
+        def attach(self, listener, job=None, owner=None):
+            if owner is None:
+                listener.put({'event': 'jobs.changed', 'job_id': 'a' * 32, '_route_owner': 'guest'})
+                listener.put({'event': 'jobs.changed', 'job_id': 'b' * 32, '_route_owner': 'other'})
+        def detach(self, listener, key=None): pass
+    class Socket:
+        def __init__(self): self.messages = []; self.calls = 0
+        def send(self, value): self.messages.append(json.loads(value))
+        def receive(self, timeout):
+            self.calls += 1
+            if self.calls > 1: raise ClientError('expired', status=401)
+            return None
+        def close(self): pass
+    socket = Socket()
+    serve_progress(socket, Client(), Hub())
+    events = [message for message in socket.messages if message['event'] == 'jobs.changed']
+    assert events == [{'event': 'jobs.changed', 'job_id': 'a' * 32}]

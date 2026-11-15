@@ -93,8 +93,9 @@ def test_real_user_job_queues_share_devices_and_isolate_other_jobs():
         token = hub.subscriptions[key].token.result(timeout=5)
         event = {'event': 'job.progress', 'job_id': ident, 'revision': 1, 'job': {'id': ident, 'status': 'running'}}
         hub.broker.publish(key, event).result(timeout=10)
-        assert a1.messages.get(timeout=5) == event
-        assert a2.messages.get(timeout=5) == event
+        # 게이트웨이는 구독 경로의 소유자를 내부 큐에 보관해 세션 범위를 재확인한다.
+        assert a1.messages.get(timeout=5) == {**event, '_route_owner': 'A'}
+        assert a2.messages.get(timeout=5) == {**event, '_route_owner': 'A'}
         assert other.messages.empty() and b.messages.empty()
         hub.detach(a1)
         assert queue_exists(token[0])

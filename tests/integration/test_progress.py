@@ -76,9 +76,10 @@ def test_each_user_job_has_one_queue_and_multiple_devices_share_it():
         for listener, ident in ((a1, 'a' * 32), (a2, 'a' * 32), (other_job, 'b' * 32), (b, 'c' * 32)):
             hub.attach(listener, ident)
         assert len(hub.broker.subscriptions) == 3
-        hub.deliver(routing_key('A', 'a' * 32), {'event': 'job.progress', 'job_id': 'a'*32, 'revision': 1, 'job': {'id': 'a'*32, 'status': 'running'}})
-        assert a1.messages.get(timeout=2)['event'] == 'job.progress'
-        assert a2.messages.get(timeout=2)['event'] == 'job.progress'
+        event = {'event': 'job.progress', 'job_id': 'a'*32, 'revision': 1, 'job': {'id': 'a'*32, 'status': 'running'}}
+        hub.deliver(routing_key('A', 'a' * 32), event)
+        assert a1.messages.get(timeout=2) == {**event, '_route_owner': 'A'}
+        assert a2.messages.get(timeout=2) == {**event, '_route_owner': 'A'}
         assert other_job.messages.empty() and b.messages.empty()
         hub.detach(a1)
         assert not hub.broker.removed
