@@ -143,6 +143,11 @@ def serve_progress(ws, client, hub):
     current_owner = None
     owners = set(actor.get('owner_ids', [actor['id']]))
     checked = time.monotonic()
+
+    def verify_actor(current):
+        # 2026-11-15: 다른 계정의 상태를 기존 클라이언트 인증 문맥에 섞지 않는다.
+        if current.get('id') != listener.owner:
+            raise ClientError('세션이 변경되었습니다.', status=401)
     try:
         hub.attach(listener)
         for owner in owners - {listener.owner}:
@@ -165,6 +170,7 @@ def serve_progress(ws, client, hub):
                         continue
                     # DB 스냅샷은 RLS와 작업 소유권을 확인한 RPC에서만 얻는다.
                     authorized = client.call('progress.authorize', {'id': ident})
+                    verify_actor(authorized)
                     owner = authorized.get('owner_id', listener.owner)
                     if owner not in authorized.get('owner_ids', [listener.owner]):
                         raise ValueError()
@@ -195,6 +201,7 @@ def serve_progress(ws, client, hub):
                 if _ == 0:
                     # 연결 생존 확인과 별개로 철회된 세션의 데이터 전송을 차단한다.
                     auth = client.call('progress.authorize')
+                    verify_actor(auth)
                     current_owners = set(auth.get('owner_ids', [listener.owner]))
                     for owner in current_owners - owners:
                         hub.attach(listener, owner=owner)
@@ -227,6 +234,7 @@ def serve_progress(ws, client, hub):
                 ws.send(json.dumps(event, ensure_ascii=False))
             if time.monotonic() - checked >= 30:
                 auth = client.call('progress.authorize')
+                verify_actor(auth)
                 current_owners = set(auth.get('owner_ids', [listener.owner]))
                 for owner in current_owners - owners:
                     hub.attach(listener, owner=owner)

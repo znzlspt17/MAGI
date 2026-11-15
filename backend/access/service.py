@@ -86,12 +86,26 @@ class PublicService:
             request = {**request, 'method': command.kind, 'params': command.parameters()}
         method, params = request['method'], dict(request['params'])
         sid = request.get('session')
+        alternate = request.get('guest_session')
+        actor = None
         if method == 'auth.info':
             return {'public':True, 'login_available':bool(self.google and self.google.available and self.pepper)}
+        if (alternate and alternate != sid) or (sid and method in {'auth.start', 'auth.callback'}):
+            try:
+                sid, actor = await self.access.resolve_session(sid, alternate)
+            except AccessError:
+                if method not in {'auth.guest', 'auth.start', 'auth.callback'}:
+                    raise
+                # 2026-11-15: 정지된 계정은 차단하고 만료 쿠키는 로그인 시작 시 무시한다.
+                await self.access.reject_suspended_sessions(sid, alternate)
+                sid = (sid or alternate) if method == 'auth.guest' else None
         if method == 'auth.guest':
             guest = (await self.access.guest(sid))
             actor = (await self.access.session(guest))
-            return {'session': guest, 'max_age': max(0, math.ceil(actor['expires_at'] - self.access.clock()))}
+            result = {'session': guest, 'max_age': max(0, math.ceil(actor['expires_at'] - self.access.clock()))}
+            if actor.get('identity_kind') == 'google':
+                result['set_guest_cookie'] = False
+            return result
         if method in {'auth.start','auth.callback'} and not self.pepper:
             raise AccessError('백엔드에 SUBJECT_PEPPER 설정이 필요합니다.', 'unavailable')
         if method == 'auth.start':
@@ -107,7 +121,7 @@ class PublicService:
             state = (await self.access.consume_login(params.get('state'), params.get('browser'), sid))
             subject = await asyncio.to_thread(self.google.subject, params.get('code'), state['nonce'], state['verifier'])
             return {'session': (await self.access.login(subject, self.pepper, sid))}
-        actor = (await self.access.session(sid))
+        actor = actor or (await self.access.session(sid))
         if method == 'progress.authorize':
             # 게이트웨이의 세션 철회 검사는 사용자 API 요청 한도를 소비하지 않는다.
             token = ACTOR.set(actor)
@@ -132,6 +146,17 @@ class PublicService:
             for owner in actor['owner_ids']:
                 (await self.release(owner))
             (await self.access.logout(sid))
+            other_sid = next((value for value in (request.get('session'), alternate) if value and value != sid), None)
+            if other_sid:
+                try:
+                    other = await self.access.session(other_sid)
+                except AccessError:
+                    pass
+                else:
+                    for owner in other['owner_ids']:
+                        if owner not in actor['owner_ids']:
+                            await self.release(owner)
+                await self.access.logout(other_sid)
             return {'ok':True}
         if method == 'service.status':
             return (await self.access.status(actor['id'], actor['owner_ids']))

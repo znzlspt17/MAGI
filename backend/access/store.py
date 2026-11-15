@@ -111,6 +111,39 @@ class AccessStore:
         return {**dict(row), 'owner_ids': [owner['id'] for owner in owners],
                 'identity_kind': 'google' if row['subject_hash'] else 'guest'}
 
+    async def reject_suspended_sessions(self, *sessions):
+        """2026-11-15: 만료된 쿠키와 정지된 쿠키를 함께 보내도 정지를 우회하지 않는다."""
+        hashes = [digest(sid) for sid in sessions if isinstance(sid, str) and 20 <= len(sid) <= 200]
+        if not hashes:
+            return
+        async with self.store.transaction(mode='read') as c:
+            row = await (await c.execute(
+                'SELECT 1 FROM sessions s JOIN users u ON u.id=s.user_id '
+                'JOIN users a ON a.id=COALESCE(u.account_id,u.id) '
+                'WHERE s.hash=ANY(%s) AND (u.suspended OR a.suspended) LIMIT 1', (hashes,))).fetchone()
+        if row:
+            raise AccessError('이 계정은 이용할 수 없습니다.', 'unauthorized')
+
+    async def resolve_session(self, primary, alternate):
+        """2026-11-15: 기존 세션을 우선하고 정지 계정은 대체 세션으로 우회하지 않는다."""
+        if not primary:
+            return alternate, await self.session(alternate)
+        try:
+            return primary, await self.session(primary)
+        except AccessError:
+            if not alternate or alternate == primary:
+                raise
+            if isinstance(primary, str) and 20 <= len(primary) <= 200:
+                async with self.store.transaction(mode='read') as c:
+                    row = await (await c.execute(
+                        'SELECT u.suspended AS own_suspended,a.suspended AS account_suspended '
+                        'FROM sessions s JOIN users u ON u.id=s.user_id '
+                        'JOIN users a ON a.id=COALESCE(u.account_id,u.id) WHERE s.hash=%s',
+                        (digest(primary),))).fetchone()
+                if row and (row['own_suspended'] or row['account_suspended']):
+                    raise AccessError('이 계정은 이용할 수 없습니다.', 'unauthorized')
+            return alternate, await self.session(alternate)
+
     async def logout(self, sid):
         async with self.store.transaction() as c:
             (await c.execute('UPDATE sessions SET revoked=true WHERE hash=%s', (digest(sid),)))

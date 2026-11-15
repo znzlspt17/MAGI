@@ -81,6 +81,7 @@ class RequestPacket(TypedDict):
     params: dict[str, object]
     trace_id: NotRequired[str]
     session: NotRequired[str]
+    guest_session: NotRequired[str]
     csrf: NotRequired[str]
     idempotency_key: NotRequired[str]
 
@@ -108,7 +109,7 @@ def parse_request(raw: object) -> RequestPacket | None:
         if not isinstance(data["trace_id"], str) or not re.fullmatch(r"[a-f0-9]{24,64}", data["trace_id"]):
             return None
         result["trace_id"] = data["trace_id"]
-    for key in ("session", "csrf", "idempotency_key"):
+    for key in ("session", "guest_session", "csrf", "idempotency_key"):
         if key in data:
             if not isinstance(data[key], str) or len(data[key]) > 512:
                 return None
