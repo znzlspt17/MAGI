@@ -82,8 +82,10 @@ async def isolated_async_store(*, initialized=True):
         async def configure(conn):
             await conn.execute("SET ROLE ci_service")
             await conn.execute("SET search_path TO workflow, public")
+        # 2026-11-15: PGlite socket은 하나의 DB backend를 공유하므로 wire 세션을 직렬화한다.
+        # 실제 PostgreSQL은 독립 연결의 동시성을 그대로 검증한다.
         pool = AsyncConnectionPool(conninfo="", kwargs={**store.config.connection, "autocommit": True, "row_factory": dict_row},
-                                   min_size=0, max_size=8, open=False, configure=configure)
+                                   min_size=0, max_size=8 if ci_postgres else 1, open=False, configure=configure)
         await pool.open()
         store._async_pool = pool
         if initialized:

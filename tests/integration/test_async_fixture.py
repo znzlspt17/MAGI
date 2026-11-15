@@ -17,3 +17,24 @@ def test_async_fixture_provides_migrated_isolated_store(async_store_factory):
 
     with asyncio.Runner(loop_factory=asyncio.SelectorEventLoop if sys.platform == "win32" else None) as runner:
         runner.run(scenario())
+
+
+def test_isolated_pool_matches_database_connection_model(async_store_factory, monkeypatch):
+    monkeypatch.delenv('CI_POSTGRES', raising=False)
+    async def scenario():
+        async with async_store_factory() as store:
+            assert store._async_pool.max_size == 1
+    with asyncio.Runner(loop_factory=asyncio.SelectorEventLoop if sys.platform == 'win32' else None) as runner:
+        runner.run(scenario())
+
+
+def test_postgres_pool_retains_parallel_connections(async_store_factory):
+    import os
+    import pytest
+    if os.environ.get('CI') != 'true' or os.environ.get('CI_POSTGRES') != '1':
+        pytest.skip('실제 PostgreSQL 전용 검증')
+    async def scenario():
+        async with async_store_factory() as store:
+            assert store._async_pool.max_size == 8
+    with asyncio.Runner(loop_factory=asyncio.SelectorEventLoop if sys.platform == 'win32' else None) as runner:
+        runner.run(scenario())
