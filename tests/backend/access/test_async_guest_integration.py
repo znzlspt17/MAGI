@@ -153,3 +153,138 @@ def test_google_link_during_running_guest_execution_keeps_original_lease(async_s
     if sys.platform == 'win32':
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(scenario())
+
+
+def test_dual_session_selection_suspension_and_logout(async_store_factory):
+    async def scenario():
+        async with async_store_factory() as store:
+            access = AccessStore(store, clock=lambda: 1800000000)
+            canonical = await access.login('account', 'fake-pepper')
+            guest_sid = await access.guest()
+            account = await access.session(canonical)
+            guest = await access.session(guest_sid)
+            manager = Mock()
+            manager.knowledge.store = store
+            service = PublicService(manager, google=None, pepper='fake-pepper', clock=lambda: 1800000000)
+            async def me(primary, alternate):
+                return await service.invoke({'method': 'auth.me', 'params': {}, 'session': primary,
+                                             'guest_session': alternate}, None)
+            assert (await me(canonical, guest_sid))['id'] == account['id']
+            assert (await me('expired-session-value-000', guest_sid))['id'] == guest['id']
+            async with store.transaction() as conn:
+                await conn.execute('UPDATE users SET suspended=true WHERE id=%s', (account['id'],))
+            with pytest.raises(AccessError):
+                await me(canonical, guest_sid)
+            async with store.transaction() as conn:
+                await conn.execute('UPDATE users SET suspended=false WHERE id=%s', (account['id'],))
+            service.release = AsyncMock()
+            await service.invoke({'method': 'auth.logout', 'params': {}, 'session': canonical,
+                                  'guest_session': guest_sid, 'csrf': account['csrf']}, None)
+            with pytest.raises(AccessError): await access.session(canonical)
+            with pytest.raises(AccessError): await access.session(guest_sid)
+    if sys.platform == 'win32': asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    asyncio.run(scenario())
+
+
+def test_oauth_state_binds_to_effective_guest_when_primary_expired(async_store_factory):
+    async def scenario():
+        async with async_store_factory() as store:
+            guest_sid = await AccessStore(store).guest()
+            google = Mock(available=True)
+            google.authorize.return_value = 'https://example.test/oauth'
+            google.subject.return_value = 'google-subject'
+            manager = Mock()
+            manager.knowledge.store = store
+            service = PublicService(manager, google=google, pepper='fake-pepper')
+            request = {'params': {}, 'session': 'expired-session-value-000', 'guest_session': guest_sid}
+            started = await service.invoke({**request, 'method': 'auth.start'}, None)
+            state = google.authorize.call_args.args[0]
+            linked = await service.invoke({**request, 'method': 'auth.callback',
+                                           'params': {'state': state, 'browser': started['browser'], 'code': 'fake'}}, None)
+            actor = await service.access.session(linked['session'])
+            assert actor['identity_kind'] == 'google'
+            with pytest.raises(AccessError): await service.access.session(guest_sid)
+    if sys.platform == 'win32': asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    asyncio.run(scenario())
+
+
+def test_google_session_bootstrap_does_not_overwrite_distinct_guest_cookie(async_store_factory):
+    async def scenario():
+        async with async_store_factory() as store:
+            access = AccessStore(store)
+            google = await access.login('google', 'fake-pepper')
+            guest = await access.guest()
+            manager = Mock()
+            manager.knowledge.store = store
+            service = PublicService(manager, google=None, pepper='fake-pepper')
+            result = await service.invoke({'method': 'auth.guest', 'params': {},
+                                           'session': google, 'guest_session': guest}, None)
+            assert result.get('set_guest_cookie') is False
+    if sys.platform == 'win32': asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    asyncio.run(scenario())
+
+
+def test_guest_bootstrap_does_not_bypass_suspended_alternate(async_store_factory):
+    async def scenario():
+        async with async_store_factory() as store:
+            access = AccessStore(store)
+            guest_sid = await access.guest()
+            actor = await access.session(guest_sid)
+            async with store.transaction() as conn:
+                await conn.execute('UPDATE users SET suspended=true WHERE id=%s', (actor['id'],))
+            manager = Mock()
+            manager.knowledge.store = store
+            service = PublicService(manager, google=None, pepper='fake-pepper')
+            with pytest.raises(AccessError):
+                await service.invoke({'method': 'auth.guest', 'params': {},
+                                      'session': 'expired-session-value-000', 'guest_session': guest_sid}, None)
+    if sys.platform == 'win32': asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    asyncio.run(scenario())
+
+
+def test_expired_cookie_allows_oauth_start_but_revoked_pending_session_stays_bound(async_store_factory):
+    async def scenario():
+        async with async_store_factory() as store:
+            access = AccessStore(store)
+            expired = await access.guest()
+            await access.logout(expired)
+            google = Mock(available=True)
+            google.authorize.return_value = 'https://example.test/oauth'
+            google.subject.return_value = 'google-subject'
+            manager = Mock()
+            manager.knowledge.store = store
+            service = PublicService(manager, google=google, pepper='fake-pepper')
+            for cookies in ({'guest_session': expired}, {'session': expired}):
+                start = await service.invoke({'method': 'auth.start', 'params': {}, **cookies}, None)
+                state = google.authorize.call_args.args[0]
+                result = await service.invoke({'method': 'auth.callback', **cookies,
+                                               'params': {'state': state, 'browser': start['browser'], 'code': 'fake'}}, None)
+                assert (await access.session(result['session']))['identity_kind'] == 'google'
+            guest = await access.guest()
+            start = await service.invoke({'method': 'auth.start', 'params': {}, 'guest_session': guest}, None)
+            state = google.authorize.call_args.args[0]
+            await access.logout(guest)
+            with pytest.raises(AccessError):
+                await service.invoke({'method': 'auth.callback', 'guest_session': guest,
+                                      'params': {'state': state, 'browser': start['browser'], 'code': 'fake'}}, None)
+    if sys.platform == 'win32': asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    asyncio.run(scenario())
+
+
+def test_suspended_session_cannot_be_ignored_for_oauth_start(async_store_factory):
+    async def scenario():
+        async with async_store_factory() as store:
+            access = AccessStore(store)
+            guest = await access.guest()
+            actor = await access.session(guest)
+            async with store.transaction() as conn:
+                await conn.execute('UPDATE users SET suspended=true WHERE id=%s', (actor['id'],))
+            manager = Mock()
+            manager.knowledge.store = store
+            service = PublicService(manager, google=Mock(available=True), pepper='fake-pepper')
+            for cookies in ({'session': guest}, {'guest_session': guest},
+                            {'session': 'expired-session-value-000', 'guest_session': guest}):
+                with pytest.raises(AccessError):
+                    await service.invoke({'method': 'auth.start', 'params': {}, **cookies}, None)
+    if sys.platform == 'win32': asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    asyncio.run(scenario())

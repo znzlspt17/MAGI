@@ -63,7 +63,8 @@ def create_app(config: dict | None = None) -> Flask:
         instance=app.config["CLIENT_FACTORY"](app.config["SERVER_URL"])
         if app.config['PUBLIC_MODE']:
             instance.context={key:value for key,value in {
-                'session':request.cookies.get(app.config['SESSION_COOKIE']),'csrf':request.headers.get('X-CSRF-Token'),
+                'session':request.cookies.get(app.config['SESSION_COOKIE']),
+                'guest_session':request.cookies.get(app.config['GUEST_SESSION_COOKIE']),'csrf':request.headers.get('X-CSRF-Token'),
                 'idempotency_key':request.headers.get('Idempotency-Key')}.items() if value is not None}
         return instance
 

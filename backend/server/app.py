@@ -115,7 +115,8 @@ class Server:
                 if request["method"] == "subscribe":
                     if self.public:
                         try:
-                            actor = await self.public.access.session(request.get("session"))
+                            _, actor = await self.public.access.resolve_session(
+                                request.get("session"), request.get("guest_session"))
                         except Exception:
                             await socket.send(
                                 error(
@@ -131,7 +132,8 @@ class Server:
                     await socket.send(rpc_result(request_id, {"ready": True}))
                     if sender is None:
                         sender = asyncio.create_task(
-                            self._sender(socket, queue, request.get("session"))
+                            self._sender(socket, queue, request.get("session"),
+                                         request.get("guest_session"), actor if self.public else None)
                         )
                     continue
                 response = await self._dispatch(request)
@@ -148,23 +150,23 @@ class Server:
             if sender is not None:
                 sender.cancel()
 
-    async def _sender(self, socket, queue: asyncio.Queue[str], sid=None) -> None:
+    async def _sender(self, socket, queue: asyncio.Queue[str], sid=None, alternate=None, initial_actor=None) -> None:
         while True:
             try:
                 if self.public:
                     try:
                         message = await asyncio.wait_for(queue.get(), timeout=5)
                     except asyncio.TimeoutError:
-                        actor = await self.public.access.session(sid)
-                        self.subscriber_owners[queue] = tuple(actor.get("owner_ids", (actor["id"],)))
+                        _, actor = await self.public.access.resolve_session(sid, alternate)
+                        self._check_subscriber_scope(queue, actor, initial_actor)
                         status = await self.public.access.status(actor["id"], actor.get("owner_ids"))
                         message = json.dumps(
                             {"event": "service.status", "status": status}
                         )
                     else:
                         # 진행 이벤트를 전송하기 직전에 세션 철회 여부를 확인한다.
-                        actor = await self.public.access.session(sid)
-                        self.subscriber_owners[queue] = tuple(actor.get("owner_ids", (actor["id"],)))
+                        _, actor = await self.public.access.resolve_session(sid, alternate)
+                        self._check_subscriber_scope(queue, actor, initial_actor)
                     await socket.send(message)
                 else:
                     await socket.send(await queue.get())
@@ -176,6 +178,14 @@ class Server:
                     return
                 _log_exception("websocket sender failed", exc)
                 return
+
+    def _check_subscriber_scope(self, queue, actor, initial_actor):
+        # 2026-11-15: 큐에 남은 이전 계정 이벤트를 다른 계정에 보내지 않는다.
+        owners = tuple(actor.get("owner_ids", (actor["id"],)))
+        if initial_actor and (actor["id"] != initial_actor["id"]
+                              or not set(self.subscriber_owners.get(queue, ())).issubset(owners)):
+            raise ValueError("구독 권한이 변경되었습니다.")
+        self.subscriber_owners[queue] = owners
 
     async def _dispatch(self, request: RequestPacket) -> str:
         from protocol.logging import log_context
