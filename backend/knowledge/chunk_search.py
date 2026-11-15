@@ -19,7 +19,7 @@ def merge_matches(row, matches):
     return merged
 
 
-def search(store, query, kinds, active, filters, params, vector, model_id):
+async def search(store, query, kinds, active, filters, params, vector, model_id):
     columns = "SELECT n.*,j.project_id,c.id AS chunk_id,c.body AS quote,c.source_ranges,c.title_path"
     joins = " FROM nodes n JOIN jobs j ON j.id=n.job_id"
     chunks = (" JOIN chunks c ON c.node_id=n.id JOIN chunk_vectors v ON v.chunk_id=c.id "
@@ -28,22 +28,22 @@ def search(store, query, kinds, active, filters, params, vector, model_id):
     base = " WHERE " + active + " AND n.kind=ANY(%s) AND (n.kind NOT IN ('requirement','decision','spec') OR n.attrs->>'scope'='product')" + filters
     words = query.split()[:20]
     patterns = ["%" + word.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" for word in words]
-    with store.transaction(mode='read') as conn:
-        lexical = conn.execute(columns + joins + chunks + base +
+    async with store.transaction(mode='read') as conn:
+        lexical = (await (await conn.execute(columns + joins + chunks + base +
             " AND (to_tsvector('simple',c.input) @@ plainto_tsquery('simple',%s) OR c.input ILIKE ANY(%s) "
             "OR n.logical_key=%s OR split_part(n.logical_key,':',2)=%s) "
             "ORDER BY (n.logical_key=%s OR split_part(n.logical_key,':',2)=%s) DESC,"
             "ts_rank(to_tsvector('simple',c.input),plainto_tsquery('simple',%s)) DESC,c.id LIMIT 60",
-            (kinds, *params, query, patterns, query, query, query, query, query)).fetchall()
+            (kinds, *params, query, patterns, query, query, query, query, query))).fetchall())
         # 청크가 준비되지 않은 최신 원본도 검색에서 빠지지 않는다.
-        fallback = conn.execute("SELECT n.*,j.project_id" + joins + base +
+        fallback = (await (await conn.execute("SELECT n.*,j.project_id" + joins + base +
             " AND NOT EXISTS (SELECT 1 FROM chunk_sets s JOIN models m ON m.id=s.model_id "
             "WHERE s.node_id=n.id AND s.completed AND m.active) "
             "AND (to_tsvector('simple',n.body) @@ plainto_tsquery('simple',%s) OR n.body ILIKE ANY(%s) "
             "OR n.logical_key=%s OR split_part(n.logical_key,':',2)=%s) "
             "ORDER BY (n.logical_key=%s OR split_part(n.logical_key,':',2)=%s) DESC,"
             "ts_rank(to_tsvector('simple',n.body),plainto_tsquery('simple',%s)) DESC,n.id LIMIT 60",
-            (kinds, *params, query, patterns, query, query, query, query, query)).fetchall()
+            (kinds, *params, query, patterns, query, query, query, query, query))).fetchall())
         # 텍스트 후보 두 경로를 하나의 60개 순위로 묶는다.
         lexical = sorted(lexical + fallback, key=lambda row: (
             not (row["logical_key"] == query or row["logical_key"].split(":", 1)[-1] == query),
@@ -52,9 +52,9 @@ def search(store, query, kinds, active, filters, params, vector, model_id):
         semantic = []
         if vector is not None:
             import json
-            semantic = conn.execute(columns + joins + chunks + base +
+            semantic = (await (await conn.execute(columns + joins + chunks + base +
                 " AND m.id=%s ORDER BY v.embedding <=> %s::vector,c.id LIMIT 60",
-                (kinds, *params, model_id, json.dumps(vector))).fetchall()
+                (kinds, *params, model_id, json.dumps(vector)))).fetchall())
     return rank_results(lexical, semantic, public_node=store._public, semantic_enabled=vector is not None)
 
 

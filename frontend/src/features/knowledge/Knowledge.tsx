@@ -44,7 +44,7 @@ export default function Knowledge({
     kind, setKind, status, setStatus, graph,
     results, matches, selected, group, setGroup,
     newRequirement, mode, setMode, setExpanded, orphans,
-    setOrphans, list, setList, notice, busy,
+    setOrphans, list, setList, notice, busy, indexStatus,
     spacing, setSpacing, distance, setDistance, labels,
     setLabels, paused, setPaused, relation, setRelation,
     setRefresh, focused, projectOperation, setProjectOperation, handle,
@@ -221,6 +221,8 @@ export default function Knowledge({
           </Button>
         )}
       </HStack>
+      {indexStatus === "pending" && <p className="subtle" role="status">검색 데이터를 반영하고 있습니다. 기존에 반영된 결과를 표시합니다.</p>}
+      {indexStatus === "failed" && <p className="subtle" role="status">검색 데이터 반영에 실패했습니다. 기존에 반영된 결과를 표시합니다.</p>}
       <div id="knowledge-notice" role="status" aria-live="polite">
         {notice || (busy ? "조회 중…" : <HStack gap={2} wrap="wrap" className="graph-counts">
           <span>화면 항목 <strong>{display.nodes.length}개</strong></span>

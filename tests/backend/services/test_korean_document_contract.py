@@ -1,4 +1,6 @@
 import hashlib
+from unittest.mock import AsyncMock
+from tests.backend.application.async_helpers import run_async
 
 from backend.application.document_queries import DocumentQueries
 from backend.infrastructure.output_language import language_issues
@@ -8,11 +10,12 @@ from backend.services.checklist import _PLACEHOLDER_ACCEPTANCE, _GENERIC_COMPLET
 from backend.services.spec_compiler import _assemble_locked_sections, _rendered_sections, SpecCompiler, REQUIRED_FINAL_SPEC_HEADINGS
 
 
-def test_document_returns_korean_source_without_provider():
+@run_async
+async def test_document_returns_korean_source_without_provider():
     query = object.__new__(DocumentQueries)
     source = "# 명세\n\nAPI 요청을 저장한다."
-    query.step = lambda ident, step: {"document": {"content": source, "filename": "SPEC.ko.md", "source_hash": hashlib.sha256(source.encode()).hexdigest()}}
-    result = query.document("job", "step")
+    query.step = AsyncMock(return_value={"document": {"content": source, "filename": "SPEC.ko.md", "source_hash": hashlib.sha256(source.encode()).hexdigest()}})
+    result = await query.document("job", "step")
     assert result["language"] == "ko"
     assert result["content"] == source
     assert result["source_hash"] == hashlib.sha256(source.encode()).hexdigest()

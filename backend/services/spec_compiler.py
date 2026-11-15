@@ -70,7 +70,7 @@ class SpecCompiler:
         self.provider = provider
         self.skills = skills
 
-    def compile(
+    async def compile(
         self,
         sheet: RequirementLockSheet,
         manifest: dict[str, Any] | None,
@@ -91,16 +91,16 @@ class SpecCompiler:
             context = CURRENT_RETRY.get()
             token = CURRENT_RETRY.set(context or {"attempt": attempt, "error": error})
             try:
-                return self._compile_once(sheet, manifest, issues, user_request=user_request,
+                return (await self._compile_once(sheet, manifest, issues, user_request=user_request,
                     previous_spec=previous_spec, revision_feedback=revision_feedback,
-                    revision_history=revision_history, writer=writer, rubric=rubric)
+                    revision_history=revision_history, writer=writer, rubric=rubric))
             except (SpecCompilationError, OutputLanguageError) as exc:
                 error = exc
                 from structlog.contextvars import get_contextvars
                 from backend.server.diagnostics import diagnose_exception
                 execution_id = get_contextvars().get("execution_id")
                 diagnostic = diagnose_exception(exc)
-                writer.write_json("analysis/spec_compile_validation.json", {
+                (await writer.write_json("analysis/spec_compile_validation.json", {
                     "stage": "spec_compile", "attempt": (context or {"attempt": attempt})["attempt"] + 1,
                     "validation_details": exc.validation_details,
                     "failed_checks": getattr(exc, "failed_checks", []),
@@ -111,14 +111,14 @@ class SpecCompiler:
                     "validation_section": diagnostic["validation_section"],
                     "validation_index": diagnostic["validation_index"],
                     "validation_field": diagnostic["validation_field"],
-                }, overwrite=True)
+                }, overwrite=True))
                 if attempt + 1 == limit:
                     raise
             finally:
                 CURRENT_RETRY.reset(token)
         raise AssertionError("Unreachable compiler validation retry")
 
-    def _compile_once(
+    async def _compile_once(
         self,
         sheet: RequirementLockSheet,
         manifest: dict[str, Any] | None,
@@ -136,8 +136,8 @@ class SpecCompiler:
         route = self.config.model_routing[self.agent_id]
         provider = self.provider
         previous_trace = {}
-        if writer.exists("analysis/spec_trace.json"):
-            previous_trace = writer.read_json("analysis/spec_trace.json")
+        if (await writer.exists("analysis/spec_trace.json")):
+            previous_trace = (await writer.read_json("analysis/spec_trace.json"))
         runtime = writer.runtime
         if runtime is not None:
             previous_trace["decisions"] = runtime.bind_decisions(previous_trace.get("decisions", []), previous_trace.get("decisions", []))
@@ -152,9 +152,9 @@ class SpecCompiler:
             previous_trace=previous_trace,
             rubric=rubric,
         )
-        raw_output = complete_with_usage(
+        raw_output = (await complete_with_usage(
             writer, provider, messages, model=route.model, stage="spec_compile", temperature=0.7,
-        )
+        ))
         if not isinstance(raw_output, SpecDraftResponse):
             raise SpecCompilationError(["완전한 구조의 SpecDraftResponse를 반환하세요."])
         from backend.services.implementation_plan import prepare_plan
@@ -200,13 +200,13 @@ class SpecCompiler:
                 rendered = _rendered_sections(assembled)
                 links = _anchor_links(links, rendered, "assembled")
                 _validate_trace(validate_links, links, sheet.decisions + decisions, sheet.to_dict(), rendered)
-                writer.write_json("analysis/spec_trace.json", {"decisions": decisions, "links": links}, overwrite=True)
+                (await writer.write_json("analysis/spec_trace.json", {"decisions": decisions, "links": links}, overwrite=True))
                 from backend.services.change_review import BLOCKS, digest, normalize
                 if task_plan:
                     from backend.services.implementation_plan import PATH
-                    writer.write_json(PATH, {**task_plan, "source_hash": digest(normalize(assembled))}, overwrite=True)
-                writer.write_json(BLOCKS, {"source_hash": digest(normalize(assembled)),
-                    "blocks": draft_blocks}, overwrite=True)
+                    (await writer.write_json(PATH, {**task_plan, "source_hash": digest(normalize(assembled))}, overwrite=True))
+                (await writer.write_json(BLOCKS, {"source_hash": digest(normalize(assembled)),
+                    "blocks": draft_blocks}, overwrite=True))
                 return assembled
         raise SpecCompilationError(["필수 섹션의 한국어 본문을 지정된 스키마에 맞게 작성하세요."], check="spec_structure")
 

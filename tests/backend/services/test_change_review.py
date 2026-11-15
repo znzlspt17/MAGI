@@ -1,13 +1,14 @@
 """확인 제안의 폼 검증과 변경 검토 캐시 호환성을 확인한다."""
 
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock
 
 import pytest
 from pydantic import ValidationError
 
 from backend.services import change_review as review
 from tests.support.rubric_helpers import Documents
+from tests.backend.application.async_helpers import run_async
 
 
 def judgment(**changes):
@@ -58,43 +59,45 @@ def snapshot(content):
     return {**data, "id": review.digest(data)}
 
 
-def test_old_cache_version_reuses_original_baseline_and_validates_new_forms(monkeypatch):
+@run_async
+async def test_old_cache_version_reuses_original_baseline_and_validates_new_forms(monkeypatch):
     writer = Documents()
     before, after = snapshot("## Version\nUnspecified."), snapshot("## Version\nUnity 6.")
-    writer.write_json(f"candidate_snapshots/{before['id']}.json", before)
-    writer.write_json(review.LATEST, {"id": after["id"]})
-    writer.write_json(review.CURRENT_REVIEW, {"version": 1, "after_id": after["id"], "before_id": before["id"]})
+    await writer.write_json(f"candidate_snapshots/{before['id']}.json", before)
+    await writer.write_json(review.LATEST, {"id": after["id"]})
+    await writer.write_json(review.CURRENT_REVIEW, {"version": 1, "after_id": after["id"], "before_id": before["id"]})
     monkeypatch.setattr(review, "_sources", lambda *_: [])
     def complete(*args, **kwargs):
         change = next(iter(writer.data[path] for path in writer.data if path.startswith("change_reviews/")))["changes"][0]
         value = judgment()
         value.judgments[0].change_id = change["id"]
         return value
-    provider = Mock(side_effect=complete)
+    provider = AsyncMock(side_effect=complete)
     monkeypatch.setattr(review, "_complete_once", provider)
     context = SimpleNamespace(writer=writer, provider=None, config=SimpleNamespace(model_routing={"compiler": SimpleNamespace(model="fake")}))
-    result = review._review_snapshot(context, {}, after)
+    result = await review._review_snapshot(context, {}, after)
     assert result["version"] == 2 and result["before_id"] == before["id"]
     assert result["status"] == "complete" and result["changes"][0]["question_form"]["form_version"]
     assert provider.call_count == 1
-    writer.write_json(review.CURRENT_REVIEW, result)
-    assert review._review_snapshot(context, {}, after) == result
+    await writer.write_json(review.CURRENT_REVIEW, result)
+    assert await review._review_snapshot(context, {}, after) == result
     assert provider.call_count == 1
 
 
-def test_invalid_form_marks_analysis_failed_without_raising(monkeypatch):
+@run_async
+async def test_invalid_form_marks_analysis_failed_without_raising(monkeypatch):
     writer = Documents()
     before, after = snapshot("Old."), snapshot("New.")
-    writer.write_json(f"candidate_snapshots/{before['id']}.json", before)
-    writer.write_json(review.LATEST, {"id": before["id"]})
+    await writer.write_json(f"candidate_snapshots/{before['id']}.json", before)
+    await writer.write_json(review.LATEST, {"id": before["id"]})
     monkeypatch.setattr(review, "_sources", lambda *_: [])
     def invalid_response(*args, **kwargs):
         change = next(value for path, value in writer.data.items() if path.startswith("change_reviews/"))["changes"][0]
         value = judgment(question_form=None)
         value.judgments[0].change_id = change["id"]
         return value
-    monkeypatch.setattr(review, "_complete_once", invalid_response)
+    monkeypatch.setattr(review, "_complete_once", AsyncMock(side_effect=invalid_response))
     context = SimpleNamespace(writer=writer, provider=None, config=SimpleNamespace(model_routing={"compiler": SimpleNamespace(model="fake")}))
-    result = review._review_snapshot(context, {}, after)
+    result = await review._review_snapshot(context, {}, after)
     assert result["status"] == "failed" and result["remaining"] == 1
     assert result["changes"][0]["reason"] == "analysis_failed"

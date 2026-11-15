@@ -1,5 +1,6 @@
 """과거 검증 문서의 안전한 해석과 관리자 전용 페이지 조회."""
 import json
+from tests.backend.application.async_helpers import run_async
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -56,47 +57,50 @@ def test_corrupt_or_oversized_record_is_unreadable(content):
 
 
 @pytest.mark.parametrize("params", [{"id": "bad"}, {"id": JOB, "path": ".env"}, {"id": JOB, "limit": 101}, {"id": JOB, "limit": 0}, {"id": JOB, "limit": True}, {"id": JOB, "offset": -1}])
-def test_invalid_parameters_do_not_access_database(params):
+@run_async
+async def test_invalid_parameters_do_not_access_database(params):
     store = Mock()
-    with pytest.raises(AccessError) as error: validation_page(service(store), ADMIN, params)
+    with pytest.raises(AccessError) as error: (await validation_page(service(store), ADMIN, params))
     assert error.value.code == "invalid"
     store.transaction.assert_not_called()
 
 
-def test_versions_are_isolated_paginated_and_execution_links_are_verified(store):
-    project = store.create_project("진단 테스트")
-    for ident in (JOB, OTHER): store.save_job({"id": ident, "project_id": project["id"]})
-    with store.transaction() as conn:
-        for execution, ident in ((EXECUTION, JOB), (FOREIGN_EXECUTION, OTHER)):
-            conn.execute("INSERT INTO executions(id,job_id,data) VALUES (%s,%s,'{}')", (execution, ident))
-    docs = store.documents(JOB)
-    legacy = {"stage": "spec_compile", "failed_checks": ["spec_blocks"], "attempt": 4,
-              "validation_details": ["out_of_scope: 실질적인 본문 블록을 하나 이상 포함하세요."]}
-    docs.write_json(DOCUMENT, legacy)
-    new = {**legacy, "execution_id": EXECUTION, "validation_reason": "unknown_requirement", "validation_section": "architecture", "validation_index": 2, "validation_field": "requirement_ids", "validation_details": ["PRIVATE_RESPONSE"]}
-    docs.write_json(DOCUMENT, new)
-    docs.write_json(DOCUMENT, {**new, "execution_id": FOREIGN_EXECUTION})
-    docs.write_text(DOCUMENT, "PRIVATE_INVALID_JSON")
-    store.documents(OTHER).write_json(DOCUMENT, {**legacy, "execution_id": FOREIGN_EXECUTION})
-    store.documents(JOB).write_json("analysis/unrelated.json", {"PRIVATE": "must not read"})
-    from backend.access.service import PublicService
-    first = PublicService.admin(service(store), ADMIN, "admin.job.validation", {"id": JOB, "limit": 2})
-    assert first["next_offset"] == 2 and len(first["items"]) == 2
-    assert first["items"][0]["state"] == "unreadable"
-    assert first["items"][1]["execution_id"] is None
-    second = validation_page(service(store), ADMIN, {"id": JOB, "limit": 2, "offset": 2})
-    assert second["next_offset"] is None
-    assert second["items"][0]["execution_id"] == EXECUTION and second["items"][0]["execution_link"] == "confirmed"
-    assert second["items"][0]["validation_field"] == "requirement_ids"
-    assert second["items"][1]["execution_link"] == "unconfirmed"
-    assert all(item["created_at"].endswith("+09:00") for item in second["items"])
-    assert "PRIVATE" not in json.dumps(first) + json.dumps(second)
-    assert not ({item["record_id"] for item in first["items"]} & {item["record_id"] for item in second["items"]})
-    docs.write_text(DOCUMENT, "x" * 65537)
-    assert validation_page(service(store), ADMIN, {"id": JOB})["items"][0]["state"] == "unreadable"
-    with pytest.raises(AccessError): validation_page(service(store), {"role": "user"}, {"id": JOB})
-    with pytest.raises(AccessError) as error: validation_page(service(store), ADMIN, {"id": "f" * 32})
-    assert error.value.code == "not_found"
+@run_async
+async def test_versions_are_isolated_paginated_and_execution_links_are_verified(async_store_factory):
+    async with async_store_factory() as store:
+        project = (await store.create_project("진단 테스트"))
+        for ident in (JOB, OTHER): (await store.save_job({"id": ident, "project_id": project["id"]}))
+        async with store.transaction() as conn:
+            for execution, ident in ((EXECUTION, JOB), (FOREIGN_EXECUTION, OTHER)):
+                (await conn.execute("INSERT INTO executions(id,job_id,data) VALUES (%s,%s,'{}')", (execution, ident)))
+        docs = store.documents(JOB)
+        legacy = {"stage": "spec_compile", "failed_checks": ["spec_blocks"], "attempt": 4,
+                  "validation_details": ["out_of_scope: 실질적인 본문 블록을 하나 이상 포함하세요."]}
+        (await docs.write_json(DOCUMENT, legacy))
+        new = {**legacy, "execution_id": EXECUTION, "validation_reason": "unknown_requirement", "validation_section": "architecture", "validation_index": 2, "validation_field": "requirement_ids", "validation_details": ["PRIVATE_RESPONSE"]}
+        (await docs.write_json(DOCUMENT, new))
+        (await docs.write_json(DOCUMENT, {**new, "execution_id": FOREIGN_EXECUTION}))
+        (await docs.write_text(DOCUMENT, "PRIVATE_INVALID_JSON"))
+        (await store.documents(OTHER).write_json(DOCUMENT, {**legacy, "execution_id": FOREIGN_EXECUTION}))
+        (await store.documents(JOB).write_json("analysis/unrelated.json", {"PRIVATE": "must not read"}))
+        from backend.access.service import PublicService
+        first = (await PublicService.admin(service(store), ADMIN, "admin.job.validation", {"id": JOB, "limit": 2}))
+        assert first["next_offset"] == 2 and len(first["items"]) == 2
+        assert first["items"][0]["state"] == "unreadable"
+        assert first["items"][1]["execution_id"] is None
+        second = (await validation_page(service(store), ADMIN, {"id": JOB, "limit": 2, "offset": 2}))
+        assert second["next_offset"] is None
+        assert second["items"][0]["execution_id"] == EXECUTION and second["items"][0]["execution_link"] == "confirmed"
+        assert second["items"][0]["validation_field"] == "requirement_ids"
+        assert second["items"][1]["execution_link"] == "unconfirmed"
+        assert all(item["created_at"].endswith("+09:00") for item in second["items"])
+        assert "PRIVATE" not in json.dumps(first) + json.dumps(second)
+        assert not ({item["record_id"] for item in first["items"]} & {item["record_id"] for item in second["items"]})
+        (await docs.write_text(DOCUMENT, "x" * 65537))
+        assert (await validation_page(service(store), ADMIN, {"id": JOB}))["items"][0]["state"] == "unreadable"
+        with pytest.raises(AccessError): (await validation_page(service(store), {"role": "user"}, {"id": JOB}))
+        with pytest.raises(AccessError) as error: (await validation_page(service(store), ADMIN, {"id": "f" * 32}))
+        assert error.value.code == "not_found"
 
 
 @pytest.mark.parametrize("role,status", [("admin", 200), ("user", 403), (None, 401)])

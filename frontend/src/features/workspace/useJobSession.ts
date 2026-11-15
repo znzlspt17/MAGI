@@ -9,8 +9,8 @@ import { useAuth } from "../auth/Auth";
 import { api, post } from "../../shared/api/api";
 import type { Job, CommandSelections, Step } from "../../shared/types";
 
-function useResource<T>(path: string | undefined, revision: number, owner: string | undefined, onError: (message: string) => void, decode: (value: unknown) => T) {
-  const [value, setValue] = useState<{ path: string; owner: string | undefined; data: T } | null>(null);
+function useResource<T>(path: string | undefined, revision: number, owner: string | undefined, onError: (message: string) => void, decode: (value: unknown) => T, clock?: { current: number }) {
+  const [value, setValue] = useState<{ path: string; owner: string | undefined; data: T; started: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const error = useRef(onError);
@@ -18,10 +18,11 @@ function useResource<T>(path: string | undefined, revision: number, owner: strin
   useEffect(() => {
     if (!path) return;
     const controller = new AbortController();
+    const started = clock ? ++clock.current : 0;
     setLoading(true);
     setFailure(null);
     api(path, { signal: controller.signal }).then(data => {
-      if (!controller.signal.aborted) setValue({ path, owner, data: decode(data) });
+      if (!controller.signal.aborted) setValue({ path, owner, data: decode(data), started });
     }).catch(e => {
       if (!controller.signal.aborted) { setFailure(e.message); error.current(e.message); }
     }).finally(() => {
@@ -29,7 +30,8 @@ function useResource<T>(path: string | undefined, revision: number, owner: strin
     });
     return () => controller.abort();
   }, [path, revision, owner]);
-  return { data: value && value.path === path && value.owner === owner ? value.data : null, loading: !!path && loading, error: failure };
+  const matched = value && value.path === path && value.owner === owner ? value : null;
+  return { data: matched?.data ?? null, started: matched?.started ?? 0, loading: !!path && loading, error: failure };
 }
 
 export function useJobSession() {
@@ -42,6 +44,7 @@ export function useJobSession() {
   const selected = useRef(id);
   const stream = useRef<WebSocket | undefined>(undefined);
   const progressRef = useRef<ProgressState | undefined>(undefined);
+  const indexClock = useRef(0), streamIndexAt = useRef(0);
   const resyncPending = useRef(false);
   const [pushed, setPushed] = useState<{ owner?: string; progress: ProgressState }>();
   const [listChanges, setListChanges] = useState<{ owner?: string; jobs: Record<string, { job: Job; revision: number }> }>({ jobs: {} });
@@ -52,8 +55,16 @@ export function useJobSession() {
   const openedJobs = useRef(new Set<string>());
   const refresh = useCallback(() => setRevision(value => value + 1), []);
   const jobs = useResource<Job[]>("/api/jobs", revision, auth.user?.id, auth.setNotice, decodeJobs);
-  const current = useResource<Job>(id ? `/api/jobs/${encodeURIComponent(id)}` : undefined, revision, auth.user?.id, auth.setNotice, decodeJob);
-  const job = pushed && pushed.owner === auth.user?.id && pushed.progress.job.id === id ? pushed.progress.job : current.data;
+  const current = useResource<Job>(id ? `/api/jobs/${encodeURIComponent(id)}` : undefined, revision, auth.user?.id, auth.setNotice, decodeJob, indexClock);
+  const streamed = pushed && pushed.owner === auth.user?.id && pushed.progress.job.id === id ? pushed.progress.job : undefined;
+  // 2026-11-13: 같은 인덱스 버전은 요청 시작과 이벤트 수신 순서로 비교해 늦은 HTTP 응답의 역행을 막는다.
+  const loaded = current.data;
+  const loadedSource = loaded?.index_source_revision ?? -1, streamSource = streamed?.index_source_revision ?? -1;
+  const loadedApplied = loaded?.index_applied_revision ?? -1, streamApplied = streamed?.index_applied_revision ?? -1;
+  const latestIndex = loaded && loaded.id === id && (loadedSource > streamSource ||
+    (loadedSource === streamSource && (loadedApplied > streamApplied ||
+      (loadedApplied === streamApplied && current.started > streamIndexAt.current)))) ? loaded : streamed;
+  const job = streamed && latestIndex ? { ...streamed, index_status: latestIndex.index_status, index_source_revision: latestIndex.index_source_revision, index_applied_revision: latestIndex.index_applied_revision } : streamed || current.data;
   const nodes: Step[] = [...(job?.execution_graph?.nodes || []), ...(job?.completed_documents || [])];
   const node = nodes.find(item => item.id === step);
   const detail = useResource<StepDetail>(id && step && node?.detail_available
@@ -67,6 +78,7 @@ export function useJobSession() {
 
   useEffect(() => {
     progressRef.current = undefined;
+    streamIndexAt.current = 0;
     resyncPending.current = true;
     setPushed(undefined);
     const socket = stream.current;
@@ -75,6 +87,12 @@ export function useJobSession() {
       if (id && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ event: "job.unsubscribe", job_id: id }));
     };
   }, [id, auth.user?.id]);
+
+  useEffect(() => {
+    if (!id || job?.index_status !== "pending") return;
+    const timer = setInterval(() => { if (document.visibilityState !== "hidden") refresh(); }, 10000);
+    return () => clearInterval(timer);
+  }, [id, job?.index_status, refresh]);
 
   useEffect(() => {
     views.current.clear();
@@ -116,6 +134,7 @@ export function useJobSession() {
       stream.current = socket;
       socket.onopen = () => {
         attempt = 0; progressRef.current = undefined; resyncPending.current = true;
+        window.dispatchEvent(new CustomEvent("realtime-connection", { detail: { connected: true } }));
         setConnection("실시간 상태를 동기화하고 있습니다.");
         if (selected.current) socket?.send(JSON.stringify({ event: "job.subscribe", job_id: selected.current }));
       };
@@ -146,6 +165,7 @@ export function useJobSession() {
           }
           if (value.event === "job.snapshot") resyncPending.current = false;
           if (result.state) {
+            if (value.job.index_status !== undefined) streamIndexAt.current = ++indexClock.current;
             progressRef.current = result.state;
             setPushed({ owner: auth.user?.id, progress: result.state });
             setConnection("");
@@ -172,13 +192,14 @@ export function useJobSession() {
       };
       socket.onclose = () => {
         if (!alive) return;
+        window.dispatchEvent(new CustomEvent("realtime-connection", { detail: { connected: false } }));
         setConnection("작업 서버 연결이 끊어졌습니다. 재연결 중입니다.");
         retry = setTimeout(connect, Math.min(1000 * 2 ** attempt++, 10000) * (0.8 + Math.random() * 0.4));
       };
       socket.onerror = () => socket?.close();
     };
     connect();
-    const close = () => { alive = false; clearTimeout(retry); socket?.close(); stream.current = undefined; };
+    const close = () => { alive = false; clearTimeout(retry); socket?.close(); stream.current = undefined; window.dispatchEvent(new CustomEvent("realtime-connection", { detail: { connected: false } })); };
     const show = (event: PageTransitionEvent) => { if (event.persisted) setEpoch(value => value + 1); };
     window.addEventListener("pagehide", close); window.addEventListener("pageshow", show);
     return () => { close(); window.removeEventListener("pagehide", close); window.removeEventListener("pageshow", show); };
@@ -194,6 +215,7 @@ export function useJobSession() {
           ...(kind === "approve" ? { accept_remaining_issues: selections.accept_remaining_issues === true, evaluation_hash: job?.state?.rubric_review?.evaluation_hash } : {}),
           candidate_hash: kind === "approve" ? job?.state?.candidate_hash : undefined }));
       if (result.id === selected.current) {
+        if (result.index_status !== undefined) streamIndexAt.current = ++indexClock.current;
         const progress = { job: result, revision: 0, serverOffset: 0 };
         progressRef.current = undefined;
         resyncPending.current = true;

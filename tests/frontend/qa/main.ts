@@ -15,6 +15,7 @@ const jobs = scenario === "empty" ? [] : Array.from({ length: scenario === "long
 const users = [{ id: "qa-user", role: "admin", daily_limit: 10 }, { id: "qa-team-member-with-a-long-identifier-for-layout", role: "user", daily_limit: 5 }];
 const packet = { rows: [decision], total: 1, next_offset: null, project_id: "project" };
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
+let guestStarted = false;
 
 // 모든 API는 이 검증 진입점 안에서만 가로챈다. 알 수 없는 요청도 외부에 보내지 않는다.
 window.fetch = async (input, init) => {
@@ -29,7 +30,8 @@ window.fetch = async (input, init) => {
   const path = url.pathname;
   if (scenario === "auth-loading") return new Promise(() => {});
   if (path === "/api/auth/info") return json({ public: true, login_available: scenario !== "unavailable" });
-  if (path === "/api/me") return role === "guest" ? json({ error: "" }, 401) : json({ id: "qa-user", role });
+  if (path === "/api/auth/guest" && init?.method === "POST") { guestStarted = true; return json({ ok: true }); }
+  if (path === "/api/me") return role === "guest" && !guestStarted ? json({ error: "" }, 401) : json({ id: "qa-user", role: role === "guest" ? "user" : role, identity_kind: role === "guest" ? "guest" : "google" });
   if (path === "/api/me/usage") return json({ runs: 2, remaining_runs: 8 });
   if (path === "/api/service/status") return scenario === "service-error" ? json({ error: "연결 확인 실패" }, 503) : json({ ready: scenario !== "busy", active_count: scenario === "busy" ? 1 : 0, queued_count: 0, max_parallel: 1, own_active_count: 0 });
   const affected = !target || path.includes(target);

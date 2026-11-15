@@ -12,6 +12,8 @@ import pytest
 import yaml
 from deploy.artifacts import RABBITMQ, SCAN_ROLES
 from protocol.amqp import BrokerSettings
+from tests.backend.application.async_helpers import run_async
+from unittest.mock import AsyncMock
 
 ROOT = Path(__file__).resolve().parents[2]
 FAKE = {'RABBITMQ_HOST': 'rabbitmq', 'RABBITMQ_PORT': '5672', 'RABBITMQ_VHOST': '/',
@@ -95,22 +97,24 @@ def test_render_compose_with_fake_values_and_reject_missing_account(tmp_path):
         assert render({k: v for k, v in values.items() if k != missing}).returncode != 0
 
 
-def test_backend_readiness_requires_ready_amqp_channel():
+@run_async
+async def test_backend_readiness_requires_ready_amqp_channel():
     from backend.server.app import Server
+    from contextlib import asynccontextmanager
     ready = Event()
-    @contextmanager
-    def connect(**kwargs):
-        yield SimpleNamespace(execute=lambda *a: SimpleNamespace(fetchone=lambda: {'ok': 1}))
+    @asynccontextmanager
+    async def transaction(**kwargs):
+        yield SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(fetchone=AsyncMock(return_value={'ok': 1}))))
     server = object.__new__(Server)
     server.internal_key = 'fake-internal'
     server.manager = SimpleNamespace(closed=False, progress_publisher=SimpleNamespace(broker=SimpleNamespace(ready=ready)),
-        knowledge=SimpleNamespace(store=SimpleNamespace(connect=connect, config=SimpleNamespace(connection={}))))
+        knowledge=SimpleNamespace(store=SimpleNamespace(transaction=transaction)))
     packet = {'request_id': 'health', 'method': 'health.check', 'params': {}}
-    assert 'error' in json.loads(server._dispatch_logged(packet))
+    assert 'error' in json.loads(await server._dispatch_logged(packet))
     ready.set()
-    assert json.loads(server._dispatch_logged(packet))['result'] == {'ready': True}
+    assert json.loads(await server._dispatch_logged(packet))['result'] == {'ready': True}
     ready.clear()
-    assert 'error' in json.loads(server._dispatch_logged(packet))
+    assert 'error' in json.loads(await server._dispatch_logged(packet))
 
 
 def test_gateway_readiness_and_liveness_are_separate():

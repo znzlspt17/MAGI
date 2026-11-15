@@ -38,13 +38,19 @@ def configure_logging() -> None:
 
 
 class Server:
-    def __init__(self, knowledge, *, public=None, internal_key="") -> None:
+    def __init__(self, knowledge, *, manager, public=None, internal_key="") -> None:
         self.loop = asyncio.get_running_loop()
         self.subscribers: set[asyncio.Queue[str]] = set()
-        self.manager = JobManager(knowledge, on_change=self.publish_from_worker)
+        self.manager = manager
+        self.manager.on_change = self.publish_from_worker
         self.public = public(self.manager) if public is not None else None
         self.internal_key = internal_key
-        self.subscriber_owners: dict[asyncio.Queue[str], str] = {}
+        self.subscriber_owners: dict[asyncio.Queue[str], tuple[str, ...]] = {}
+
+    @classmethod
+    async def build(cls, knowledge, *, public=None, internal_key=""):
+        manager = await JobManager.build(knowledge)
+        return cls(knowledge, manager=manager, public=public, internal_key=internal_key)
 
     def publish_from_worker(self, event: dict) -> None:
         try:
@@ -60,12 +66,12 @@ class Server:
         )
         for queue in tuple(self.subscribers):
             if self.public:
-                uid = self.subscriber_owners.get(queue)
+                owners = self.subscriber_owners.get(queue, ())
                 jid = event.get("job", {}).get("id")
                 owner = event.get("_owner_id") or self.manager.jobs.get(jid, {}).get(
                     "owner_id"
                 )
-                if owner != uid:
+                if owner not in owners:
                     continue
             try:
                 queue.put_nowait(message)
@@ -109,9 +115,7 @@ class Server:
                 if request["method"] == "subscribe":
                     if self.public:
                         try:
-                            actor = await asyncio.to_thread(
-                                self.public.access.session, request.get("session")
-                            )
+                            actor = await self.public.access.session(request.get("session"))
                         except Exception:
                             await socket.send(
                                 error(
@@ -123,14 +127,14 @@ class Server:
                         queue = asyncio.Queue(maxsize=32)
                         self.subscribers.add(queue)
                         if self.public:
-                            self.subscriber_owners[queue] = actor["id"]
+                            self.subscriber_owners[queue] = tuple(actor.get("owner_ids", (actor["id"],)))
                     await socket.send(rpc_result(request_id, {"ready": True}))
                     if sender is None:
                         sender = asyncio.create_task(
                             self._sender(socket, queue, request.get("session"))
                         )
                     continue
-                response = await asyncio.to_thread(self._dispatch, request)
+                response = await self._dispatch(request)
                 await socket.send(response)
         except ConnectionClosed:
             return
@@ -151,16 +155,16 @@ class Server:
                     try:
                         message = await asyncio.wait_for(queue.get(), timeout=5)
                     except asyncio.TimeoutError:
-                        actor = await asyncio.to_thread(self.public.access.session, sid)
-                        status = await asyncio.to_thread(
-                            self.public.access.status, actor["id"]
-                        )
+                        actor = await self.public.access.session(sid)
+                        self.subscriber_owners[queue] = tuple(actor.get("owner_ids", (actor["id"],)))
+                        status = await self.public.access.status(actor["id"], actor.get("owner_ids"))
                         message = json.dumps(
                             {"event": "service.status", "status": status}
                         )
                     else:
                         # 진행 이벤트를 전송하기 직전에 세션 철회 여부를 확인한다.
-                        await asyncio.to_thread(self.public.access.session, sid)
+                        actor = await self.public.access.session(sid)
+                        self.subscriber_owners[queue] = tuple(actor.get("owner_ids", (actor["id"],)))
                     await socket.send(message)
                 else:
                     await socket.send(await queue.get())
@@ -173,18 +177,18 @@ class Server:
                 _log_exception("websocket sender failed", exc)
                 return
 
-    def _dispatch(self, request: RequestPacket) -> str:
+    async def _dispatch(self, request: RequestPacket) -> str:
         from protocol.logging import log_context
         from time import monotonic
         with log_context(trace_id=request.get("trace_id"), request_id=request["request_id"]):
             started = monotonic()
             try:
-                return self._dispatch_logged(request)
+                return await self._dispatch_logged(request)
             finally:
                 LOGGER.info("rpc_completed", method=request["method"],
                             duration_ms=round((monotonic() - started) * 1000, 2))
 
-    def _dispatch_logged(self, request: RequestPacket) -> str:
+    async def _dispatch_logged(self, request: RequestPacket) -> str:
         if request["method"] == "health.check":
             # 내부 키를 검사한 loopback 소켓에서만 DB 준비 상태를 확인한다.
             if (
@@ -199,9 +203,9 @@ class Server:
                 )
             try:
                 store = self.manager.knowledge.store
-                with store.connect(**store.config.connection) as connection:
-                    connection.execute("SET LOCAL statement_timeout = '3s'")
-                    connection.execute("SELECT 1").fetchone()
+                async with store.transaction(mode="read") as connection:
+                    await connection.execute("SET LOCAL statement_timeout = '3s'")
+                    await (await connection.execute("SELECT 1")).fetchone()
                 return rpc_result(request["request_id"], {"ready": True})
             except Exception:
                 return error(
@@ -213,7 +217,7 @@ class Server:
             try:
                 return rpc_result(
                     request["request_id"],
-                    self.public.invoke(request, self._dispatch_request),
+                    await self.public.invoke(request, self._dispatch_request),
                 )
             except AccessError as exc:
                 LOGGER.warning(
@@ -247,7 +251,7 @@ class Server:
             request["request_id"], "인증 서비스가 필요합니다.", "configuration"
         )
 
-    def _dispatch_request(self, request: RequestPacket):
+    async def _dispatch_request(self, request: RequestPacket):
         from backend.access.context import AccessError
         from protocol.commands import COMMAND_KINDS
         from protocol.messages import RPC_METHODS
@@ -256,7 +260,7 @@ class Server:
         try:
             if method in COMMAND_KINDS:
                 if method == "generate":
-                    job = self.manager.create(
+                    job = await self.manager.create(
                         params.get("request"),
                         project_id=params.get("project_id"),
                         decision_reuse=params.get("decision_reuse"),
@@ -269,17 +273,17 @@ class Server:
                         if method == "approve"
                         else params.get("payload")
                     )
-                    job = self.manager.action(
+                    job = await self.manager.action(
                         _ident(params),
                         method,
                         payload,
                         expected_execution_id=params.get("execution_id"),
                     )
-                return self.manager.workspace.summary(job["id"])
+                return await self.manager.workspace.summary(job["id"])
             handler = RPC_METHODS.get(method)
             if handler is None:
                 raise AccessError("지원하지 않는 요청입니다.", "invalid")
-            return getattr(self, handler)(params, request)
+            return await getattr(self, handler)(params, request)
         except (InvalidStateError, CleanupConflict) as exc:
             raise AccessError(safe_user_error(exc), "conflict") from None
         except ValueError:
@@ -287,29 +291,29 @@ class Server:
                 "입력 또는 현재 작업 상태를 확인하세요.", "invalid"
             ) from None
 
-    def _list_jobs(self, params, request):
-        return [self.manager.workspace.summary(ident) for ident in self.manager.ids()]
+    async def _list_jobs(self, params, request):
+        return [await self.manager.workspace.summary(ident) for ident in await self.manager.ids()]
 
-    def _get_job(self, params, request):
+    async def _get_job(self, params, request):
         ident = _ident(params)
         return (
-            self.manager.workspace.step(ident, params["step_id"])
+            await self.manager.workspace.step(ident, params["step_id"])
             if "step_id" in params
-            else self.manager.workspace.public(ident)
+            else await self.manager.workspace.public(ident)
         )
 
-    def _document(self, params, request):
-        return self.manager.workspace.document(
+    async def _document(self, params, request):
+        return await self.manager.workspace.document(
             _ident(params),
             params.get("step_id"),
             meter=request.get("_meter"),
         )
 
-    def _download(self, params, request):
+    async def _download(self, params, request):
         ident = _ident(params)
-        if self.manager.get(ident)["status"] != "FINALIZED":
+        if (await self.manager.get(ident))["status"] != "FINALIZED":
             raise KeyError(ident)
-        content = self.manager.workspace.documents(ident).read_text(
+        content = await (await self.manager.workspace.documents(ident)).read_text(
             "final/FINAL_AGENT_SPEC.md"
         )
         return {
@@ -317,22 +321,22 @@ class Server:
             "content": base64.b64encode(content.encode()).decode("ascii"),
         }
 
-    def _requirement_review(self, params, request):
-        return self.manager.workspace.requirement_review(_ident(params), params)
+    async def _requirement_review(self, params, request):
+        return await self.manager.workspace.requirement_review(_ident(params), params)
 
-    def _implementation_package(self, params, request):
-        return self.manager.workspace.implementation_package(
+    async def _implementation_package(self, params, request):
+        return await self.manager.workspace.implementation_package(
             _ident(params), params, read_file=request["method"].endswith(".file")
         )
 
-    def _knowledge(self, params, request):
-        return self.manager.workspace.knowledge_call(request["method"], params)
+    async def _knowledge(self, params, request):
+        return await self.manager.workspace.knowledge_call(request["method"], params)
 
-    def _impact(self, params, request):
-        return self.manager.workspace.impact(params)
+    async def _impact(self, params, request):
+        return await self.manager.workspace.impact(params)
 
-    def _impact_analyse(self, params, request):
-        return self.manager.workspace.impact_analyse(
+    async def _impact_analyse(self, params, request):
+        return await self.manager.workspace.impact_analyse(
             params.get("job_id"),
             params,
             request.get("idempotency_key"),
@@ -368,11 +372,12 @@ async def main() -> None:
         from backend.knowledge.setup import migrate
 
         runtime = PublicRuntime(store)
-        runtime.acquire(recover=False)
-        migrate(store, runtime=runtime)
-        runtime.recover()
+        await runtime.acquire(recover=False)
+        await migrate(store, runtime=runtime)
+        await runtime.recover()
         knowledge = KnowledgeService(store)
-        server = Server(knowledge, public=service_factory, internal_key=internal_key)
+        server = await Server.build(knowledge, public=service_factory, internal_key=internal_key)
+        knowledge.start_background()
         from backend.infrastructure.progress_publisher import ProgressPublisher
         from protocol.amqp import BrokerSettings
         publisher = ProgressPublisher(store, BrokerSettings.from_mapping(os.environ))
@@ -380,7 +385,9 @@ async def main() -> None:
     except Exception as exc:
         _log_exception("server initialization failed", exc)
         if runtime:
-            runtime.close()
+            await runtime.close()
+        if 'store' in locals():
+            await store.close_async()
         raise SystemExit(1) from None
     loop = asyncio.get_running_loop()
     stopped = asyncio.Event()
@@ -411,9 +418,12 @@ async def main() -> None:
     finally:
         for signum in registered_signals:
             loop.remove_signal_handler(signum)
-        await asyncio.to_thread(server.manager.close)
+        await server.manager.close()
         if runtime:
-            runtime.close()
+            await runtime.close()
+        await store.close_async()
+        from backend.providers.llm_provider import close_network_executor
+        await close_network_executor()
         LOGGER.info("server stopped address=%s", _ADDRESS)
 
 
@@ -430,5 +440,12 @@ def _log_exception(
     )
 
 
+def run():
+    # 2026-11-13: psycopg async는 Windows Proactor 루프를 지원하지 않는다.
+    loop_factory = asyncio.SelectorEventLoop if os.name == "nt" else None
+    with asyncio.Runner(loop_factory=loop_factory) as runner:
+        runner.run(main())
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    run()

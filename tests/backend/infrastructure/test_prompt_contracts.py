@@ -1,9 +1,10 @@
+from tests.backend.application.async_helpers import run_async
 """실제 단계 메시지와 제공자 지침 조합에서 공통 계약을 검증한다."""
 
 import json
 import re
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 
 import pytest
 
@@ -13,7 +14,7 @@ from backend.infrastructure.provider_request import stage_instructions
 from backend.models import InterviewResult, IssuePacket, RequirementItem, RequirementLockSheet
 
 
-def fixed_messages():
+async def fixed_messages():
     from backend.services.interviewer import _build_messages as interview_messages
     from backend.services.requirement_lock_builder import _build_messages as lock_messages
     from backend.services.checklist_critic import _build_messages as critic_messages
@@ -44,30 +45,31 @@ def fixed_messages():
     class Captured(Exception):
         pass
 
-    def capture(writer, provider, payload, **kwargs):
+    async def capture(writer, provider, payload, **kwargs):
         result["review_resolution"] = payload
         raise Captured()
 
     tasks = object.__new__(WorkflowTasks)
-    tasks.writer = SimpleNamespace(read_text=lambda _: "Draft")
+    tasks.writer = SimpleNamespace(read_text=AsyncMock(return_value="Draft"))
     tasks.provider, tasks.config = None, Config()
     with patch("backend.pipeline.tasks.complete_with_usage", capture):
         try:
-            tasks.review_resolution(state)
+            (await tasks.review_resolution(state))
         except Captured:
             pass
     return result
 
 
-def assembled_instructions():
-    return {stage: stage_instructions(prepare_context(None, payload, stage)[0], stage)
-            for stage, payload in fixed_messages().items()}
+async def assembled_instructions():
+    return {stage: stage_instructions((await prepare_context(None, payload, stage))[0], stage)
+            for stage, payload in (await fixed_messages()).items()}
 
 
 STAGES = ("checklist_critic", "interview", "requirement_lock", "review_resolution", "rubric_generate", "spec_compile")
 
 
-def test_stage_rules_are_integrated_in_four_sections():
+@run_async
+async def test_stage_rules_are_integrated_in_four_sections():
     from backend.infrastructure.prompts import load_prompt
     for name in ("rubric_generate", "compiler", "checklist_critic", "review_resolution"):
         headings = re.findall(r"^## (.+)$", load_prompt(name), re.MULTILINE)
@@ -77,11 +79,12 @@ def test_stage_rules_are_integrated_in_four_sections():
 
 @pytest.mark.parametrize("stage", STAGES)
 
-def test_question_and_language_contracts_are_composed_once_for_relevant_stages(stage):
+@run_async
+async def test_question_and_language_contracts_are_composed_once_for_relevant_stages(stage):
     from backend.infrastructure.output_language import LANGUAGE_RULES
     from backend.infrastructure.prompts import PROMPT_DIR
 
-    text = assembled_instructions()[stage]
+    text = (await assembled_instructions())[stage]
     question = (PROMPT_DIR / "_question_contract.md").read_text(encoding="utf-8").strip()
     expected = int(stage in {"interview", "checklist_critic", "review_resolution"})
     assert text.count(question) == expected
@@ -90,19 +93,21 @@ def test_question_and_language_contracts_are_composed_once_for_relevant_stages(s
     assert all(text.count(heading) == 1 for heading in ("## 역할", "## 판단", "## 출력", "## 예외"))
 
 
-def test_shared_question_advice_does_not_become_confirmation():
+@run_async
+async def test_shared_question_advice_does_not_become_confirmation():
     for stage in ("interview", "checklist_critic", "review_resolution"):
-        text = assembled_instructions()[stage]
+        text = (await assembled_instructions())[stage]
         assert all(term in text for term in ("single_choice", "multiple_choice", "options=[]", "Other",
             "영향과 가정", "recommendation", "null", "표시용 조언",
             "선택, 제출, 사용자 인용 또는 승인이 아닙니다", "확정 결정으로 재사용하지 마세요"))
-    text = assembled_instructions()["review_resolution"]
+    text = (await assembled_instructions())["review_resolution"]
     assert "decision_form=null" in text
     assert "질문과 decision_form" in text
 
 
-def test_interview_instructions_focus_on_agent_implementation_decisions():
-    text = assembled_instructions()["interview"]
+@run_async
+async def test_interview_instructions_focus_on_agent_implementation_decisions():
+    text = (await assembled_instructions())["interview"]
     assert "코딩 에이전트가 개발을 진행할 구현 명세" in text
     assert "팀 규모·개발 경험·개발 일정·제작 예산" in text
     assert "일반적인 필수 질문으로 묻거나 명세 작성을 막지 마세요" in text
@@ -111,12 +116,13 @@ def test_interview_instructions_focus_on_agent_implementation_decisions():
     assert "AI 제품이라고 가정하지 말고" in text
 
 
-def test_retry_keeps_one_language_contract_without_changing_retry_budget():
+@run_async
+async def test_retry_keeps_one_language_contract_without_changing_retry_budget():
     from backend.infrastructure.output_language import LANGUAGE_RULES, OutputLanguageError
     from backend.infrastructure.stage_retry import retry_messages, MAX_RETRIES
-    payload = retry_messages(fixed_messages()["checklist_critic"], stage="checklist_critic", attempt=1,
+    payload = retry_messages((await fixed_messages())["checklist_critic"], stage="checklist_critic", attempt=1,
                              error=OutputLanguageError(["problem: ko"]))
-    prepared, _ = prepare_context(None, payload, "checklist_critic")
+    prepared, _ = (await prepare_context(None, payload, "checklist_critic"))
     instructions = stage_instructions(prepared, "checklist_critic")
     dynamic = "\n".join(item["content"] for item in prepared if item["role"] not in {"system", "developer"})
     assert (instructions + dynamic).count(LANGUAGE_RULES["checklist_critic"]) == 1
@@ -126,9 +132,10 @@ def test_retry_keeps_one_language_contract_without_changing_retry_budget():
     assert retry["validation_failures"] == ["problem: ko"]
 
 
-def test_source_contract_keeps_selected_history_conditions_and_actor_without_duplicate_advice():
+@run_async
+async def test_source_contract_keeps_selected_history_conditions_and_actor_without_duplicate_advice():
     from backend.infrastructure.prompt_context import REFERENCE_RULES
-    for stage, text in assembled_instructions().items():
+    for stage, text in (await assembled_instructions()).items():
         if stage == "rubric_generate":
             assert REFERENCE_RULES not in text  # 이 단계는 S/K가 아닌 제품 근거를 직접 사용한다.
             continue
@@ -138,8 +145,9 @@ def test_source_contract_keeps_selected_history_conditions_and_actor_without_dup
         assert "Historical search results are reference material" not in text
 
 
-def test_compiler_retains_block_trace_and_implementation_order_contracts():
-    text = assembled_instructions()["spec_compile"]
+@run_async
+async def test_compiler_retains_block_trace_and_implementation_order_contracts():
+    text = (await assembled_instructions())["spec_compile"]
     assert all(term in text for term in ("out_of_scope는 []", "LOCKED-", "spec_links",
         "독립적인 Markdown 목록 항목 하나씩", "일반 설명, 코드와 원문 인용",
         "고유하고 안정적인 item_id", "가정:", "basis_refs", "actor=llm", "acceptance_criteria_seed",
@@ -147,16 +155,18 @@ def test_compiler_retains_block_trace_and_implementation_order_contracts():
         "실행을 주장하거나", "workflow_constraints", "rubric ID와 판정"))
 
 
-def test_critic_has_one_consistent_absence_contract_and_keeps_general_review():
-    text = assembled_instructions()["checklist_critic"]
+@run_async
+async def test_critic_has_one_consistent_absence_contract_and_keeps_general_review():
+    text = (await assembled_instructions())["checklist_critic"]
     assert all(term in text for term in ("일반 결함 검토", "일반 검토를 대체하지 않습니다", "유일한 빈 인용 예외",
         "연결된 rubric의 부재", "evidence_kind=absence", 'quote=""', "absence는 PASS가 될 수 없습니다", "정확히 하나의 이슈",
         "rubric_ids", "같은 결함", "초안에 반영되어야", "Workflow 제약", "non_scope"))
     assert "Every issue, including structural issues, must include" not in text
 
 
-def test_requirement_and_resolution_keep_confirmation_and_requestion_boundaries():
-    texts = assembled_instructions()
+@run_async
+async def test_requirement_and_resolution_keep_confirmation_and_requestion_boundaries():
+    texts = (await assembled_instructions())
     assert all(term in texts["requirement_lock"] for term in ("actor=user", "정확한 인용", "actor=llm",
         "근거만 기록", "없으면", "unresolved_questions=[]", "이전 필수 ID", "공통 출처", "WF-*",
         "pre_answer만으로", "고위험 가정을 승인하지 마세요", "확정 선택이 아닙니다"))
@@ -166,8 +176,9 @@ def test_requirement_and_resolution_keep_confirmation_and_requestion_boundaries(
         "rubric·모델 실패", "missing_information=\"\""))
 
 
-def test_interview_and_rubric_keep_material_choice_and_scope_boundaries():
-    texts = assembled_instructions()
+@run_async
+async def test_interview_and_rubric_keep_material_choice_and_scope_boundaries():
+    texts = (await assembled_instructions())
     assert all(term in texts["interview"] for term in ("실질적인 영향을 미치는", "정규화된 질문 문구",
         "ask_user", "stop_reason", "확정 답변", "추론한 pre_answers", "제품 결정이 아닙니다"))
     assert all(term in texts["rubric_generate"] for term in ("모든 필수 요구사항", "제품 제약",
@@ -176,14 +187,16 @@ def test_interview_and_rubric_keep_material_choice_and_scope_boundaries():
 
 
 @pytest.mark.parametrize("identifier", ["", "../compiler", "..\\compiler", "/compiler"])
-def test_composed_loader_preserves_path_validation(identifier):
+@run_async
+async def test_composed_loader_preserves_path_validation(identifier):
     from backend.errors import Error
     from backend.infrastructure.prompts import load_prompt
     with pytest.raises(Error):
         load_prompt(identifier)
 
 
-def test_unused_report_prompt_removed_but_reporter_remains_deterministic():
+@run_async
+async def test_unused_report_prompt_removed_but_reporter_remains_deterministic():
     from backend.infrastructure.prompts import PROMPT_DIR
     from backend.services.critical_reporter import CriticalReporter
     from unittest.mock import Mock
@@ -197,9 +210,10 @@ def section_text(instructions, name):
     return instructions.split("## " + name + "\n", 1)[1].split("\n## ", 1)[0]
 
 
-def test_rubric_and_review_outputs_describe_the_actual_schemas():
+@run_async
+async def test_rubric_and_review_outputs_describe_the_actual_schemas():
     from backend.models import RubricItem, ReviewResponse, RubricVerdict
-    texts = assembled_instructions()
+    texts = (await assembled_instructions())
     generation = section_text(texts["rubric_generate"], "출력")
     assert set(RubricItem.model_fields) <= set(re.findall(r"[A-Za-z_]+", generation))
     evaluation = section_text(texts["checklist_critic"], "출력")
@@ -211,8 +225,9 @@ def test_rubric_and_review_outputs_describe_the_actual_schemas():
     assert "secondary는 minor도 허용" in RubricVerdict.model_fields["issue_checklist_id"].description
 
 
-def test_optional_behavior_and_stage_authority_boundaries():
-    texts = assembled_instructions()
+@run_async
+async def test_optional_behavior_and_stage_authority_boundaries():
+    texts = (await assembled_instructions())
     for stage in ("rubric_generate", "checklist_critic"):
         assert "선택되지 않은 optional 기능의 부재는 실패가 아닙니다" in texts[stage]
     generation = section_text(texts["rubric_generate"], "역할")
@@ -230,7 +245,8 @@ def test_optional_behavior_and_stage_authority_boundaries():
     assert "자동 승인" in POLICY
 
 
-def test_compiler_preserves_resolved_issues_and_projects_verifier_feedback():
+@run_async
+async def test_compiler_preserves_resolved_issues_and_projects_verifier_feedback():
     from backend.services.spec_compiler import SpecCompiler
     sheet = RequirementLockSheet("fixed", "feature", "메모 저장", [],
         mandatory_requirements=[RequirementItem("REQ-001", "메모를 로컬에 저장합니다.")])
@@ -245,7 +261,7 @@ def test_compiler_preserves_resolved_issues_and_projects_verifier_feedback():
     compiler = SpecCompiler(config=Config(), provider=None, skills=None)
     payload = compiler._build_messages(sheet, {}, [issue, resolved], user_request="메모 저장", previous_spec="Previous draft",
         revision_feedback="", revision_history=[], rubric={"items": [], "latest_evaluation": feedback})
-    prepared, _ = prepare_context(None, payload, "spec_compile")
+    prepared, _ = (await prepare_context(None, payload, "spec_compile"))
     sections = {item["content"].split("\n", 1)[0]: item["content"].split("\n", 1)[1]
         for item in prepared if "\n" in item["content"] and item["role"] == "user"}
     assert "Must-fix issues:" not in sections
@@ -266,7 +282,8 @@ def test_compiler_preserves_resolved_issues_and_projects_verifier_feedback():
     assert not any(item["content"].startswith("최신 검증 의견:") for item in initial)
 
 
-def test_review_retry_guidance_distinguishes_safe_failed_checks():
+@run_async
+async def test_review_retry_guidance_distinguishes_safe_failed_checks():
     from backend.infrastructure.stage_retry import retry_messages
     from backend.services.rubric import invalid
 
@@ -285,7 +302,8 @@ def test_review_retry_guidance_distinguishes_safe_failed_checks():
     assert "서버" in guidance
 
 
-def test_review_retry_does_not_forward_untrusted_failed_check_or_details():
+@run_async
+async def test_review_retry_does_not_forward_untrusted_failed_check_or_details():
     from backend.errors import ReviewValidationError
     from backend.infrastructure.stage_retry import retry_messages
 
@@ -298,7 +316,8 @@ def test_review_retry_does_not_forward_untrusted_failed_check_or_details():
     assert "PRIVATE_MODEL_RESPONSE" not in str(payload)
 
 
-def test_all_review_checks_have_specific_safe_correction_guidance():
+@run_async
+async def test_all_review_checks_have_specific_safe_correction_guidance():
     from backend.errors import ReviewValidationError
     from backend.infrastructure.stage_retry import retry_messages
 

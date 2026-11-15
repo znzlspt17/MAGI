@@ -5,6 +5,14 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
+from unittest.mock import AsyncMock
+from tests.backend.application.async_helpers import run_async
+
+def async_callback(callback):
+    async def call(*args, **kwargs):
+        return callback(*args, **kwargs)
+    return call
+
 
 from backend.errors import ReviewValidationError
 from backend.models import RequirementItem, RequirementLockSheet, RubricResponse, ReviewResponse, IssuePacket
@@ -49,15 +57,16 @@ def test_generation_uses_only_bound_product_inputs(case):
     assert "REQ-001.original_text" not in canonical["confirmed_basis"]
 
 
-def test_reuse_and_changed_confirmed_inputs_preserve_versions(case, monkeypatch):
+@run_async
+async def test_reuse_and_changed_confirmed_inputs_preserve_versions(case, monkeypatch):
     case.sheet.lock_id = "new-volatile-id"
-    assert rubric.ensure_rubric(case.docs, None, "model", case.sheet, case.state) == case.record
+    assert (await rubric.ensure_rubric(case.docs, None, "model", case.sheet, case.state)) == case.record
     # checkpoint가 기록되기 전의 재시도에서도 저장한 생성 결과를 재사용한다.
     old_state = {**case.state, "rubric": {}}
-    assert rubric.ensure_rubric(case.docs, None, "model", case.sheet, old_state) == case.record
+    assert (await rubric.ensure_rubric(case.docs, None, "model", case.sheet, old_state)) == case.record
     assert case.complete.call_count == 1
     changed = {**case.state, "confirmed_user_sources": {"user_answer:Q1": "30일"}}
-    updated = rubric.ensure_rubric(case.docs, None, "model", case.sheet, changed)
+    updated = (await rubric.ensure_rubric(case.docs, None, "model", case.sheet, changed))
     assert updated["rubric_hash"] != case.record["rubric_hash"]
     assert case.complete.call_count == 2
     assert len([p for p in case.docs.data if p.startswith("review/rubrics/")]) == 2
@@ -82,31 +91,34 @@ def test_invalid_evaluation_is_rejected(case, change):
 
 
 @pytest.mark.parametrize("verdict", ["FAIL", "UNDETERMINED"])
-def test_absence_becomes_existing_required_issue_without_fake_quote(case, verdict):
+@run_async
+async def test_absence_becomes_existing_required_issue_without_fake_quote(case, verdict):
     value = failed_review(case, verdict)
     evaluations = []
-    issues = ChecklistCritic().critique(case.spec, case.sheet, provider_messages_fn=lambda _: value,
-                                       rubric=case.record, evaluation_sink=evaluations.append)
+    issues = (await ChecklistCritic().critique(case.spec, case.sheet, provider_messages_fn=async_callback(lambda _: value),
+                                       rubric=case.record, evaluation_sink=evaluations.append))
     linked = [issue for issue in issues if "RUB-001" in issue.rubric_ids]
     assert len(linked) == 1
     assert linked[0].severity == "major" and linked[0].evidence[0].quote == ""
     assert IssuePacket.from_dict(linked[0].to_dict()).rubric_ids == ["RUB-001"]
     assert evaluations[0]["verdicts"][0]["verdict"] == verdict
-    rubric.save_evaluation(case.docs, evaluations[0])
+    (await rubric.save_evaluation(case.docs, evaluations[0]))
     state = {**case.state, "rubric_evaluation": evaluations[0]}
     rubric.require_approval_evaluation(state, case.sheet, case.spec)
 
 
-def test_deterministic_failure_survives_all_pass(case):
+@run_async
+async def test_deterministic_failure_survives_all_pass(case):
     broken = case.spec.replace("## 1. 목표", "## 목표 누락")
     evaluations = []
-    issues = ChecklistCritic().critique(broken, case.sheet, provider_messages_fn=lambda _: review(case), rubric=case.record, evaluation_sink=evaluations.append)
+    issues = (await ChecklistCritic().critique(broken, case.sheet, provider_messages_fn=async_callback(lambda _: review(case)), rubric=case.record, evaluation_sink=evaluations.append))
     assert issues and evaluations[0]["score"] <= 7 and evaluations[0]["proposed_score"] == 10
 
 
-def test_normal_spec_does_not_gain_required_issues(case):
-    issues = ChecklistCritic().critique(case.spec, case.sheet,
-        provider_messages_fn=lambda _: review(case), rubric=case.record)
+@run_async
+async def test_normal_spec_does_not_gain_required_issues(case):
+    issues = (await ChecklistCritic().critique(case.spec, case.sheet,
+        provider_messages_fn=async_callback(lambda _: review(case)), rubric=case.record))
     assert not [item for item in issues if item.severity in {"blocking", "major"}]
 
 
@@ -134,17 +146,18 @@ def test_valid_evaluation_is_bound_to_current_input_and_draft(case):
         rubric.require_approval_evaluation(state, case.sheet, case.spec)
 
 
-def test_failed_generation_uses_existing_retry_budget_and_stops(case):
+@run_async
+async def test_failed_generation_uses_existing_retry_budget_and_stops(case):
     from backend.pipeline.builder import _stage
     from backend.infrastructure.stage_retry import MAX_RETRIES
     case.docs.data.clear()
     case.complete.return_value = RubricResponse(items=[])
     events = []
-    stage = _stage("spec_compile", lambda state: rubric.ensure_rubric(case.docs, None, "model", case.sheet, state), events.append)
+    stage = _stage("spec_compile", lambda state: rubric.ensure_rubric(case.docs, None, "model", case.sheet, state), AsyncMock(side_effect=events.append))
     with pytest.raises(ReviewValidationError):
-        stage({**case.state, "rubric": {}})
+        (await stage({**case.state, "rubric": {}}))
     assert case.complete.call_count == 1 + MAX_RETRIES + 1
-    assert not case.docs.exists(rubric.PATH)
+    assert not (await case.docs.exists(rubric.PATH))
     assert events[-1]["state"] == "failed"
     assert events[-1]["result"]["diagnostic"]["error_stage"] == "rubric_generate"
 
@@ -177,131 +190,145 @@ def test_signature_changes_with_rubric_and_evaluation(case):
     assert before != task_signature({**case.state, "rubric_evaluation": evaluation}, "compose_candidate")
 
 
-def test_old_completed_journal_is_revalidated_without_changing_uncertain_call_identity():
+@run_async
+async def test_old_completed_journal_is_revalidated_without_changing_uncertain_call_identity():
+    from contextlib import asynccontextmanager, nullcontext
     from backend.pipeline.agent_workflow import AgentWorkflow, task_id, digest
     from backend.infrastructure.evidence_registry import EvidenceRegistry
     from backend.errors import InvalidStateError
 
-    flow = AgentWorkflow(SimpleNamespace(), None, Mock(changed={}), EvidenceRegistry())
-    flow.persist = Mock()
-    flow.journal = Mock()
+    @asynccontextmanager
+    async def transaction():
+        yield
+    writer = SimpleNamespace(changed={}, state={}, stage_writes=lambda: nullcontext(None),
+                             bind_versions=AsyncMock(), store=SimpleNamespace(transaction=transaction))
+    flow = AgentWorkflow(SimpleNamespace(), None, writer, EvidenceRegistry())
+    flow.persist = AsyncMock()
+    flow.journal = AsyncMock()
     flow.journal.get.return_value = {"result": {"old": True}}
     state = {"run_id": "job", "revision": 1, "plan_history": []}
-    operation = Mock(return_value={"new": True})
+    operation = AsyncMock(return_value={"new": True})
     assert task_id(state, "spec_compile") == digest(["job", 1, 0, "spec_compile"])
-    assert flow.durable("spec_compile", state, operation)["new"] is True
+    assert (await flow.durable("spec_compile", state, operation))["new"] is True
     payload = flow.journal.complete.call_args.args[1]
     assert payload["rubric_policy_version"] == rubric.POLICY_VERSION
     flow.journal.get.return_value = payload
-    assert flow.durable("spec_compile", state, operation)["new"] is True
+    assert (await flow.durable("spec_compile", state, operation))["new"] is True
     assert operation.call_count == 1
     flow.journal.get.side_effect = InvalidStateError("uncertain call")
     with pytest.raises(InvalidStateError):
-        flow.durable("spec_compile", state, operation)
+        (await flow.durable("spec_compile", state, operation))
     assert operation.call_count == 1
 
 
-def test_new_job_shares_rubric_and_records_safe_counts(store, monkeypatch):
-    from tests.support.workflow_helpers import manager_for
-    from backend.models import RubricResponse
-    from backend.application.execution_history import ExecutionHistory
+@run_async
+async def test_new_job_shares_rubric_and_records_safe_counts(async_store_factory, monkeypatch):
+    async with async_store_factory() as store:
+        from tests.support.workflow_helpers import manager_for
+        from backend.models import RubricResponse
+        from backend.application.execution_history import ExecutionHistory
 
-    manager, provider = manager_for(store, monkeypatch)
-    try:
-        ident = manager.create("메모를 저장해주세요")["id"]
-        manager._run(ident, "generate", None)
-        assert manager.get(ident)["status"] == "PASS_PENDING_USER_APPROVAL"
-        state = manager.workspace.state(ident)
-        assert provider.calls.count(RubricResponse) == 1
-        assert provider.calls.count(ReviewResponse) == 1
-        assert state["rubric_evaluation"]["rubric_hash"] == state["rubric"]["rubric_hash"]
-        docs = manager.workspace.documents(ident)
-        rubric.require_approval_evaluation(state, RequirementLockSheet.from_dict(state["requirement_lock_sheet"]),
-                                          docs.read_text("draft/approval_candidate_spec.ko.md"))
-        history = ExecutionHistory(docs)
-        node = next(n for n in history.graph()["nodes"] if n["stage"] == "checklist_critic")
-        detail = history.detail(node["id"])
-        assert detail["result"]["rubric_summary"]["PASS"] == 1
-        assert "rubric_evaluation" not in detail["result"]
-    finally:
-        manager.close()
+        manager, provider = (await manager_for(store, monkeypatch))
+        try:
+            ident = (await manager.create("메모를 저장해주세요"))["id"]
+            (await manager._run(ident, "generate", None))
+            assert (await manager.get(ident))["status"] == "PASS_PENDING_USER_APPROVAL"
+            state = (await manager.workspace.state(ident))
+            assert provider.calls.count(RubricResponse) == 1
+            assert provider.calls.count(ReviewResponse) == 1
+            assert state["rubric_evaluation"]["rubric_hash"] == state["rubric"]["rubric_hash"]
+            docs = (await manager.workspace.documents(ident))
+            rubric.require_approval_evaluation(state, RequirementLockSheet.from_dict(state["requirement_lock_sheet"]),
+                                              (await docs.read_text("draft/approval_candidate_spec.ko.md")))
+            history = ExecutionHistory(docs)
+            node = next(n for n in (await history.graph())["nodes"] if n["stage"] == "checklist_critic")
+            detail = (await history.detail(node["id"]))
+            assert detail["result"]["rubric_summary"]["PASS"] == 1
+            assert "rubric_evaluation" not in detail["result"]
+        finally:
+            (await manager.close())
 
 
 @pytest.mark.parametrize("failure", ["generation", "evaluation"])
-def test_pipeline_stops_after_shared_retry_budget_without_fallback(store, monkeypatch, failure):
-    from tests.support.workflow_helpers import manager_for
-    from tests.support.fakes import DecisionProvider
-    from backend.models import SpecDraftResponse
-    from backend.infrastructure.stage_retry import MAX_RETRIES
+@run_async
+async def test_pipeline_stops_after_shared_retry_budget_without_fallback(async_store_factory, monkeypatch, failure):
+    async with async_store_factory() as store:
+        from tests.support.workflow_helpers import manager_for
+        from tests.support.fakes import DecisionProvider
+        from backend.models import SpecDraftResponse
+        from backend.infrastructure.stage_retry import MAX_RETRIES
 
-    class Provider(DecisionProvider):
-        def complete_result(self, messages, **kwargs):
-            result = super().complete_result(messages, **kwargs)
-            if failure == "generation" and isinstance(result.parsed, RubricResponse):
-                result.parsed.items.clear()
-            elif failure == "evaluation" and isinstance(result.parsed, ReviewResponse):
-                result.parsed.rubric_verdicts.clear()
-            return result
+        class Provider(DecisionProvider):
+            async def complete_result(self, messages, **kwargs):
+                result = (await super().complete_result(messages, **kwargs))
+                if failure == "generation" and isinstance(result.parsed, RubricResponse):
+                    result.parsed.items.clear()
+                elif failure == "evaluation" and isinstance(result.parsed, ReviewResponse):
+                    result.parsed.rubric_verdicts.clear()
+                return result
 
-    manager, provider = manager_for(store, monkeypatch, Provider([[] for _ in range(MAX_RETRIES + 2)]))
-    try:
-        ident = manager.create("메모를 저장해주세요")["id"]
-        manager._run(ident, "generate", None)
-        job = manager.get(ident)
-        assert job["status"] == "error"
-        assert provider.calls.count(RubricResponse) == (MAX_RETRIES + 1 if failure == "generation" else 1)
-        assert provider.calls.count(ReviewResponse) == (MAX_RETRIES + 1 if failure == "evaluation" else 0)
-        assert provider.calls.count(SpecDraftResponse) == (1 if failure == "evaluation" else 0)
-        assert manager.workspace.state(ident)["critic_pass_count"] == 0
-    finally:
-        manager.close()
+        manager, provider = (await manager_for(store, monkeypatch, Provider([[] for _ in range(MAX_RETRIES + 2)])))
+        try:
+            ident = (await manager.create("메모를 저장해주세요"))["id"]
+            (await manager._run(ident, "generate", None))
+            job = (await manager.get(ident))
+            assert job["status"] == "error"
+            assert provider.calls.count(RubricResponse) == (MAX_RETRIES + 1 if failure == "generation" else 1)
+            assert provider.calls.count(ReviewResponse) == (MAX_RETRIES + 1 if failure == "evaluation" else 0)
+            assert provider.calls.count(SpecDraftResponse) == (1 if failure == "evaluation" else 0)
+            assert (await manager.workspace.state(ident))["critic_pass_count"] == 0
+        finally:
+            (await manager.close())
 
 
-def test_failed_check_uses_existing_repair_loop_and_reuses_rubric(store, monkeypatch):
-    from tests.support.workflow_helpers import manager_for
-    from tests.support.fakes import DecisionProvider, model_rubric
-    from backend.models import SpecDraftResponse
+@run_async
+async def test_failed_check_uses_existing_repair_loop_and_reuses_rubric(async_store_factory, monkeypatch):
+    async with async_store_factory() as store:
+        from tests.support.workflow_helpers import manager_for
+        from tests.support.fakes import DecisionProvider, model_rubric
+        from backend.models import SpecDraftResponse
 
-    class Provider(DecisionProvider):
-        def complete_result(self, messages, **kwargs):
-            result = super().complete_result(messages, **kwargs)
-            if isinstance(result.parsed, ReviewResponse) and self.calls.count(ReviewResponse) == 1:
-                rubric_id = model_rubric(messages)["items"][0]["rubric_id"]
-                response = failed_review(SimpleNamespace(verdict=dict(rubric_id=rubric_id,
-                    verdict="PASS", section="architecture", evidence_kind="quote", quote="메모를 로컬에 저장합니다.",
-                    reason="명세의 저장 검증 방법을 확인했습니다.", issue_checklist_id=None)))
-                item = response.rubric_verdicts[0]
-                item.rubric_id, item.section, item.issue_checklist_id = rubric_id, "architecture", rubric_id
-                issue = response.issues[0]
-                issue.rubric_ids, issue.section = [rubric_id], "architecture"
-                issue.checklist_id, issue.decision_key = rubric_id, rubric_id
-                issue.evidence[0].source = "architecture"
-                result.parsed.issues = response.issues
-                result.parsed.rubric_verdicts = response.rubric_verdicts
-                result.parsed.score = 4
-                result.parsed.critical_failures = [rubric_id]
-                result.parsed.revision_directives = response.revision_directives
-                self.last_issues = response.issues
-            return result
+        class Provider(DecisionProvider):
+            async def complete_result(self, messages, **kwargs):
+                result = (await super().complete_result(messages, **kwargs))
+                if isinstance(result.parsed, ReviewResponse) and self.calls.count(ReviewResponse) == 1:
+                    rubric_id = model_rubric(messages)["items"][0]["rubric_id"]
+                    response = failed_review(SimpleNamespace(verdict=dict(rubric_id=rubric_id,
+                        verdict="PASS", section="architecture", evidence_kind="quote", quote="메모를 로컬에 저장합니다.",
+                        reason="명세의 저장 검증 방법을 확인했습니다.", issue_checklist_id=None)))
+                    item = response.rubric_verdicts[0]
+                    item.rubric_id, item.section, item.issue_checklist_id = rubric_id, "architecture", rubric_id
+                    issue = response.issues[0]
+                    issue.rubric_ids, issue.section = [rubric_id], "architecture"
+                    issue.checklist_id, issue.decision_key = rubric_id, rubric_id
+                    issue.evidence[0].source = "architecture"
+                    result.parsed.issues = response.issues
+                    result.parsed.rubric_verdicts = response.rubric_verdicts
+                    result.parsed.score = 4
+                    result.parsed.critical_failures = [rubric_id]
+                    result.parsed.revision_directives = response.revision_directives
+                    self.last_issues = response.issues
+                return result
 
-    manager, provider = manager_for(store, monkeypatch, Provider([[], []]))
-    try:
-        ident = manager.create("메모를 저장해주세요")["id"]
-        manager._run(ident, "generate", None)
-        assert manager.get(ident)["status"] == "PASS_PENDING_USER_APPROVAL"
-        assert provider.calls.count(RubricResponse) == 1
-        assert provider.calls.count(SpecDraftResponse) == 2
-        assert provider.calls.count(ReviewResponse) == 2
-        state = manager.workspace.state(ident)
-        assert state["critic_pass_count"] == 2
-        assert state["review_history"][0]["issues"][0]["rubric_ids"]
-        assert state["rubric_evaluation"]["verdicts"][0]["verdict"] == "PASS"
-    finally:
-        manager.close()
+        manager, provider = (await manager_for(store, monkeypatch, Provider([[], []])))
+        try:
+            ident = (await manager.create("메모를 저장해주세요"))["id"]
+            (await manager._run(ident, "generate", None))
+            assert (await manager.get(ident))["status"] == "PASS_PENDING_USER_APPROVAL"
+            assert provider.calls.count(RubricResponse) == 1
+            assert provider.calls.count(SpecDraftResponse) == 2
+            assert provider.calls.count(ReviewResponse) == 2
+            state = (await manager.workspace.state(ident))
+            assert state["critic_pass_count"] == 2
+            assert state["review_history"][0]["issues"][0]["rubric_ids"]
+            assert state["rubric_evaluation"]["verdicts"][0]["verdict"] == "PASS"
+        finally:
+            (await manager.close())
 
 
 @pytest.mark.parametrize("schema", [RubricResponse, ReviewResponse])
-def test_malformed_structured_response_is_retryable_without_echoing_output(schema):
+@run_async
+async def test_malformed_structured_response_is_retryable_without_echoing_output(schema):
     import httpx2
     from tests.support.chat_model_fixture import transport
     from tests.support.model_helpers import response
@@ -310,8 +337,8 @@ def test_malformed_structured_response_is_retryable_without_echoing_output(schem
     with transport(lambda request: httpx2.Response(200, json=response(content=[
         {"type": "output_text", "text": "UNTRUSTED_MODEL_TEXT", "annotations": []}]), request=request)):
         with pytest.raises(ReviewValidationError) as error:
-            ChatModelProvider(api_key="fake-test-value").complete_result(
-                [{"role": "user", "content": "test"}], model="gpt-6-luna", text_format=schema, conversation_id="conv_test")
+            (await ChatModelProvider(api_key="fake-test-value").complete_result(
+                [{"role": "user", "content": "test"}], model="gpt-6-luna", text_format=schema, conversation_id="conv_test"))
     assert "UNTRUSTED_MODEL_TEXT" not in str(error.value)
     assert "UNTRUSTED_MODEL_TEXT" not in str(error.value.validation_details)
     assert error.value.stage == ("rubric_generate" if schema is RubricResponse else "checklist_critic")
@@ -321,45 +348,48 @@ def test_malformed_structured_response_is_retryable_without_echoing_output(schem
     ("coverage", "rubric_evaluation_coverage", "정확히 한 번"),
     ("evidence", "rubric_evidence", "인용"),
 ])
-def test_workflow_recovers_when_review_retry_receives_specific_feedback(store, monkeypatch, failure, check, expected):
-    import json
-    from tests.support.workflow_helpers import manager_for
-    from tests.support.fakes import DecisionProvider
+@run_async
+async def test_workflow_recovers_when_review_retry_receives_specific_feedback(async_store_factory, monkeypatch, failure, check, expected):
+    async with async_store_factory() as store:
+        import json
+        from tests.support.workflow_helpers import manager_for
+        from tests.support.fakes import DecisionProvider
 
-    class Provider(DecisionProvider):
-        def __init__(self):
-            super().__init__([[], []])
-            self.review_inputs = []
+        class Provider(DecisionProvider):
+            def __init__(self):
+                super().__init__([[], []])
+                self.review_inputs = []
 
-        def complete_result(self, messages, **kwargs):
-            result = super().complete_result(messages, **kwargs)
-            if isinstance(result.parsed, ReviewResponse):
-                self.review_inputs.append(messages)
-                if len(self.review_inputs) == 1:
-                    if failure == "coverage":
-                        result.parsed.rubric_verdicts.clear()
+            async def complete_result(self, messages, **kwargs):
+                result = (await super().complete_result(messages, **kwargs))
+                if isinstance(result.parsed, ReviewResponse):
+                    self.review_inputs.append(messages)
+                    if len(self.review_inputs) == 1:
+                        if failure == "coverage":
+                            result.parsed.rubric_verdicts.clear()
+                        else:
+                            result.parsed.rubric_verdicts[0].quote = "FABRICATED_QUOTE"
                     else:
-                        result.parsed.rubric_verdicts[0].quote = "FABRICATED_QUOTE"
-                else:
-                    payload = next(json.loads(item["content"].split("\n", 1)[1]) for item in messages
-                                   if item["content"].startswith("단계 재시도 문맥:\n"))
-                    assert payload["failed_checks"] == [check]
-                    assert expected in " ".join(payload["validation_failures"])
-            return result
+                        payload = next(json.loads(item["content"].split("\n", 1)[1]) for item in messages
+                                       if item["content"].startswith("단계 재시도 문맥:\n"))
+                        assert payload["failed_checks"] == [check]
+                        assert expected in " ".join(payload["validation_failures"])
+                return result
 
-    manager, provider = manager_for(store, monkeypatch, Provider())
-    try:
-        ident = manager.create("메모를 저장해주세요")["id"]
-        manager._run(ident, "generate", None)
-        assert manager.get(ident)["status"] == "PASS_PENDING_USER_APPROVAL"
-        assert len(provider.review_inputs) == 2
-        assert manager.workspace.state(ident)["critic_pass_count"] == 1
-    finally:
-        manager.close()
+        manager, provider = (await manager_for(store, monkeypatch, Provider()))
+        try:
+            ident = (await manager.create("메모를 저장해주세요"))["id"]
+            (await manager._run(ident, "generate", None))
+            assert (await manager.get(ident))["status"] == "PASS_PENDING_USER_APPROVAL"
+            assert len(provider.review_inputs) == 2
+            assert (await manager.workspace.state(ident))["critic_pass_count"] == 1
+        finally:
+            (await manager.close())
 
 
 @pytest.mark.parametrize(("severity", "cap"), [("blocking", 7), ("major", 7), ("minor", 9)])
-def test_deterministic_issues_are_visible_and_enforce_score_cap(case, monkeypatch, severity, cap):
+@run_async
+async def test_deterministic_issues_are_visible_and_enforce_score_cap(case, monkeypatch, severity, cap):
     import json
     import backend.services.checklist_critic as critic_module
 
@@ -375,32 +405,34 @@ def test_deterministic_issues_are_visible_and_enforce_score_cap(case, monkeypatc
         return value
 
     evaluations = []
-    ChecklistCritic().critique(case.spec, case.sheet, rubric=case.record,
-        provider_messages_fn=lambda messages: respond(messages, cap + 1), evaluation_sink=evaluations.append)
+    (await ChecklistCritic().critique(case.spec, case.sheet, rubric=case.record,
+        provider_messages_fn=async_callback(lambda messages: respond(messages, cap + 1)), evaluation_sink=evaluations.append))
     assert evaluations[0]["score"] == cap
     payload = next(json.loads(item["content"].split("\n", 1)[1]) for item in seen[0]
                    if item["content"].startswith("결정적 검사:\n"))
     assert payload["score_cap"] == cap
     assert any(item["checklist_id"] == "SEC-REQUIRED-001" and item["section"] == "structure"
                and item["severity"] == severity for item in payload["issues"])
-    issues = ChecklistCritic().critique(case.spec, case.sheet, rubric=case.record,
-        provider_messages_fn=lambda messages: respond(messages, cap))
+    issues = (await ChecklistCritic().critique(case.spec, case.sheet, rubric=case.record,
+        provider_messages_fn=async_callback(lambda messages: respond(messages, cap))))
     assert any(issue.checklist_id == "SEC-REQUIRED-001" for issue in issues)
 
 
-def test_no_deterministic_issue_has_unrestricted_score_cap(case):
+@run_async
+async def test_no_deterministic_issue_has_unrestricted_score_cap(case):
     import json
     seen = []
     def respond(messages):
         seen.extend(messages)
         return review(case)
-    assert ChecklistCritic().critique(case.spec, case.sheet, rubric=case.record, provider_messages_fn=respond) == []
+    assert (await ChecklistCritic().critique(case.spec, case.sheet, rubric=case.record, provider_messages_fn=async_callback(respond))) == []
     payload = next(json.loads(item["content"].split("\n", 1)[1]) for item in seen
                    if item["content"].startswith("결정적 검사:\n"))
     assert payload["issues"] == [] and payload["score_cap"] == 10
 
 
-def test_deterministic_summary_keeps_source_data_out_of_safe_issue_metadata(case, monkeypatch):
+@run_async
+async def test_deterministic_summary_keeps_source_data_out_of_safe_issue_metadata(case, monkeypatch):
     import json
     import backend.services.checklist_critic as critic_module
 
@@ -413,7 +445,7 @@ def test_deterministic_summary_keeps_source_data_out_of_safe_issue_metadata(case
         value = review(case)
         value.score = 7
         return value
-    issues = ChecklistCritic().critique(case.spec, case.sheet, rubric=case.record, provider_messages_fn=respond)
+    issues = (await ChecklistCritic().critique(case.spec, case.sheet, rubric=case.record, provider_messages_fn=async_callback(respond)))
     payload = next(json.loads(item["content"].split("\n", 1)[1]) for item in seen
                    if item["content"].startswith("결정적 검사:\n"))
     assert payload["issues"][0]["checklist_id"] == "LOCK-COVER-001"

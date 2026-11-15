@@ -54,14 +54,14 @@ class DecisionProvider:
     def validate_credentials(self):
         pass
 
-    def create_conversation(self):
+    async def create_conversation(self):
         from uuid import uuid4
         return "conv_" + uuid4().hex
 
-    def initialize_conversation(self, conversation_id, messages):
+    async def initialize_conversation(self, conversation_id, messages):
         pass
 
-    def complete_result(self, messages, **kwargs):
+    async def complete_result(self, messages, **kwargs):
         schema = kwargs["text_format"]
         from backend.pipeline.planner import PlannerDecision
 

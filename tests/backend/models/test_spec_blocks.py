@@ -1,8 +1,9 @@
 """모델 블록과 앱 소유 잠금 섹션의 경계·재시도 계약을 검증한다."""
 from copy import deepcopy
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
+from tests.backend.application.async_helpers import run_async
 
 from backend.errors import SpecCompilationError
 from backend.models import RequirementItem, RequirementLockSheet, SpecDraftResponse, assemble_spec_draft
@@ -71,53 +72,61 @@ def compiler_and_writer():
     from backend.services.spec_compiler import SpecCompiler
     from backend.services.skill_registry import SkillRegistry
     writer = Mock(runtime=None, state={})
-    writer.exists.return_value = False
+    writer.exists = AsyncMock(return_value=False)
+    writer.write_json = AsyncMock()
     return SpecCompiler(config=Config(), provider=Mock(), skills=SkillRegistry()), writer
 
 
-def test_compiler_persists_only_canonical_non_scope_blocks(draft, sheet, monkeypatch):
+@run_async
+async def test_compiler_persists_only_canonical_non_scope_blocks(draft, sheet, monkeypatch):
     from backend.services.change_review import BLOCKS
     sheet.non_scope = [RequirementItem("NS-001", "클라우드 동기화는 범위에서 제외합니다.")]
     draft.out_of_scope[0].text = "DISCARDED_MODEL_TEXT"
     compiler, writer = compiler_and_writer()
-    monkeypatch.setattr("backend.services.spec_compiler.complete_with_usage", lambda *a, **kw: draft)
-    content = compiler.compile(sheet, None, writer=writer)
+    monkeypatch.setattr("backend.services.spec_compiler.complete_with_usage", AsyncMock(return_value=draft))
+    content = await compiler.compile(sheet, None, writer=writer)
     packet = next(call.args[1] for call in writer.write_json.call_args_list if call.args[0] == BLOCKS)
     assert "DISCARDED_MODEL_TEXT" not in str(packet)
     block = next(block for block in packet["blocks"] if block["section"] == "out_of_scope")
     assert block["item_id"] == "LOCKED-NS-001" and block["text"] in content
 
 
-def test_compiler_repairs_generated_block_with_shared_retry_budget(draft, sheet, monkeypatch):
+@run_async
+async def test_compiler_repairs_generated_block_with_shared_retry_budget(draft, sheet, monkeypatch):
     from backend.pipeline.builder import _stage
     from backend.infrastructure.stage_retry import CURRENT_RETRY
     bad = deepcopy(draft)
     bad.background[0].item_id = bad.mission[0].item_id
     draft.out_of_scope = []
     responses = iter([bad, draft]); attempts = []
-    def complete(*args, **kwargs):
+    async def complete(*args, **kwargs):
         context = CURRENT_RETRY.get()
         attempts.append((context["attempt"], getattr(context["error"], "block_reason", None)))
         return next(responses)
     compiler, writer = compiler_and_writer()
     monkeypatch.setattr("backend.services.spec_compiler.complete_with_usage", complete)
-    result = _stage("spec_compile", lambda state: {"spec": compiler.compile(sheet, None, writer=writer)}, None)({})
+    async def node(state):
+        return {"spec": await compiler.compile(sheet, None, writer=writer)}
+    result = await _stage("spec_compile", node, None)({})
     assert "# 최종 에이전트 명세" in result["spec"]
     assert attempts == [(0, None), (1, "duplicate_item_id")]
     assert CURRENT_RETRY.get() is None
 
 
-def test_compiler_exhausts_existing_budget_without_accepting_invalid_blocks(draft, sheet, monkeypatch):
+@run_async
+async def test_compiler_exhausts_existing_budget_without_accepting_invalid_blocks(draft, sheet, monkeypatch):
     from backend.pipeline.builder import _stage
     from backend.infrastructure.stage_retry import CURRENT_RETRY, MAX_RETRIES
     draft.background = []; attempts = []
-    def complete(*args, **kwargs):
+    async def complete(*args, **kwargs):
         attempts.append(CURRENT_RETRY.get()["attempt"])
         return draft
     compiler, writer = compiler_and_writer()
     monkeypatch.setattr("backend.services.spec_compiler.complete_with_usage", complete)
+    async def node(state):
+        return {"spec": await compiler.compile(sheet, None, writer=writer)}
     with pytest.raises(SpecCompilationError):
-        _stage("spec_compile", lambda state: {"spec": compiler.compile(sheet, None, writer=writer)}, None)({})
+        await _stage("spec_compile", node, None)({})
     assert attempts == list(range(MAX_RETRIES + 1))
     assert CURRENT_RETRY.get() is None
 
@@ -130,13 +139,14 @@ def test_discarded_scope_prose_is_not_subject_to_model_language_contract(draft):
     assert "background[0].text: ko" in language_issues(draft)
 
 
-def test_saved_validation_records_bind_explicit_execution_context(draft, sheet, monkeypatch):
+@run_async
+async def test_saved_validation_records_bind_explicit_execution_context(draft, sheet, monkeypatch):
     from protocol.logging import log_context
     draft.background[0].requirement_ids = ["PRIVATE_REFERENCE"]
     compiler, writer = compiler_and_writer()
-    monkeypatch.setattr("backend.services.spec_compiler.complete_with_usage", lambda *a, **kw: draft)
+    monkeypatch.setattr("backend.services.spec_compiler.complete_with_usage", AsyncMock(return_value=draft))
     with log_context(execution_id="a" * 32):
-        with pytest.raises(SpecCompilationError): compiler.compile(sheet, None, writer=writer)
+        with pytest.raises(SpecCompilationError): await compiler.compile(sheet, None, writer=writer)
     records = [call.args[1] for call in writer.write_json.call_args_list if call.args[0] == "analysis/spec_compile_validation.json"]
     assert len(records) == 4
     assert all(record["execution_id"] == "a" * 32 and record["validation_reason"] == "unknown_requirement" and record["validation_section"] == "background" and record["validation_index"] == 0 and record["validation_field"] == "requirement_ids" for record in records)

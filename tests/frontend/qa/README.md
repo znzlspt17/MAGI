@@ -13,11 +13,11 @@ http://127.0.0.1:5173 에서 실제 경로를 연다. HMR은 꺼져 있으므로
 
 | 쿼리 | 재현 상태 |
 | --- | --- |
-| `role=guest`, `role=user`, `role=admin` | 로그인 / 일반 사용자 / 관리자 |
+| `role=guest`, `role=user`, `role=admin` | 익명 사용자 / 일반 사용자 / 관리자 |
 | `qa=empty`, `qa=error`, `qa=loading`, `qa=long` | 빈 결과 / 조회 실패 / 조회 대기 / 긴 제목과 32개 목록 |
 | `qa=auth-loading` | 인증 연결 확인 중 |
 | `qa=busy`, `qa=service-error` | 서비스 확인 중 / 서비스 조회 실패 |
-| `role=guest&qa=unavailable` | 로그인 설정 미완료 |
+| `role=guest&qa=unavailable` | Google 계정 연결 설정 미완료 |
 | `status=running`, `status=error`, `status=PASS_PENDING_USER_APPROVAL`, `status=FINALIZED` | 작업 실행 / 실패 / 승인 대기 / 완료 |
 | `target=implementation-package`, `target=decisions`, `target=requirement-review`, `target=impact`, `target=licenses` | `qa` 상태를 해당 API에만 적용 |
 

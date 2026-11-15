@@ -16,14 +16,14 @@ SECTIONS = dict(zip(
 ))
 
 
-def load_snapshot(writer, ident, content):
+async def load_snapshot(writer, ident, content):
     if not isinstance(ident, str) or not re.fullmatch(r"[0-9a-f]{64}", ident):
         return None
     path = f"candidate_snapshots/{ident}.json"
     try:
-        if not writer.exists(path):
+        if not (await writer.exists(path)):
             return None
-        packet = writer.read_json(path)
+        packet = (await writer.read_json(path))
     except (OSError, ValueError, UnicodeError, ArtifactError):
         return None
     if not isinstance(packet, dict):

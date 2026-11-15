@@ -33,9 +33,11 @@ export function Privacy() {
       <nav aria-label="정보 처리 안내 목차" className="privacy-toc"><a href="#privacy-account">계정과 로그인</a><a href="#privacy-transmission">AI 처리</a><a href="#privacy-storage">기록 보관과 삭제</a><a href="#privacy-contact">문의</a></nav>
       <section aria-labelledby="privacy-account"><h2 id="privacy-account">계정과 로그인</h2>
       <p>
-        MAGI는 Google 로그인 시 이름·이메일·프로필 사진을 요청하지 않습니다.
-        Google이 제공하는 계정 식별 정보를 해시 처리하여 이용자를 구분하고,
-        인증 세션을 사용해 로그인 상태를 유지합니다.
+        로그인 없이 시작하면 브라우저의 익명 세션으로 이용자를 구분합니다.
+        세션은 마지막 방문부터 30일간 유지되며 쿠키를 삭제하거나 만료되면 계정에 연결하지 않은 기록을 다시 불러올 수 없습니다.
+        Google 계정을 연결하면 다른 기기에서도 기록을 이어갈 수 있습니다.
+        MAGI는 Google 로그인 시 이름, 이메일과 프로필 사진을 요청하지 않습니다.
+        Google이 제공하는 계정 식별 정보를 해시 처리하여 이용자를 구분합니다.
       </p>
       </section>
       <section aria-labelledby="privacy-transmission"><h2 id="privacy-transmission">AI 처리</h2>
@@ -48,12 +50,12 @@ export function Privacy() {
       <section aria-labelledby="privacy-storage"><h2 id="privacy-storage">기록 보관과 삭제</h2>
       <p>
         입력한 내용, 작업 기록과 생성된 문서는 MAGI 운영자가 관리하는 서버와
-        데이터베이스에 저장됩니다. 저장된 기록은 로그인 계정의 내부 식별자와
+        데이터베이스에 저장됩니다. 저장된 기록은 익명 사용자 또는 연결한 계정의 내부 식별자와
         연결되어 이용자별로 구분되며, 작업 이어하기와 기록·문서 조회에
         사용됩니다.
       </p>
       <p>
-        로그아웃해도 저장된 기록은 삭제되지 않습니다. 기록 삭제가 필요한 경우
+        로그아웃하거나 익명 세션이 만료되어도 서버에 저장된 기록은 삭제되지 않습니다. 기록 삭제가 필요한 경우
         관리자에게 요청하세요.
       </p>
       </section>

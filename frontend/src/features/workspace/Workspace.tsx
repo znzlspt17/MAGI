@@ -238,6 +238,8 @@ export default function Workspace() {
         </Stack>
         <main ref={mainRef}>
           <Notice>{auth.notice || connection}</Notice>
+          {actualJob?.index_status === "pending" && <p className="subtle" role="status">작업이 저장되었습니다. 검색 데이터를 반영하고 있습니다.</p>}
+          {actualJob?.index_status === "failed" && <p className="subtle" role="status">작업은 저장되었지만 검색 데이터 반영에 실패했습니다. 잠시 후 다시 시도합니다.</p>}
           {surface === "workspace" && id && <WorkspaceSteps stage={id && !actualJob ? null : workspaceStage(actualJob)} message={workspaceStageMessage(actualJob)} interrupted={!!actualJob && ["error", "interrupted"].includes(actualJob.status)} />}
           {surface === "knowledge" ? (
             <Knowledge selectedJobId={id} />

@@ -96,9 +96,9 @@ async def _invoke(url, headers, expected, arguments):
                 return {"status": "ok", "text": "\n".join(parts)[:8000]}
 
 
-def catalog(url, headers):
-    return asyncio.run(asyncio.wait_for(_catalog(url, headers), timeout=30))
+async def catalog(url, headers):
+    return await asyncio.wait_for(_catalog(url, headers), timeout=30)
 
 
-def invoke(url, headers, expected, arguments):
-    return asyncio.run(asyncio.wait_for(_invoke(url, headers, expected, arguments), timeout=30))
+async def invoke(url, headers, expected, arguments):
+    return await asyncio.wait_for(_invoke(url, headers, expected, arguments), timeout=30)

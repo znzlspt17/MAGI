@@ -76,8 +76,8 @@ def normalize(text):
     return text.replace("\r\n", "\n").replace("\r", "\n").rstrip()
 
 
-def read_json(writer, path, default=None):
-    return writer.read_json(path) if writer.exists(path) else default
+async def read_json(writer, path, default=None):
+    return (await writer.read_json(path)) if (await writer.exists(path)) else default
 
 
 def document_blocks(text, supplied=()):
@@ -185,16 +185,16 @@ def _change(before, after, kind):
     return change
 
 
-def _events(writer):
+async def _events(writer):
     from backend.application.execution_history import ExecutionHistory
     return [{"id": event["id"], "action": event["action"], "input": event["input"]}
-            for event in ExecutionHistory(writer).conversation() if event.get("input")]
+            for event in (await ExecutionHistory(writer).conversation()) if event.get("input")]
 
 
-def _snapshot(writer, spec, state):
-    packet = read_json(writer, BLOCKS, {})
+async def _snapshot(writer, spec, state):
+    packet = (await read_json(writer, BLOCKS, {}))
     supplied = packet.get("blocks", []) if packet.get("source_hash") == digest(normalize(spec)) else []
-    events = _events(writer)
+    events = (await _events(writer))
     history = state.get("revision_history", [])
     sheet = state.get("requirement_lock_sheet") or {}
     from backend.knowledge.trace import add_source, confirmed_sources
@@ -212,11 +212,11 @@ def _snapshot(writer, spec, state):
             if answer.get("question_id") and isinstance(answer.get("answer"), str):
                 add_source(sources, "user_answer:" + answer["question_id"], answer["answer"])
     data = {"content": normalize(spec), "blocks": document_blocks(spec, supplied),
-            "requirements": sheet, "reused_decisions": state.get("reused_decisions", []), "decisions": read_json(writer, "analysis/spec_trace.json", {}),
+            "requirements": sheet, "reused_decisions": state.get("reused_decisions", []), "decisions": (await read_json(writer, "analysis/spec_trace.json", {})),
             "events": events, "revision_history": history, "answers": sheet.get("user_answers", []),
             "sources": sources, "compiled_blocks": supplied}
     from backend.services.implementation_plan import PATH, valid_plan
-    plan = read_json(writer, PATH)
+    plan = (await read_json(writer, PATH))
     if valid_plan(plan, spec):
         data["implementation_plan"] = plan
     data["id"] = digest(data)
@@ -299,8 +299,8 @@ def _priority(change, sources, after):
     return 1
 
 
-def _persist(writer, path, report, state):
-    writer.write_json(path, report)
+async def _persist(writer, path, report, state):
+    (await writer.write_json(path, report))
 
 
 def _validate(value, batch, sources):
@@ -328,32 +328,32 @@ def _validate(value, batch, sources):
     } for item in value.judgments}
 
 
-def review_candidate(context, state, spec):
+async def review_candidate(context, state, spec):
     writer = context.writer
-    after = _snapshot(writer, spec, state)
+    after = (await _snapshot(writer, spec, state))
     snapshot_path = f"candidate_snapshots/{after['id']}.json"
-    if not writer.exists(snapshot_path):
-        writer.write_json(snapshot_path, after)
+    if not (await writer.exists(snapshot_path)):
+        (await writer.write_json(snapshot_path, after))
     try:
-        report = _review_snapshot(context, state, after)
+        report = (await _review_snapshot(context, state, after))
     except Exception as exc:
         LOGGER.warning("change review unavailable exception_type=%s", type(exc).__name__)
         report = {"version": VERSION, "status": "failed", "reason": "analysis_failed",
                   "after_id": after["id"], "after_hash": digest(after["content"]),
                   "changes": [], "sources": [], "analysed": 0, "remaining": None}
     # 분석 실패와 무관하게 이번에 준비된 후보를 다음 비교의 기준으로 보존한다.
-    writer.write_json(CURRENT_REVIEW, report)
-    writer.write_json(LATEST, {"id": after["id"]})
+    (await writer.write_json(CURRENT_REVIEW, report))
+    (await writer.write_json(LATEST, {"id": after["id"]}))
     return report
 
 
-def _review_snapshot(context, state, after):
+async def _review_snapshot(context, state, after):
     writer = context.writer
-    latest = read_json(writer, LATEST, {})
+    latest = (await read_json(writer, LATEST, {}))
     if latest.get("id") and not re.fullmatch(r"[0-9a-f]{64}", latest["id"]):
         raise ValueError("Invalid candidate snapshot ID")
     if latest.get("id") == after["id"]:
-        cached = read_json(writer, CURRENT_REVIEW, {})
+        cached = (await read_json(writer, CURRENT_REVIEW, {}))
         if cached.get("after_id") == after["id"] and cached.get("version") == VERSION:
             return cached
         if cached.get("after_id") != after["id"] or "before_id" not in cached:
@@ -362,26 +362,26 @@ def _review_snapshot(context, state, after):
         baseline_id = cached["before_id"]
         if baseline_id is not None and not re.fullmatch(r"[0-9a-f]{64}", baseline_id):
             raise ValueError("Invalid baseline snapshot ID")
-        before = read_json(writer, f"candidate_snapshots/{baseline_id}.json") if baseline_id else None
+        before = (await read_json(writer, f"candidate_snapshots/{baseline_id}.json")) if baseline_id else None
     else:
         baseline_id = latest.get("id")
-        before = read_json(writer, f"candidate_snapshots/{baseline_id}.json") if baseline_id else None
+        before = (await read_json(writer, f"candidate_snapshots/{baseline_id}.json")) if baseline_id else None
     if baseline_id and (not isinstance(before, dict) or before.get("id") != baseline_id
                         or digest({key: value for key, value in before.items() if key != "id"}) != baseline_id):
         raise ValueError("Candidate snapshot is missing or corrupt")
-    if before and not writer.exists(f"candidate_snapshots/{before['id']}.json"):
-        writer.write_json(f"candidate_snapshots/{before['id']}.json", before)
+    if before and not (await writer.exists(f"candidate_snapshots/{before['id']}.json")):
+        (await writer.write_json(f"candidate_snapshots/{before['id']}.json", before))
     sources = _sources(before, after) if before else []
     key = digest([VERSION, before["id"] if before else None, after["id"], sources])
     cache_path = f"change_reviews/{key}.json"
-    report = read_json(writer, cache_path)
+    report = (await read_json(writer, cache_path))
     if report is None:
         changes = collect_changes(before, after) if before else []
         report = {"version": VERSION, "before_id": before["id"] if before else None, "after_id": after["id"],
                   "before_hash": digest(before["content"]) if before else None, "after_hash": digest(after["content"]),
                   "status": "running",
                   "sources": sources, "changes": changes, "calls": 0, "analysed": 0, "remaining": len(changes)}
-        _persist(writer, cache_path, report, state)
+        (await _persist(writer, cache_path, report, state))
         # 요청 원문과 연결된 변경을 먼저 보내되 나머지도 반드시 보존한다.
         changes.sort(key=lambda item: _priority(item, sources, after))
         pending = list(changes)
@@ -399,10 +399,10 @@ def _review_snapshot(context, state, after):
             report["calls"] += 1
             for item in batch:
                 item.update(status="unanalysed", reason="interrupted")
-            _persist(writer, cache_path, report, state)
+            (await _persist(writer, cache_path, report, state))
             try:
-                result = _complete_once(writer, context.provider, _messages(batch, sources, before, after),
-                    model=context.config.model_routing["compiler"].model, stage="change_review", isolated_schema=ChangeResponse)
+                result = (await _complete_once(writer, context.provider, _messages(batch, sources, before, after),
+                    model=context.config.model_routing["compiler"].model, stage="change_review", isolated_schema=ChangeResponse))
                 judgments = _validate(result, batch, sources)
                 for item in batch:
                     item.update(judgments[item["id"]], status="analysed", reason="")
@@ -410,14 +410,14 @@ def _review_snapshot(context, state, after):
                 LOGGER.warning("change review call failed exception_type=%s", type(exc).__name__)
                 for item in batch:
                     item["reason"] = "analysis_failed"
-            _persist(writer, cache_path, report, state)
+            (await _persist(writer, cache_path, report, state))
     # 미확정 호출은 저장된 부분 결과로 종료하고 자동 재전송하지 않는다.
     report["analysed"] = sum(item["status"] == "analysed" for item in report["changes"])
     report["remaining"] = len(report["changes"]) - report["analysed"]
     report["status"] = ("no_baseline" if before is None else "unchanged" if not report["changes"] else
                         "partial" if report["remaining"] and report["analysed"] else
                         "failed" if report["remaining"] else "complete")
-    writer.write_json(cache_path, report)
+    (await writer.write_json(cache_path, report))
     return report
 
 

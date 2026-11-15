@@ -4,6 +4,13 @@ import { decodeJob } from "@/features/workspace/job-response";
 it("과거 작업의 선택 필드 누락을 허용한다", () => {
   expect(decodeJob({ id: "old", status: "blocked" })).toEqual({ id: "old", status: "blocked" });
 });
+it("검색 데이터의 반영 상태와 버전을 보존한다", () => {
+ const job = decodeJob({ id:"j", status:"running", index_status:"pending", index_source_revision:3, index_applied_revision:2 });
+ expect(job.index_status).toBe("pending");
+ expect(job.index_source_revision).toBe(3);
+ expect(job.index_applied_revision).toBe(2);
+ expect(() => decodeJob({ id:"j", status:"running", index_status:"broken" })).toThrow();
+});
 it("재시도 호출 유형을 확인하고 지원하지 않는 값은 거부한다", () => {
   expect(decodeJob({id:"j",status:"error",retry_kind:"mcp"}).retry_kind).toBe("mcp");
   expect(decodeJob({id:"j",status:"error",retry_kind:"none"}).retry_kind).toBe("none");

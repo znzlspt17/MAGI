@@ -8,7 +8,7 @@ await mkdir(output,{recursive:true});
 const base=process.env.QA_BASE_URL || 'http://127.0.0.1:5173';
 const job='/jobs/'+'a'.repeat(32);
 const cases=[
- ['login','/?role=guest'],['new','/?role=user'],['questions',job+'?role=user'],
+ ['guest','/?role=guest'],['new','/?role=user'],['questions',job+'?role=user'],
  ['review',job+'?role=user&status=PASS_PENDING_USER_APPROVAL'],['running',job+'?role=user&status=running'],
  ['failure',job+'?role=user&status=error'],['final',job+'?role=user&status=FINALIZED'],
  ['mcp','/settings/mcp?role=user'],['privacy','/privacy?role=guest'],['licenses','/licenses?role=guest'],['research','/research?role=guest'],
@@ -33,7 +33,7 @@ try{
     await page.goto(base+path,{waitUntil:'domcontentloaded'});
     await page.locator('#root > *').first().waitFor();
    await page.evaluate(async()=>{await document.fonts.ready; await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
-    const expectedText={login:'Google로 로그인',new:'만들고 싶은 기능을 알려주세요',questions:'우선 지원할 사용 환경',review:'팀 기록 서비스 명세',running:'요청을 처리하고 있습니다',failure:'작업이 중단되었습니다',final:'팀 기록 서비스 명세',mcp:'문서 검색 서버',privacy:'MAGI 정보 처리 안내',licenses:'배포에 포함된 라이선스',research:'연구 출처 및 적용 방식','admin-overview':'현재 실행 1개',error:'검증용 조회 실패입니다','mcp-error':'검증용 조회 실패입니다','mcp-empty':'등록된 연결이 없습니다.'};
+    const expectedText={guest:'만들고 싶은 기능을 알려주세요',new:'만들고 싶은 기능을 알려주세요',questions:'우선 지원할 사용 환경',review:'팀 기록 서비스 명세',running:'요청을 처리하고 있습니다',failure:'작업이 중단되었습니다',final:'팀 기록 서비스 명세',mcp:'문서 검색 서버',privacy:'MAGI 정보 처리 안내',licenses:'배포에 포함된 라이선스',research:'연구 출처 및 적용 방식','admin-overview':'현재 실행 1개',error:'검증용 조회 실패입니다','mcp-error':'검증용 조회 실패입니다','mcp-empty':'등록된 연결이 없습니다.'};
     if(expectedText[name])await page.getByText(expectedText[name],{exact:false}).first().waitFor();
     if((name==='long'||name==='empty') && width===390)await page.getByRole('button',{name:'메뉴 열기',exact:true}).click();
     if(name==='loading')await page.locator('html[data-qa-pending]').waitFor({state:'attached'});

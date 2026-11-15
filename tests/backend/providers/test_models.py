@@ -4,6 +4,7 @@ import json
 from unittest.mock import Mock, patch
 import httpx2
 import pytest
+from tests.backend.application.async_helpers import run_async
 from langchain_core.messages import AIMessage
 
 from backend.errors import Error
@@ -12,7 +13,7 @@ from tests.support.chat_model_fixture import transport
 from tests.support.model_helpers import response
 
 
-def invoke(payload, *, status=200, model="gpt-6-luna"):
+async def invoke(payload, *, status=200, model="gpt-6-luna"):
     requests = []
 
     def handle(request):
@@ -20,7 +21,7 @@ def invoke(payload, *, status=200, model="gpt-6-luna"):
         return httpx2.Response(status, json=payload, request=request)
 
     with transport(handle):
-        result = ChatModelProvider(api_key="fake-test-value").complete_result(
+        result = (await ChatModelProvider(api_key="fake-test-value").complete_result(
             [
                 {"role": "system", "content": "Instructions"},
                 {"role": "user", "content": "Request"},
@@ -29,12 +30,13 @@ def invoke(payload, *, status=200, model="gpt-6-luna"):
             temperature=0,
             cache_key="test-stage",
             conversation_id="conv_test",
-        )
+        ))
     return result, requests
 
 
-def test_langchain_responses_request_and_usage():
-    result, requests = invoke(response())
+@run_async
+async def test_langchain_responses_request_and_usage():
+    result, requests = (await invoke(response()))
     assert len(requests) == 1 and requests[0].url.path == "/v1/responses"
     body = json.loads(requests[0].content)
     assert body["model"] == "gpt-6-luna" and body["service_tier"] == "default"
@@ -79,28 +81,30 @@ def test_standard_usage_missing_is_not_zero():
     )
 
 
-def test_adapter_preserves_aggregate_writes_without_inventing_lifetimes():
+@run_async
+async def test_adapter_preserves_aggregate_writes_without_inventing_lifetimes():
     payload = response()
     payload["usage"]["input_tokens_details"].update(cache_write_tokens=7)
-    result, _ = invoke(payload)
+    result, _ = (await invoke(payload))
     assert result.cache_write_tokens == 7
     assert (
         result.cache_write_30m_tokens is None and result.cache_write_12h_tokens is None
     )
 
 
-def test_explicit_instructions_override_source_system_message():
+@run_async
+async def test_explicit_instructions_override_source_system_message():
     llm = Mock()
     llm.invoke.return_value = AIMessage(content="Result")
     with patch(
         "backend.providers.llm_provider.init_chat_model", return_value=llm
     ) as factory:
-        ChatModelProvider(api_key="fake-test-value").complete_result(
+        (await ChatModelProvider(api_key="fake-test-value").complete_result(
             [{"role": "system", "content": "Superseded"}],
             model="gpt-6-luna",
             instructions="Current",
             conversation_id="conv_test",
-        )
+        ))
     assert llm.invoke.call_args.args[0] == [{"role": "developer", "content": "Current"}]
     assert factory.call_args.kwargs["max_retries"] == 0
     assert factory.call_args.kwargs["use_previous_response_id"] is False
@@ -114,23 +118,26 @@ def test_explicit_instructions_override_source_system_message():
         response(content=[{"type": "refusal", "refusal": "DO_NOT_PROPAGATE"}]),
     ],
 )
-def test_empty_incomplete_refused_response_fails(payload):
+@run_async
+async def test_empty_incomplete_refused_response_fails(payload):
     with pytest.raises(Error):
-        invoke(payload)
+        (await invoke(payload))
 
 
-def test_integration_error_is_sanitized():
+@run_async
+async def test_integration_error_is_sanitized():
     with pytest.raises(Error) as error:
-        invoke(
+        (await invoke(
             {"error": {"message": "DO_NOT_PROPAGATE", "type": "invalid_request_error"}},
             status=400,
-        )
+        ))
     assert (
         "DO_NOT_PROPAGATE" not in str(error.value) and error.value.__suppress_context__
     )
 
 
-def test_structured_output_parse_failure_keeps_observed_usage():
+@run_async
+async def test_structured_output_parse_failure_keeps_observed_usage():
     from pydantic import BaseModel
 
     class Output(BaseModel):
@@ -151,12 +158,12 @@ def test_structured_output_parse_failure_keeps_observed_usage():
         )
 
     with transport(handle):
-        result = ChatModelProvider(api_key="fake-test-value").complete_result(
+        result = (await ChatModelProvider(api_key="fake-test-value").complete_result(
             [{"role": "user", "content": "Request"}],
             model="gpt-6-luna",
             text_format=Output,
             conversation_id="conv_test",
-        )
+        ))
     assert result.parsed.value == "ok"
     assert requests[0]["text"]["format"]["type"] == "json_schema"
 
@@ -170,10 +177,10 @@ def test_structured_output_parse_failure_keeps_observed_usage():
         )
 
     with transport(invalid), pytest.raises(Error) as failure:
-        ChatModelProvider(api_key="fake-test-value").complete_result(
+        (await ChatModelProvider(api_key="fake-test-value").complete_result(
             [{"role": "user", "content": "Request"}],
             model="gpt-6-luna",
             text_format=Output,
             conversation_id="conv_test",
-        )
+        ))
     assert failure.value.completion.input_tokens == 20

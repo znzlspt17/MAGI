@@ -2,8 +2,9 @@
 
 from copy import deepcopy
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import AsyncMock
 import pytest
+from tests.backend.application.async_helpers import run_async
 from backend.models import RequirementItem, RequirementLockSheet, RubricResponse, ReviewResponse
 from backend.services import rubric
 from backend.services.spec_compiler import REQUIRED_FINAL_SPEC_HEADINGS, _assemble_locked_sections
@@ -13,28 +14,29 @@ class Documents:
     def __init__(self):
         self.data = {}
 
-    def exists(self, path):
+    async def exists(self, path):
         return path in self.data
 
-    def read_json(self, path):
+    async def read_json(self, path):
         return deepcopy(self.data[path])
 
-    def write_json(self, path, value, **kwargs):
+    async def write_json(self, path, value, **kwargs):
         self.data[path] = deepcopy(value)
 
 
 @pytest.fixture
-def case(monkeypatch):
+@run_async
+async def case(monkeypatch):
     sheet = RequirementLockSheet("lock", "feature", "메모", [],
         mandatory_requirements=[RequirementItem("REQ-001", "메모를 로컬에 저장합니다.", original_text="메모 저장")])
     state = {"user_request": "메모 저장", "requirement_lock_sheet": sheet.to_dict()}
     response = RubricResponse(items=[dict(rubric_id="RUB-001", requirement_id="REQ-001", category="requirement", importance="core",
         basis=[dict(reference="REQ-001", quote="메모를 로컬에 저장합니다.")],
         condition="메모의 로컬 저장이 명시되어 있는지 검증합니다.", sections=["architecture", "test_plan"])])
-    complete = Mock(return_value=response)
+    complete = AsyncMock(return_value=response)
     monkeypatch.setattr(rubric, "complete_with_usage", complete)
     docs = Documents()
-    record = rubric.ensure_rubric(docs, None, "model", sheet, state)
+    record = await rubric.ensure_rubric(docs, None, "model", sheet, state)
     state["rubric"] = record
     spec = "\n\n".join(heading + "\n\n메모를 로컬에 저장합니다. Windows에서 로컬 저장을 검증합니다."
                          for heading in REQUIRED_FINAL_SPEC_HEADINGS)

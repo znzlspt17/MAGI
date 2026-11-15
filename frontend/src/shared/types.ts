@@ -2,6 +2,8 @@ export interface User {
   id: string;
   role: string;
   csrf?: string;
+  identity_kind?: "guest" | "google";
+  owner_ids?: string[];
 }
 export interface ServiceStatus {
   checkState?: "loading" | "ready" | "error";
@@ -87,6 +89,9 @@ export interface Step {
   execution_id?: string;
 }
 export interface Job {
+  index_status?: "pending" | "ready" | "failed";
+  index_source_revision?: number;
+  index_applied_revision?: number;
   server_time?: string;
   queued_at?: string;
   reused_decision_count?: number; usage?: Usage;

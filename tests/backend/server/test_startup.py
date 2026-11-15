@@ -3,6 +3,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -18,26 +19,26 @@ def test_startup_prepares_database_before_accepting_requests(monkeypatch, failur
     from backend.knowledge import runtime as knowledge_runtime
 
     events = []
-    store = object()
+    store = SimpleNamespace(close_async=AsyncMock())
 
     class Runtime:
         def __init__(self, value):
             assert value is store
             self.store, self.connection = value, None
 
-        def acquire(self, *, recover):
+        async def acquire(self, *, recover):
             assert recover is False
             self.connection = object()
             events.append("lock")
 
-        def recover(self):
+        async def recover(self):
             events.append("recover")
 
-        def close(self):
+        async def close(self):
             self.connection = None
             events.append("unlock")
 
-    def migrate(value, *, runtime):
+    async def migrate(value, *, runtime):
         assert value is store and runtime.connection is not None
         events.append("migration")
         if failure == "migration":
@@ -48,7 +49,7 @@ def test_startup_prepares_database_before_accepting_requests(monkeypatch, failur
         events.append("service")
         if failure == "service":
             raise RuntimeError("test-service-failure")
-        return object()
+        return SimpleNamespace(start_background=lambda: None)
 
     @asynccontextmanager
     async def serve(*args, **kwargs):
@@ -74,9 +75,10 @@ def test_startup_prepares_database_before_accepting_requests(monkeypatch, failur
     monkeypatch.setattr(access_runtime, "PublicRuntime", Runtime)
     monkeypatch.setattr(setup, "migrate", migrate)
     monkeypatch.setattr(knowledge_runtime, "KnowledgeService", knowledge)
-    monkeypatch.setattr(app, "Server", lambda *args, **kwargs: SimpleNamespace(
-        handler=None, manager=SimpleNamespace(close=lambda: events.append("close")),
-    ))
+    async def close():
+        events.append("close")
+    server = SimpleNamespace(handler=None, manager=SimpleNamespace(close=close))
+    monkeypatch.setattr(app, "Server", SimpleNamespace(build=AsyncMock(return_value=server)))
     monkeypatch.setattr('backend.infrastructure.progress_publisher.ProgressPublisher', lambda *args: SimpleNamespace())
     monkeypatch.setattr(app, "serve", serve)
     monkeypatch.setattr(app.asyncio, "Event", Event)

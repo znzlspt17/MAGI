@@ -54,9 +54,15 @@ it('이전 인증의 늦은 401은 현재 인증을 해제하지 않는다',asyn
  const request=api('/api/me').catch(()=>{});configureAuth({publicMode:true,csrf:'new-csrf'});finish(reply({error:'expired'},401));await request;
  expect(listener).not.toHaveBeenCalled();window.removeEventListener('signed-out',listener);
 });
+it('계정이 바뀐 뒤 도착한 이전 계정 응답을 화면에 전달하지 않는다',async()=>{
+ let finish!:(value:Response)=>void;vi.spyOn(globalThis,'fetch').mockImplementation(()=>new Promise(resolve=>finish=resolve));
+ const old=api('/api/jobs');configureAuth({publicMode:true,csrf:'new-csrf'});
+ finish(reply({jobs:['old-account-data']}));
+ await expect(old).rejects.toThrow('접속 계정이 변경되었습니다');
+});
 it('이전 계정의 응답은 새 계정의 재시도 키를 제거하지 않는다',async()=>{
  let finish!:(value:Response)=>void;const fetcher=vi.spyOn(globalThis,'fetch').mockImplementationOnce(()=>new Promise(resolve=>finish=resolve)).mockRejectedValueOnce(new TypeError('network unavailable')).mockResolvedValueOnce(reply({ok:true}));
  const old=post('/api/jobs',{request:'same'});clearRequests();configureAuth({publicMode:true,csrf:'other-csrf'});
- await expect(post('/api/jobs',{request:'same'})).rejects.toThrow();finish(reply({ok:true}));await old;await post('/api/jobs',{request:'same'});
+ await expect(post('/api/jobs',{request:'same'})).rejects.toThrow();finish(reply({ok:true}));await expect(old).rejects.toThrow('접속 계정이 변경되었습니다');await post('/api/jobs',{request:'same'});
  const second=new Headers(fetcher.mock.calls[1][1]?.headers),third=new Headers(fetcher.mock.calls[2][1]?.headers);expect(second.get('Idempotency-Key')).toBe(third.get('Idempotency-Key'));
 });

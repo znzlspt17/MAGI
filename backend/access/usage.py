@@ -70,16 +70,16 @@ def conditions(params, clock):
     return values
 
 
-def usage(service, method, params):
+async def usage(service, method, params):
     values = conditions(params, service.access.clock)
-    with service.store.transaction(mode='read') as c:
+    async with service.store.transaction(mode='read') as c:
         if method=='admin.usage':
-            summary = c.execute(BASE+'SELECT '+STATS+' FROM filtered',values).fetchone()
-            daily = c.execute(BASE+'SELECT usage_day AS day,'+STATS+' FROM filtered GROUP BY usage_day ORDER BY usage_day',values).fetchall()
+            summary = (await (await c.execute(BASE+'SELECT '+STATS+' FROM filtered',values)).fetchone())
+            daily = (await (await c.execute(BASE+'SELECT usage_day AS day,'+STATS+' FROM filtered GROUP BY usage_day ORDER BY usage_day',values)).fetchall())
             today = day_at(service.access.clock())
-            budget = c.execute('SELECT COALESCE(sum(spent),0) AS spent,COALESCE(sum(reserved),0) AS outstanding FROM daily_usage WHERE day=%s',(today,)).fetchone()
-            budget.update(day=today,limit=c.execute('SELECT daily_usd FROM service_settings WHERE singleton=1').fetchone()['daily_usd'])
-            users = c.execute('SELECT id FROM users UNION SELECT user_id AS id FROM cost_calls ORDER BY id').fetchall()
+            budget = (await (await c.execute('SELECT COALESCE(sum(spent),0) AS spent,COALESCE(sum(reserved),0) AS outstanding FROM daily_usage WHERE day=%s',(today,))).fetchone())
+            budget.update(day=today,limit=(await (await c.execute('SELECT daily_usd FROM service_settings WHERE singleton=1')).fetchone())['daily_usd'])
+            users = (await (await c.execute('SELECT id FROM users UNION SELECT user_id AS id FROM cost_calls ORDER BY id')).fetchall())
             return wire({'start':values[0],'end':values[1],'summary':summary,'daily':daily,'today':budget,'users':users})
         group = params.get('group_by','job')
         sort = params.get('sort','cost')
@@ -97,8 +97,8 @@ def usage(service, method, params):
             selection = 'SELECT g.* FROM ('+grouped+') g' if group=='user' else "SELECT g.*,j.data->>'request' AS request FROM ("+grouped+") g LEFT JOIN jobs j ON j.id=g.job_id"
             tie = 'user_id' if group=='user' else 'job_id,user_id'
             order = 'spent DESC,outstanding DESC,latest_day DESC,'+tie if sort=='cost' else 'latest_day DESC,latest_at DESC NULLS LAST,'+tie
-        total = c.execute(BASE+'SELECT count(*) AS total FROM ('+selection+') results',values).fetchone()['total']
-        rows = c.execute(BASE+selection+' ORDER BY '+order+' LIMIT %s OFFSET %s',values+[limit,offset]).fetchall()
+        total = (await (await c.execute(BASE+'SELECT count(*) AS total FROM ('+selection+') results',values)).fetchone())['total']
+        rows = (await (await c.execute(BASE+selection+' ORDER BY '+order+' LIMIT %s OFFSET %s',values+[limit,offset])).fetchall())
         if group=='call':
             for row in rows:
                 row['cost_evidence'] = evidence_status(row)

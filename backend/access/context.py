@@ -4,7 +4,7 @@ from contextvars import ContextVar
 from typing import Any
 
 ACTOR: ContextVar[dict[str, Any] | None] = ContextVar('actor', default=None)
-TRANSACTION: ContextVar[tuple[Any, Any, str] | None] = ContextVar('transaction', default=None)
+TRANSACTION: ContextVar[tuple[Any, Any, str, Any] | None] = ContextVar('transaction', default=None)
 DEFERRED: ContextVar[list[tuple[str, str, object]] | None] = ContextVar('deferred', default=None)
 ADMISSION: ContextVar[tuple[str, str] | None] = ContextVar('admission', default=None)
 

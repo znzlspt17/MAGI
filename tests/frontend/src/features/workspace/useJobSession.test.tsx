@@ -21,6 +21,7 @@ class Socket {
   event(value: unknown) { this.onmessage?.({ data: JSON.stringify(value) }); }
 }
 function View() { const session = useJobSession(); return <><p>{session.job?.status || "loading"}</p><aside>{session.jobs.map(job => <span key={job.id}>{job.id}:{job.status}</span>)}</aside></>; }
+function IndexView() { const {job} = useJobSession(); return <p>인덱스: {job?.index_status || "없음"}</p>; }
 function SelectionView() {
   const session = useJobSession();
   return <><p>선택 단계: {session.step}</p><p>현재 실패 코드: {session.failureDetail?.result?.diagnostic?.error_code || "없음"}</p>
@@ -35,6 +36,20 @@ beforeEach(() => {
   mocks.api.mockReset().mockImplementation(async (path: string) => path === "/api/jobs" ? [] : { id, status: "queued" });
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+it("실시간 반영 중 상태를 이전에 시작한 같은 버전의 HTTP 응답이 덮지 않는다", async () => {
+  let resolveJob!: (job: unknown) => void;
+  mocks.api.mockImplementation((path: string) => path === "/api/jobs" ? Promise.resolve([]) : new Promise(resolve => { resolveJob = resolve; }));
+  render(<MemoryRouter initialEntries={[`/jobs/${id}`]}><Routes><Route path="/jobs/:id" element={<IndexView/>}/></Routes></MemoryRouter>);
+  await act(async () => {});
+  const socket = Socket.instances.at(-1)!;
+  await act(async () => { socket.onopen?.(); socket.event({ event: "job.snapshot", job_id: id, revision: 1, server_time: new Date().toISOString(), job: { id, status: "running", index_status: "pending", index_source_revision: 2, index_applied_revision: 2 } }); });
+  expect(screen.getByText("인덱스: pending")).toBeTruthy();
+  await act(async () => resolveJob({ id, status: "running", index_status: "ready", index_source_revision: 2, index_applied_revision: 2 }));
+  expect(screen.getByText("인덱스: pending")).toBeTruthy();
+  await act(async () => { vi.advanceTimersByTime(10000); });
+  await act(async () => resolveJob({ id, status: "running", index_status: "ready", index_source_revision: 2, index_applied_revision: 2 }));
+  expect(screen.getByText("인덱스: ready")).toBeTruthy();
+});
 it("push로 상태를 갱신하고 15초가 지나도 HTTP 상태 요청을 보내지 않는다", async () => {
   render(<MemoryRouter initialEntries={[`/jobs/${id}`]}><Routes><Route path="/jobs/:id" element={<View/>}/></Routes></MemoryRouter>);
   await act(async () => {});

@@ -18,6 +18,12 @@ from backend.access.runtime import PublicRuntime
 
 
 @pytest.fixture
+def async_store_factory():
+    from tests.support.async_store import isolated_async_store
+    return isolated_async_store
+
+
+@pytest.fixture
 def wasm_connection():
     runtime = Path(
         os.environ.get(

@@ -1,11 +1,12 @@
+from tests.backend.application.async_helpers import run_async
 """루브릭 실패의 안전한 보정 안내와 로그를 검증한다."""
 
 import io
 import json
 from contextlib import nullcontext
-from threading import RLock
+from backend.server.async_locks import AsyncRLock as RLock
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, AsyncMock
 
 import pytest
 
@@ -22,7 +23,8 @@ from tests.support.rubric_helpers import case
     ("basis_quote_not_found", "부분 문자열"),
     ("importance_invalid", "secondary"),
 ])
-def test_basis_retry_guidance_is_specific(reason, expected):
+@run_async
+async def test_basis_retry_guidance_is_specific(reason, expected):
     error = ReviewValidationError(["PRIVATE_RESPONSE"], stage="rubric_generate", check="rubric_basis", reason=reason,
                                   context={"requirement_id": "REQ-001"})
     result = retry_messages([], stage="rubric_generate", attempt=1, error=error)
@@ -32,7 +34,8 @@ def test_basis_retry_guidance_is_specific(reason, expected):
     assert "PRIVATE_RESPONSE" not in str(payload)
 
 
-def test_basis_failure_logs_reason_reference_and_actual_attempt_without_response(monkeypatch):
+@run_async
+async def test_basis_failure_logs_reason_reference_and_actual_attempt_without_response(monkeypatch):
     from backend.server.job_manager import JobManager
     from gateway.logs import normalize
 
@@ -41,16 +44,19 @@ def test_basis_failure_logs_reason_reference_and_actual_attempt_without_response
     error = ReviewValidationError(["PRIVATE_RESPONSE"], stage="rubric_generate", check="rubric_basis",
                                   reason="basis_quote_not_found", context={"requirement_id": "REQ-001"})
     engine = Mock()
-    engine.execute.side_effect = lambda *a, **kw: _stage("spec_compile", lambda state: (_ for _ in ()).throw(error), None)({})
+    async def fail_engine(*args, **kwargs):
+        return await _stage("spec_compile", lambda state: (_ for _ in ()).throw(error), None)({})
+    engine.execute = AsyncMock(side_effect=fail_engine)
     history = Mock()
+    history.terminal = AsyncMock()
     monkeypatch.setattr("backend.server.job_manager.ExecutionHistory", Mock(return_value=history))
     job = {"execution_id": "a" * 32, "request": "PRIVATE_REQUEST"}
-    manager = SimpleNamespace(lock=RLock(), _get_locked=lambda ident: job,
+    manager = SimpleNamespace(lock=RLock(), job_lock=lambda ident: RLock(), _get_locked=lambda ident: job,
         knowledge=SimpleNamespace(store=SimpleNamespace(transaction=nullcontext)),
-        _save_locked=Mock(return_value=True), _notify=Mock(), _set_error_metadata=Mock(),
-        workspace=SimpleNamespace(documents=Mock(), engine=Mock(return_value=engine), state=lambda ident: {}))
+        _save_locked=AsyncMock(return_value=True), _notify=Mock(), _set_error_metadata=Mock(),
+        workspace=SimpleNamespace(documents=AsyncMock(), engine=AsyncMock(return_value=engine), state=AsyncMock(return_value={})))
     try:
-        JobManager._run_logged(manager, "b" * 32, "retry", {})
+        await JobManager._run_logged(manager, "b" * 32, "retry", {})
     finally:
         configure_logging("backend")
     rows = [json.loads(line) for line in stream.getvalue().splitlines()]
@@ -64,7 +70,8 @@ def test_basis_failure_logs_reason_reference_and_actual_attempt_without_response
     assert "PRIVATE_REQUEST" not in stream.getvalue()
 
 
-def test_invalid_rubric_is_corrected_after_specific_retry_feedback(case):
+@run_async
+async def test_invalid_rubric_is_corrected_after_specific_retry_feedback(case):
     from backend.infrastructure.stage_retry import current_messages
     from backend.services import rubric
 
@@ -86,30 +93,31 @@ def test_invalid_rubric_is_corrected_after_specific_retry_feedback(case):
     case.complete.side_effect = respond
     events = []
     generate = _stage("spec_compile", lambda state: rubric.ensure_rubric(case.docs, None, "model", case.sheet, state), events.append)
-    result = generate({**case.state, "rubric": {}})
+    result = (await generate({**case.state, "rubric": {}}))
     assert result["items"][0]["basis"][0]["quote"] == case.sheet.mandatory_requirements[0].text
     assert len(seen) == 2
     assert [event["state"] for event in events] == ["started", "retrying", "completed"]
 
 
-def test_stage_and_terminal_history_expose_same_safe_attempts():
+@run_async
+async def test_stage_and_terminal_history_expose_same_safe_attempts():
     from backend.server.diagnostics import diagnose_exception
     from tests.backend.application.test_execution_history_inputs import history_for
 
     data = {"nodes": [], "executions": [{"id": "run", "action": "answer"}]}
     history = history_for(data)
-    history.documents = SimpleNamespace(usage=lambda: {"attempts": []})
+    history.documents = SimpleNamespace(usage=AsyncMock(return_value={"attempts": []}))
     error = ReviewValidationError(["PRIVATE_RESPONSE"], stage="rubric_generate", check="rubric_basis",
                                   reason="basis_quote_not_found", context={"requirement_id": "REQ-001"})
-    def progress(event):
-        history.stage("run", event["stage"], event["state"], result=event.get("result"))
+    async def progress(event):
+        (await history.stage("run", event["stage"], event["state"], result=event.get("result")))
     with pytest.raises(ReviewValidationError):
-        _stage("spec_compile", lambda _: (_ for _ in ()).throw(error), progress)({})
-    history.terminal("run", "error", "생성 실패", result={"diagnostic": diagnose_exception(error)})
+        (await _stage("spec_compile", lambda _: (_ for _ in ()).throw(error), progress)({}))
+    (await history.terminal("run", "error", "생성 실패", result={"diagnostic": diagnose_exception(error)}))
     failed = next(item for item in data["nodes"] if item["stage"] == "spec_compile")
     terminal = next(item for item in data["nodes"] if item["stage"] == "workflow")
-    stage_diag = history.detail(failed["id"])["result"]["diagnostic"]
-    terminal_diag = history.detail(terminal["id"])["result"]["diagnostic"]
+    stage_diag = (await history.detail(failed["id"]))["result"]["diagnostic"]
+    terminal_diag = (await history.detail(terminal["id"]))["result"]["diagnostic"]
     for diagnostic in (stage_diag, terminal_diag):
         assert diagnostic["error_stage"] == "rubric_generate"
         assert diagnostic["validation_reason"] == "basis_quote_not_found"
@@ -119,7 +127,8 @@ def test_stage_and_terminal_history_expose_same_safe_attempts():
     assert "PRIVATE_RESPONSE" not in str(data)
 
 
-def test_failed_rubric_resume_uses_checkpoint_and_preserves_answers():
+@run_async
+async def test_failed_rubric_resume_uses_checkpoint_and_preserves_answers():
     from langgraph.checkpoint.memory import InMemorySaver
     from backend.models import State
     from tests.support.assessment_helpers import workflow
@@ -140,11 +149,11 @@ def test_failed_rubric_resume_uses_checkpoint_and_preserves_answers():
                      confirmed_user_sources={"user_answer:Q1": "Windows"},
                      completed_tasks=["interview", "requirement_lock_stage"]).to_dict()
     with pytest.raises(ReviewValidationError):
-        graph.invoke(original, config)
-    snapshot = graph.get_state(config)
+        await graph.ainvoke(original, config)
+    snapshot = (await graph.aget_state(config))
     assert snapshot.next == ("execute",)
-    graph.invoke(None, config)
-    final = graph.get_state(config).values
+    await graph.ainvoke(None, config)
+    final = (await graph.aget_state(config)).values
     assert len(calls) == 5
     assert final["confirmed_user_sources"] == original["confirmed_user_sources"]
     assert final["completed_tasks"] == original["completed_tasks"]

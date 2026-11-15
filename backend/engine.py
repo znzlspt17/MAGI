@@ -28,19 +28,19 @@ class Engine:
         self.config = config or Config()
         self.provider = provider or ChatModelProvider(meter=runtime.meter)
 
-    def load(self):
+    async def load(self):
         from backend.services.completed_specs import load_completed
 
-        data = self.documents.workflow_snapshot().values
+        data = (await self.documents.workflow_snapshot()).values
         if not data or data.get("workflow_schema") != 1:
             raise InvalidStateError("현재 그래프 상태를 확인할 수 없습니다.")
         state = State.from_dict(data)
         if state.latest_completed:
-            load_completed(self.documents, state.latest_completed["id"])
+            (await load_completed(self.documents, state.latest_completed["id"]))
         self.documents.state = state.to_dict()
         return state
 
-    def execute(self, action, payload=None, *, on_progress=None):
+    async def execute(self, action, payload=None, *, on_progress=None):
         writer = self.documents
         if action == "generate":
             self.config.validate()
@@ -60,12 +60,20 @@ class Engine:
             evidence.add(
                 "USER_REQUEST", "Original user request was captured.", "user_request"
             )
-            writer.write_text("raw/user_request.md", payload, overwrite=False)
+            # 2026-11-13: 사용자 원본을 확정하는 순간 같은 입력을 색인 큐에도 기록한다.
+            previous_changed = dict(writer.changed)
+            try:
+                async with writer.store.transaction():
+                    await writer.write_text("raw/user_request.md", payload, overwrite=False)
+                    await self.runtime.commit('input', state.to_dict())
+            except BaseException:
+                writer.changed = previous_changed
+                raise
         else:
-            state = self.load()
+            state = (await self.load())
             if action == "retry":
                 from backend.services.refinement import needs_upgrade
-                saved = writer.workflow_snapshot()
+                saved = (await writer.workflow_snapshot())
                 if (not saved.next and state.status == STATUS_FINALIZED) or (
                     any(t.interrupts for t in saved.tasks)
                     and "retry" not in state.allowed_actions
@@ -73,7 +81,7 @@ class Engine:
                 ):
                     return state
             evidence = EvidenceRegistry.from_dict(
-                writer.read_json("evidence/evidence_registry.json")
+                (await writer.read_json("evidence/evidence_registry.json"))
             )
             if action in {"message", "revise", "continue"}:
                 if not isinstance(payload, str) or not payload.strip():
@@ -87,8 +95,9 @@ class Engine:
                 state.final_agent_spec = None
                 state.user_approval_status = "PENDING"
                 action = "message" if action == "continue" else action
+                await self.runtime.commit('input', state.to_dict())
             elif action == "answer":
-                state = self._answer(state, payload)
+                state = (await self._answer(state, payload))
             elif action == "approve":
                 if (
                     not isinstance(payload, dict)
@@ -97,7 +106,7 @@ class Engine:
                     raise InvalidStateError("승인 후보가 변경되었습니다.")
                 if state.status != STATUS_PASS_PENDING_USER_APPROVAL:
                     raise InvalidStateError("검토를 통과한 승인 후보가 필요합니다.")
-                candidate = writer.read_text("draft/approval_candidate_spec.ko.md")
+                candidate = (await writer.read_text("draft/approval_candidate_spec.ko.md"))
                 from backend.services.rubric import digest
                 evaluation_hash = digest(state.rubric_evaluation)
                 if ((payload.get("evaluation_hash") is not None and payload["evaluation_hash"] != evaluation_hash)
@@ -123,13 +132,15 @@ class Engine:
             skills=SkillRegistry(),
             evidence=evidence,
         )
-        return AgentWorkflow(self, nodes, writer, evidence, on_progress).run(
+        return (await AgentWorkflow(self, nodes, writer, evidence, on_progress).run(
             state, action=action, replay_pending=action == "retry" and isinstance(payload, dict) and payload.get("replay_pending") is True
-        )
+        ))
 
-    def _answer(self, state, answers):
+    async def _answer(self, state, answers):
         writer = self.documents
         from backend.models import RequirementLockSheet
+
+        state = copy.deepcopy(state)
 
         pending_questions = list(state.blocking_questions)
         is_review_answer = state.awaiting_input_reason == "review"
@@ -181,35 +192,40 @@ class Engine:
                 all_answers,
             )
         ]
-        writer.write_json("analysis/requirement_lock_sheet.json", sheet.to_dict())
-        writer.write_text("analysis/requirement_lock_sheet.ko.md", sheet.to_markdown())
         if remaining_questions:
             state.blocking_questions = remaining_questions
-            return state
-
-        # Reset compile/critic state
-        if not is_review_answer:
-            state.structured_issues = []
-        state = replace(state, **fresh_review_budget())
-        state.status = STATUS_NEEDS_USER_INPUT
-        state.blocking_questions = pending_questions
-
-        state.blocking_questions = remaining_questions
-        state.awaiting_input_reason = None
-        state.final_agent_spec = None
+        else:
+            # Reset compile/critic state
+            if not is_review_answer:
+                state.structured_issues = []
+            state = replace(state, **fresh_review_budget())
+            state.status = STATUS_NEEDS_USER_INPUT
+            state.blocking_questions = remaining_questions
+            state.awaiting_input_reason = None
+            state.final_agent_spec = None
+        # 2026-11-13: 일부 답변만 접수해도 정규화된 원본과 색인 입력은 원자적으로 저장한다.
+        previous_changed = dict(writer.changed)
+        try:
+            async with writer.store.transaction():
+                await writer.write_json("analysis/requirement_lock_sheet.json", sheet.to_dict())
+                await writer.write_text("analysis/requirement_lock_sheet.ko.md", sheet.to_markdown())
+                await self.runtime.commit('input', state.to_dict())
+        except BaseException:
+            writer.changed = previous_changed
+            raise
         return state
 
-    def finalize(self, state):
+    async def finalize(self, state):
         from backend.services.completed_specs import archive_completed
 
         current = State.from_dict(state)
-        content = self.documents.read_text("draft/approval_candidate_spec.ko.md")
+        content = (await self.documents.read_text("draft/approval_candidate_spec.ko.md"))
         self._validate_candidate_for_approval(content, current)
         if hashlib.sha256(content.encode()).hexdigest() != current.candidate_hash:
             raise InvalidStateError("승인 후보가 변경되었습니다.")
-        with self.documents.store.transaction():
-            completed = archive_completed(self.documents, current, content)
-            self.documents.write_text("final/FINAL_AGENT_SPEC.md", content)
+        async with self.documents.store.transaction():
+            completed = (await archive_completed(self.documents, current, content))
+            (await self.documents.write_text("final/FINAL_AGENT_SPEC.md", content))
         return {
             **state,
             "status": STATUS_FINALIZED,

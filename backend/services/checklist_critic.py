@@ -42,7 +42,7 @@ class ChecklistCritic:
 
     agent_id = "critic"
 
-    def critique(
+    async def critique(
         self,
         spec_md: str,
         sheet: RequirementLockSheet,
@@ -80,7 +80,7 @@ class ChecklistCritic:
                                               for check, section, severity in checks],
                                   "score_cap": deterministic_cap},
         )
-        raw = provider_messages_fn(payload)
+        raw = await provider_messages_fn(payload)
         try:
             if not isinstance(raw, ReviewResponse):
                 raise ReviewValidationError()

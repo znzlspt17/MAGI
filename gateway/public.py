@@ -67,6 +67,11 @@ def install(app, client):
         if not origin:
             if request.path not in {'/','/privacy','/licenses','/research','/api/auth/info'} and not request.path.startswith('/static/'):
                 return jsonify(error='공개 서비스 설정이 필요합니다.',request_id=g.request_id),503
+        if request.path == '/api/auth/guest':
+            # 2026-11-13: 세션 생성은 CSRF 값이 없으므로 출처를 먼저 검증한다.
+            if request.method != 'POST' or request.headers.get('Origin') != origin or request.headers.get('Sec-Fetch-Site') == 'cross-site':
+                abort(403)
+            return None
         if request.path in {'/','/privacy','/licenses','/research','/api/auth/info','/auth/google/start','/auth/google/callback'} or request.path.startswith('/static/'):
             return None
         if request.path.startswith(('/api/','/ws/')):
@@ -121,6 +126,19 @@ def install(app, client):
         except ClientError as exc:
             return jsonify(error=str(exc),request_id=g.request_id),exc.status
 
+    @app.post('/api/auth/guest')
+    def guest_start():
+        if not public:
+            abort(404)
+        try:
+            payload = client().call('auth.guest')
+            response = jsonify(ok=True)
+            response.set_cookie(cookie, payload['session'], max_age=payload['max_age'], secure=secure,
+                                httponly=True, samesite='Lax', path='/')
+            return response
+        except ClientError as exc:
+            return jsonify(error=str(exc), request_id=g.request_id), exc.status
+
     @app.get('/auth/google/start')
     def google_start():
         if not public:
@@ -140,11 +158,10 @@ def install(app, client):
         try:
             payload=client().call('auth.callback',{'state':request.args.get('state'),'code':request.args.get('code'),
                                                   'browser':request.cookies.get(login_cookie)})
-            response=redirect('/')
+            response=redirect('/?auth=linked')
             response.set_cookie(cookie,payload['session'],max_age=86400,secure=secure,httponly=True,samesite='Lax',path='/')
         except ClientError as exc:
-            response=jsonify(error=str(exc),request_id=g.request_id)
-            response.status_code=exc.status
+            response=redirect('/?auth=failed')
         response.delete_cookie(login_cookie,secure=secure,httponly=True,samesite='Lax',path='/')
         return response
 

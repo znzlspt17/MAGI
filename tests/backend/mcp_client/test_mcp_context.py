@@ -1,6 +1,7 @@
 """MCP 참고자료는 출처를 보존하며 정상 JSON으로 제한한다."""
 
 import json
+from tests.backend.application.async_helpers import run_async
 
 from backend.mcp_client.context import bounded_results
 
@@ -21,9 +22,10 @@ def test_failed_and_unidentified_results_are_not_presented_as_evidence():
                                           {"status": "ok", "text": "missing provenance"}]}) is None
 
 
-def test_identical_mcp_context_is_sent_only_once_per_conversation(store, monkeypatch):
+@run_async
+async def test_identical_mcp_context_is_sent_only_once_per_conversation(async_store_factory, monkeypatch):
     from types import SimpleNamespace
-    from unittest.mock import Mock
+    from unittest.mock import AsyncMock
     from pydantic import BaseModel
     from backend.infrastructure.provider_call import _complete_connected
     from backend.knowledge.core import Documents
@@ -32,20 +34,21 @@ def test_identical_mcp_context_is_sent_only_once_per_conversation(store, monkeyp
     class Output(BaseModel):
         value: str
 
-    project = store.create_project("MCP 문맥")
-    store.save_job({"id": "mcp-context-job", "project_id": project["id"], "request": "example"})
-    writer = Documents(store, "mcp-context-job")
-    writer.write_json("research/mcp_results.json", {"results": [{"connection_id": "c1", "tool_name": "find",
-        "schema_hash": "s1", "arguments_hash": "a1", "status": "ok", "text": "공식 자료"}]})
-    fake = SimpleNamespace(provider_name="openai", complete_result=Mock(return_value=CompletionResult(
-        text="", parsed=Output(value="ok"), response_id="resp_test")))
-    monkeypatch.setattr("backend.infrastructure.provider_call.prepare_context", lambda w, m, s:
-                        (m, SimpleNamespace(restore=lambda value: value)))
-    monkeypatch.setitem(__import__("backend.infrastructure.provider_call", fromlist=["STAGE_SCHEMAS"]).STAGE_SCHEMAS, "spec_compile", Output)
-    kwargs = {"model": "gpt-6-luna", "stage": "spec_compile", "temperature": 0,
-              "isolated_schema": None, "conversation_id": "conv_test"}
-    _complete_connected(writer, fake, [], **kwargs)
-    _complete_connected(writer, fake, [], **kwargs)
-    first, second = [call.args[0] for call in fake.complete_result.call_args_list]
-    assert any("외부 MCP 참고 자료:" in item.get("content", "") for item in first)
-    assert not any("외부 MCP 참고 자료:" in item.get("content", "") for item in second)
+    async with async_store_factory() as store:
+        project = await store.create_project("MCP 문맥")
+        await store.save_job({"id": "mcp-context-job", "project_id": project["id"], "request": "example"})
+        writer = Documents(store, "mcp-context-job")
+        await writer.write_json("research/mcp_results.json", {"results": [{"connection_id": "c1", "tool_name": "find",
+            "schema_hash": "s1", "arguments_hash": "a1", "status": "ok", "text": "공식 자료"}]})
+        fake = SimpleNamespace(provider_name="openai", complete_result=AsyncMock(return_value=CompletionResult(
+            text="", parsed=Output(value="ok"), response_id="resp_test")))
+        monkeypatch.setattr("backend.infrastructure.provider_call.prepare_context", AsyncMock(side_effect=lambda w, m, s:
+                            (m, SimpleNamespace(restore=lambda value: value))))
+        monkeypatch.setitem(__import__("backend.infrastructure.provider_call", fromlist=["STAGE_SCHEMAS"]).STAGE_SCHEMAS, "spec_compile", Output)
+        kwargs = {"model": "gpt-6-luna", "stage": "spec_compile", "temperature": 0,
+                  "isolated_schema": None, "conversation_id": "conv_test"}
+        await _complete_connected(writer, fake, [], **kwargs)
+        await _complete_connected(writer, fake, [], **kwargs)
+        first, second = [call.args[0] for call in fake.complete_result.call_args_list]
+        assert any("외부 MCP 참고 자료:" in item.get("content", "") for item in first)
+        assert not any("외부 MCP 참고 자료:" in item.get("content", "") for item in second)

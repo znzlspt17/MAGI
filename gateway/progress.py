@@ -60,7 +60,7 @@ class ProgressHub:
                     continue
             for listener in listeners:
                 if not listener.failed.is_set():
-                    listener.put(event)
+                    listener.put({**event, '_route_owner': key.split('.')[1]})
 
     def disconnected(self):
         with self.lock:
@@ -70,8 +70,8 @@ class ProgressHub:
                     listener.failed.set()
             self.subscriptions.clear()
 
-    def attach(self, listener, job=None):
-        key = routing_key(listener.owner, job)
+    def attach(self, listener, job=None, owner=None):
+        key = routing_key(owner or listener.owner, job)
         with self.lock:
             entry = self.subscriptions.setdefault(key, Subscription())
             entry.listeners.add(listener)
@@ -140,9 +140,13 @@ def serve_progress(ws, client, hub):
     actor = client.call('progress.authorize')
     listener = Listener(client, actor['id'])
     current = None
+    current_owner = None
+    owners = set(actor.get('owner_ids', [actor['id']]))
     checked = time.monotonic()
     try:
         hub.attach(listener)
+        for owner in owners - {listener.owner}:
+            hub.attach(listener, owner=owner)
         ws.send(json.dumps({'event': 'ready'}))
         ws.send(json.dumps({'event': 'jobs.snapshot', **client.call('progress.list')}, ensure_ascii=False))
         while not listener.failed.is_set():
@@ -155,16 +159,24 @@ def serve_progress(ws, client, hub):
                         raise ValueError()
                     if action == 'job.unsubscribe':
                         if current == ident:
-                            hub.detach(listener, routing_key(listener.owner, ident))
+                            hub.detach(listener, routing_key(current_owner, ident))
                             current = None
+                            current_owner = None
                         continue
                     # DB 스냅샷은 RLS와 작업 소유권을 확인한 RPC에서만 얻는다.
-                    client.call('progress.authorize', {'id': ident})
+                    authorized = client.call('progress.authorize', {'id': ident})
+                    owner = authorized.get('owner_id', listener.owner)
+                    if owner not in authorized.get('owner_ids', [listener.owner]):
+                        raise ValueError()
                     if action == 'job.subscribe' and current != ident:
                         if current:
-                            hub.detach(listener, routing_key(listener.owner, current))
-                        hub.attach(listener, ident)
+                            hub.detach(listener, routing_key(current_owner, current))
+                        if owner == listener.owner:
+                            hub.attach(listener, ident)
+                        else:
+                            hub.attach(listener, ident, owner=owner)
                         current = ident
+                        current_owner = owner
                     if current != ident:
                         raise ValueError()
                     snapshot = client.call('progress.snapshot', {'id': ident})
@@ -182,7 +194,23 @@ def serve_progress(ws, client, hub):
                     break
                 if _ == 0:
                     # 연결 생존 확인과 별개로 철회된 세션의 데이터 전송을 차단한다.
-                    client.call('progress.authorize')
+                    auth = client.call('progress.authorize')
+                    current_owners = set(auth.get('owner_ids', [listener.owner]))
+                    for owner in current_owners - owners:
+                        hub.attach(listener, owner=owner)
+                    for owner in owners - current_owners:
+                        hub.detach(listener, routing_key(owner))
+                        if current and current_owner == owner:
+                            hub.detach(listener, routing_key(owner, current))
+                            current = None
+                            current_owner = None
+                    if current_owners != owners:
+                        # 2026-11-13: 연결된 기존 작업은 새 이벤트가 없으므로 범위 변경 시 목록을 다시 보낸다.
+                        ws.send(json.dumps({'event': 'jobs.snapshot', **client.call('progress.list')}, ensure_ascii=False))
+                    owners = current_owners
+                route_owner = event.pop('_route_owner', listener.owner)
+                if route_owner not in owners:
+                    continue
                 if event['event'] == 'job.progress':
                     if event.get('job_id') != current:
                         continue
@@ -190,14 +218,27 @@ def serve_progress(ws, client, hub):
                     continue
                 if event['event'] == 'records.deleted':
                     for deleted in event.get('ids', []):
-                        hub.detach(listener, routing_key(listener.owner, deleted))
+                        hub.detach(listener, routing_key(route_owner, deleted))
                         if current == deleted:
                             current = None
+                            current_owner = None
                 if event['event'] in {'job.progress', 'job.snapshot'}:
                     event = {**event, 'server_time': datetime.now(UTC).isoformat()}
                 ws.send(json.dumps(event, ensure_ascii=False))
             if time.monotonic() - checked >= 30:
-                client.call('progress.authorize')
+                auth = client.call('progress.authorize')
+                current_owners = set(auth.get('owner_ids', [listener.owner]))
+                for owner in current_owners - owners:
+                    hub.attach(listener, owner=owner)
+                for owner in owners - current_owners:
+                    hub.detach(listener, routing_key(owner))
+                    if current and current_owner == owner:
+                        hub.detach(listener, routing_key(owner, current))
+                        current = None
+                        current_owner = None
+                if current_owners != owners:
+                    ws.send(json.dumps({'event': 'jobs.snapshot', **client.call('progress.list')}, ensure_ascii=False))
+                owners = current_owners
                 ws.send(json.dumps({'event': 'service.status', 'status': client.call('service.status')}))
                 checked = time.monotonic()
     except ClientError as exc:

@@ -1,5 +1,6 @@
 """CI 전용 브로커에서 실제 AMQP 전달·격리·재시작 복구를 필수 검증한다."""
 import os
+import asyncio
 import re
 import subprocess
 import time
@@ -11,6 +12,7 @@ from protocol.amqp import Broker, BrokerSettings, routing_key
 from gateway.progress import Listener, ProgressHub
 from backend.infrastructure.progress_store import ProgressStore
 from backend.infrastructure.progress_publisher import ProgressPublisher
+from tests.backend.application.async_helpers import run_async
 
 
 requires_broker = pytest.mark.skipif(os.environ.get('CI_RABBITMQ') != '1', reason='실제 RabbitMQ 검증은 전용 CI 브로커에서 수행합니다.')
@@ -91,8 +93,9 @@ def test_real_user_job_queues_share_devices_and_isolate_other_jobs():
         token = hub.subscriptions[key].token.result(timeout=5)
         event = {'event': 'job.progress', 'job_id': ident, 'revision': 1, 'job': {'id': ident, 'status': 'running'}}
         hub.broker.publish(key, event).result(timeout=10)
-        assert a1.messages.get(timeout=5) == event
-        assert a2.messages.get(timeout=5) == event
+        # 게이트웨이는 구독 경로의 소유자를 내부 큐에 보관해 세션 범위를 재확인한다.
+        assert a1.messages.get(timeout=5) == {**event, '_route_owner': 'A'}
+        assert a2.messages.get(timeout=5) == {**event, '_route_owner': 'A'}
         assert other.messages.empty() and b.messages.empty()
         hub.detach(a1)
         assert queue_exists(token[0])
@@ -103,51 +106,65 @@ def test_real_user_job_queues_share_devices_and_isolate_other_jobs():
 
 
 @requires_broker
-def test_broker_restart_recovers_subscription_snapshot_and_outbox(store):
+@run_async
+async def test_broker_restart_recovers_subscription_snapshot_and_outbox(async_store_factory):
     container = os.environ.get('CI_RABBITMQ_CONTAINER', '')
     assert re.fullmatch(r'[a-f0-9]{12,64}', container), 'CI 전용 RabbitMQ container ID가 필요합니다.'
+
     def docker(operation):
         # 운영 스택은 조작하지 않고 workflow의 임시 서비스 컨테이너만 재시작한다.
         result = subprocess.run(['docker', operation, container], capture_output=True, timeout=60)
         assert result.returncode == 0, 'CI RabbitMQ 컨테이너 제어 실패'
-    ident, owner = uuid4().hex, 'ci-outbox-owner'
-    with store.transaction() as conn:
-        conn.execute('INSERT INTO users(id,subject_hash) VALUES (%s,%s)', (owner, uuid4().hex))
-    project = store.create_project('outbox 복구')
-    publisher, hub = ProgressPublisher(store, SETTINGS), ProgressHub(SETTINGS)
-    listener = Listener(None, owner)
-    progress = ProgressStore(store)
-    try:
-        assert publisher.broker.ready.wait(15) and hub.broker.ready.wait(15)
-        hub.attach(listener, ident)
-        docker('stop')
-        eventually(lambda: not publisher.broker.ready.is_set() and listener.failed.is_set())
-        job = {'id': ident, 'project_id': project['id'], 'owner_id': owner, 'status': 'running', 'execution_id': uuid4().hex}
-        store.save_job(job)
-        assert progress.pending()
-        docker('start')
-        eventually(lambda: publisher.broker.ready.is_set() and hub.broker.ready.is_set())
-        replacement = Listener(None, owner)
-        hub.attach(replacement, ident)
-        snapshot = progress.snapshot(ident)
-        assert snapshot['job']['status'] == 'running'
-        eventually(lambda: not progress.pending())
-        while not replacement.messages.empty():
-            replacement.messages.get_nowait()
-        store.save_job({**job, 'updated_at': '2026-11-03T00:00:00Z'})
-        publisher.wake.set()
-        deadline = time.monotonic() + 15
-        while True:
-            received = replacement.messages.get(timeout=max(.1, deadline - time.monotonic()))
-            if received['revision'] > snapshot['revision']:
-                break
-            assert time.monotonic() < deadline, '복구 후 최신 이벤트를 받지 못했습니다.'
-        assert received['job_id'] == ident
-        assert received['revision'] > snapshot['revision']
-        eventually(lambda: not progress.pending())
-    finally:
+
+    async def wait_outbox_empty(progress, timeout=30):
+        # 2026-11-13: outbox 조회와 publisher가 같은 이벤트 루프에서 진행되도록 기다린다.
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not await progress.pending():
+                return
+            await asyncio.sleep(.1)
+        pytest.fail('CI RabbitMQ 상태 전환 시간 초과')
+
+    async with async_store_factory() as store:
+        ident, owner = uuid4().hex, 'ci-outbox-owner'
+        async with store.transaction() as conn:
+            await conn.execute('INSERT INTO users(id,subject_hash) VALUES (%s,%s)', (owner, uuid4().hex))
+        project = await store.create_project('outbox 복구')
+        publisher, hub = ProgressPublisher(store, SETTINGS), ProgressHub(SETTINGS)
+        listener = Listener(None, owner)
+        progress = ProgressStore(store)
         try:
-            docker('start')
+            assert await asyncio.to_thread(publisher.broker.ready.wait, 15)
+            assert await asyncio.to_thread(hub.broker.ready.wait, 15)
+            await asyncio.to_thread(hub.attach, listener, ident)
+            await asyncio.to_thread(docker, 'stop')
+            await asyncio.to_thread(eventually, lambda: not publisher.broker.ready.is_set() and listener.failed.is_set())
+            job = {'id': ident, 'project_id': project['id'], 'owner_id': owner, 'status': 'running', 'execution_id': uuid4().hex}
+            await store.save_job(job)
+            assert await progress.pending()
+            await asyncio.to_thread(docker, 'start')
+            await asyncio.to_thread(eventually, lambda: publisher.broker.ready.is_set() and hub.broker.ready.is_set())
+            replacement = Listener(None, owner)
+            await asyncio.to_thread(hub.attach, replacement, ident)
+            snapshot = await progress.snapshot(ident)
+            assert snapshot['job']['status'] == 'running'
+            await wait_outbox_empty(progress)
+            while not replacement.messages.empty():
+                replacement.messages.get_nowait()
+            await store.save_job({**job, 'updated_at': '2026-11-03T00:00:00Z'})
+            publisher.wake.set()
+            deadline = time.monotonic() + 15
+            while True:
+                received = await asyncio.to_thread(replacement.messages.get, True, max(.1, deadline - time.monotonic()))
+                if received['revision'] > snapshot['revision']:
+                    break
+                assert time.monotonic() < deadline, '복구 후 최신 이벤트를 받지 못했습니다.'
+            assert received['job_id'] == ident
+            assert received['revision'] > snapshot['revision']
+            await wait_outbox_empty(progress)
         finally:
-            hub.close()
-            publisher.close()
+            try:
+                await asyncio.to_thread(docker, 'start')
+            finally:
+                await asyncio.to_thread(hub.close)
+                await publisher.close()

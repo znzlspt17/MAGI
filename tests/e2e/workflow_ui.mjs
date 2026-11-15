@@ -19,7 +19,7 @@ try{
    emit(value){this.onmessage?.({data:JSON.stringify(value)});}
   };
  });
- let current=null,expired=false,status={ready:true,active_count:0,queued_count:0,max_parallel:2,own_active_count:0};
+ let current=null,expired=false,guest=false,status={ready:true,active_count:0,queued_count:0,max_parallel:2,own_active_count:0};
  const id='a'.repeat(32),korean={content:'# 한국어 명세\n\n메모를 30일 동안 보관합니다.',filename:'spec.ko.md',source_hash:'fixture',language:'ko'};
  const forms={A:{question_id:'A',question:'보관 기간',input_type:'text',options:[],form_version:'A-v1'},B:{question_id:'B',question:'저장 방식',input_type:'text',options:[],form_version:'B-v1'}};
  const node={id:'current',execution_id:'execution-1',stage:'await_user',status:'waiting',detail_available:true};
@@ -27,11 +27,12 @@ try{
   const req=route.request(),path=new URL(req.url()).pathname,data=req.postDataJSON();calls.push({path,data,headers:req.headers()});
   let body={};
   if(path==='/api/auth/info')body={public:true,login_available:true};
+  else if(path==='/api/auth/guest'&&req.method()==='POST'){expired=false;guest=true;body={};}
   else if(expired)return route.fulfill({status:401,json:{error:'세션이 만료되었습니다.'}});
-  else if(path==='/api/me')body={id:'owner',role:'user',csrf:'fixture-csrf'};
+  else if(path==='/api/me')body=guest?{id:'guest',role:'user',csrf:'guest-csrf',identity_kind:'guest'}:{id:'owner',role:'user',csrf:'fixture-csrf',identity_kind:'google'};
   else if(path==='/api/me/usage')body={runs:0,remaining_runs:3};
   else if(path==='/api/service/status')body=status;
-  else if(path==='/api/jobs'&&req.method()==='GET')body=current?[current]:[];
+  else if(path==='/api/jobs'&&req.method()==='GET')body=!guest&&current?[current]:[];
   else if(path==='/api/commands'&&data.kind==='generate'){
    assert.equal(data.input,'오프라인 메모 앱을 만들어주세요.');
    current={id,request:data.input,status:'NEEDS_USER_INPUT',execution_id:'execution-1',state:{candidate_hash:'f'.repeat(64),status:'NEEDS_USER_INPUT',question_forms:forms,blocking_questions:['[A] 보관 기간','[B] 저장 방식'],saved_answers:[]},session_events:[{id:'event-generate',action:'generate',input:{request:data.input},status:'NEEDS_USER_INPUT',summary:'메모 앱을 만들기 위해 두 가지를 확인합니다.',questions:['[A] 보관 기간','[B] 저장 방식'],started_at:'2026-10-21T00:00:00Z'}],execution_graph:{nodes:[node]}};
@@ -48,7 +49,7 @@ try{
   }else if (path.endsWith('/requirement-review')) body = { status: 'unavailable', message: '예시 근거 자료 없음' };
     else if(path.endsWith('/document'))throw new Error('문서 열람은 번역 요청을 보내지 않아야 합니다.');
   else if(path.includes('/steps/'))body={result:{summary:'요구사항 확인'},...(current.status==='NEEDS_USER_INPUT'?{}:{document:korean})};
-  else if(path==='/api/jobs/'+id)body=current;
+  else if(path==='/api/jobs/'+id){if(guest)return route.fulfill({status:404,json:{error:'작업을 찾을 수 없습니다.'}});body=current;}
   else if(path==='/api/projects')body=[];
   else throw new Error('검증되지 않은 API: '+path);
   return route.fulfill({json:structuredClone(body)});
@@ -109,12 +110,17 @@ try{
  assert.equal(await page.evaluate(()=>window.__sockets.filter(s=>s.readyState===1).length),1,'StrictMode 재마운트 뒤 활성 소켓은 하나여야 합니다.');
  assert.equal(calls.find(c=>c.path==='/api/me').headers['x-csrf-token'],undefined);
  for(const call of calls.filter(c=>c.data)){assert.equal(call.headers['x-csrf-token'],'fixture-csrf');assert(call.headers['idempotency-key']);}
+ await page.evaluate(id=>{sessionStorage.setItem('draft:owner','이전 계정 초안');sessionStorage.setItem(`draft:owner:${id}:message`,'이전 대화 초안');},id);
+ const oldSocket=await page.evaluate(()=>window.__sockets.indexOf(window.__sockets.find(s=>s.readyState===1)));
  expired=true;await page.evaluate(()=>window.__sockets.find(s=>s.readyState===1).emit({event:'session.expired'}));
- await page.getByRole('link',{name:'Google로 로그인',exact:true}).waitFor();
- assert.equal(await page.getByRole('navigation',{name:'작업 기록'}).count(),0);
- assert.equal(await page.evaluate(()=>window.__sockets.filter(s=>s.readyState===1).length),0,'세션 만료시 Workspace 소켓을 정리해야 합니다.');
- const count=calls.filter(c=>c.path==='/api/jobs').length;
- await page.reload();await page.getByRole('link',{name:'Google로 로그인',exact:true}).waitFor();
- assert.equal(calls.filter(c=>c.path==='/api/jobs').length,count,'로그인 전에는 작업 API를 호출하면 안 됩니다.');
+ await page.getByRole('link',{name:'로그인해서 기록 이어가기',exact:true}).waitFor();
+ assert.equal(await page.evaluate(index=>window.__sockets[index].readyState,oldSocket),3,'세션 만료 시 이전 계정 소켓을 정리해야 합니다.');
+ assert.equal(await page.evaluate(()=>sessionStorage.getItem('draft:owner')),null);
+ assert.equal(await page.evaluate(id=>sessionStorage.getItem(`draft:owner:${id}:message`),id),null);
+ assert.equal(await page.getByText('오프라인 메모 앱을 만들어주세요.',{exact:true}).count(),0,'새 익명 작업 공간에 이전 계정 기록을 표시하면 안 됩니다.');
+ assert.equal(await page.getByRole('navigation',{name:'작업 기록'}).getByText('오프라인 메모 앱을 만들어주세요.').count(),0);
+ await page.reload();await page.getByRole('link',{name:'로그인해서 기록 이어가기',exact:true}).waitFor();
+ assert.equal(await page.getByText('오프라인 메모 앱을 만들어주세요.',{exact:true}).count(),0,'익명 세션을 새로고침해도 이전 계정의 작업을 표시하면 안 됩니다.');
+ assert(calls.some(c=>c.path==='/api/auth/guest'),'세션 만료 후 익명 세션을 발급해야 합니다.');
  assert.deepEqual(errors,[]);
 }finally{await browser.close();}

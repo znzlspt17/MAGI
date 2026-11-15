@@ -39,9 +39,15 @@ class CallAttempt(TypedDict, total=False):
 
 
 class CallUsage:
-    def __init__(self, writer: Documents, provider: ChatModelProvider, model: str, stage: str):
+    @classmethod
+    async def create(cls, writer: Documents, provider: ChatModelProvider, model: str, stage: str):
+        usage = await _load_usage(writer)
+        observation = cls(writer, provider, model, stage, usage)
+        await _record_usage(writer, usage)
+        return observation
+
+    def __init__(self, writer: Documents, provider: ChatModelProvider, model: str, stage: str, usage: dict[str, Any]):
         self.writer = writer
-        usage = _load_usage(writer)
         attempt: CallAttempt = {
             "id": uuid4().hex,
             "stage": _safe_stage(stage),
@@ -89,7 +95,6 @@ class CallUsage:
             "cache_diagnostics": None,
         })
         attempts.append(attempt)
-        _record_usage(writer, usage)
         LOGGER.info(
             "provider call stage=%s provider=%s model=%s status=attempt "
             "elapsed_ms=unknown input_tokens=unknown output_tokens=unknown cached_tokens=unknown",
@@ -113,9 +118,9 @@ class CallUsage:
             "summary_truncated": truncated,
         })
 
-    def failed(self) -> None:
+    async def failed(self) -> None:
         self.attempt.update({"status": "failed", "elapsed_ms": _elapsed_ms(self.started)})
-        _record_usage(self.writer, self.usage)
+        await _record_usage(self.writer, self.usage)
         LOGGER.info(
             "provider call stage=%s provider=%s model=%s status=failed "
             "elapsed_ms=%s input_tokens=unknown output_tokens=unknown cached_tokens=unknown",
@@ -125,7 +130,7 @@ class CallUsage:
             self.attempt["elapsed_ms"],
         )
 
-    def succeeded(self, result: CompletionResult) -> None:
+    async def succeeded(self, result: CompletionResult) -> None:
         summary, truncated = _summary_value(result)
         self.attempt.update({
             "status": "success", "elapsed_ms": _elapsed_ms(self.started),
@@ -136,7 +141,7 @@ class CallUsage:
             "summary_truncated": truncated,
             "cache_diagnostics": safe_diagnostics(result.cache_diagnostics),
         })
-        _record_usage(self.writer, self.usage)
+        await _record_usage(self.writer, self.usage)
         LOGGER.info(
             "provider call stage=%s provider=%s model=%s status=success "
             "elapsed_ms=%s input_tokens=%s output_tokens=%s cached_tokens=%s",
@@ -155,8 +160,8 @@ class CallUsage:
             diagnostic.get("reason", "unknown"), _logged_count(self.attempt["cached_tokens"]),
         )
 
-def _load_usage(writer: Documents) -> dict[str, Any]:
-    return writer.usage()
+async def _load_usage(writer: Documents) -> dict[str, Any]:
+    return await writer.usage()
 
 
 def public_model_calls(attempts):
@@ -205,9 +210,9 @@ def _summary_value(result):
     return text[:8000], result.summary_truncated is True or len(text) > 8000
 
 
-def _record_usage(writer: Documents, usage: dict[str, Any]) -> bool:
+async def _record_usage(writer: Documents, usage: dict[str, Any]) -> bool:
     try:
-        writer.save_usage(usage)
+        await writer.save_usage(usage)
     except Exception as exc:
         usage["recording_incomplete"] = True
         _log_usage_io("write", exc)

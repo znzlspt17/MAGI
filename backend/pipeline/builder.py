@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from inspect import isawaitable
 from typing import Any
 from protocol.logging import get_logger
 from backend.infrastructure.stage_retry import CURRENT_RETRY, MAX_RETRIES
@@ -10,13 +11,15 @@ from backend.services.failure_policy import correction_retryable
 
 
 def _stage(name: str, node, callback, *, defer_completed: bool = False):
-    def wrapped(state):
-        _progress(callback, name, "started")
+    async def wrapped(state):
+        (await _progress(callback, name, "started"))
         error = None
         for attempt in range(MAX_RETRIES + 1):
             token = CURRENT_RETRY.set({"attempt": attempt, "error": error})
             try:
                 result = node(deepcopy(state))
+                if isawaitable(result):
+                    result = await result
                 break
             except Exception as exc:
                 error = exc
@@ -41,7 +44,7 @@ def _stage(name: str, node, callback, *, defer_completed: bool = False):
                         validation_rubric_id=diagnostic.get("context", {}).get("rubric_id"),
                     )
                 if not retryable or attempt == MAX_RETRIES:
-                    _progress(
+                    (await _progress(
                         callback,
                         name,
                         "failed",
@@ -49,9 +52,9 @@ def _stage(name: str, node, callback, *, defer_completed: bool = False):
                             {"research": exc.research_record}
                             if name == "web_research" and hasattr(exc, "research_record") else {}
                         )},
-                    )
+                    ))
                     raise
-                _progress(
+                (await _progress(
                     callback,
                     name,
                     "retrying",
@@ -61,17 +64,17 @@ def _stage(name: str, node, callback, *, defer_completed: bool = False):
                         "diagnostic": diagnostic,
                         "summary": f"재시도 중… ({attempt + 1}/{MAX_RETRIES})",
                     },
-                )
+                ))
             finally:
                 CURRENT_RETRY.reset(token)
         if not defer_completed:
-            _progress(callback, name, "completed", result, state)
+            (await _progress(callback, name, "completed", result, state))
         return result
 
     return wrapped
 
 
-def _progress(
+async def _progress(
     callback, stage: str, state: str, result: dict | None = None, workflow_state=None
 ) -> None:
     if callback is None:
@@ -96,4 +99,6 @@ def _progress(
                 isinstance(item, str) for item in questions
             ):
                 event["result"]["blocking_questions"] = questions
-    callback(event)
+    value = callback(event)
+    if isawaitable(value):
+        await value

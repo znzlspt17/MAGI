@@ -13,32 +13,35 @@ class PublicRuntime:
         self.store=store
         self.connection=None
 
-    def acquire(self, *, recover=True):
+    async def acquire(self, *, recover=True):
+        import psycopg
         from psycopg.rows import dict_row
-        c=self.store.connect(**self.store.config.connection,row_factory=dict_row)
+        # 2026-11-13: 세션 advisory lock은 풀 반환 시 해제되므로 별도 연결에 유지한다.
+        c=await psycopg.AsyncConnection.connect(**self.store.config.connection,row_factory=dict_row)
         try:
-            role=c.execute('SELECT rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user').fetchone()
-            if role['rolsuper'] or role['rolbypassrls']:
+            role=await (await c.execute('SELECT rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user')).fetchone()
+            if role is None or role['rolsuper'] or role['rolbypassrls']:
                 raise InvalidStateError('공개 서비스 DB 계정은 superuser/BYPASSRLS 권한을 가질 수 없습니다.')
-            if not c.execute('SELECT pg_try_advisory_lock(%s) AS acquired',(PROCESS_LOCK,)).fetchone()['acquired']:
+            acquired = await (await c.execute('SELECT pg_try_advisory_lock(%s) AS acquired',(PROCESS_LOCK,))).fetchone()
+            if acquired is None or not acquired['acquired']:
                 raise InvalidStateError('다른 공개 백엔드 프로세스가 실행 중입니다.')
-            c.commit()
+            await c.commit()
             self.connection=c
             if recover:
-                self.recover()
-        except Exception:
-            c.close()
+                await self.recover()
+        except BaseException:
+            await c.close()
             self.connection=None
             raise
 
-    def recover(self):
-        with self.store.transaction() as tx:
-            tx.execute("UPDATE execution_leases SET phase='interrupted',stopping=true WHERE phase IN ('queued','running','recovery')")
-            tx.execute("UPDATE cost_calls SET state='uncertain' WHERE state='reserved'")
+    async def recover(self):
+        async with self.store.transaction() as tx:
+            await tx.execute("UPDATE execution_leases SET phase='interrupted',stopping=true WHERE phase IN ('queued','running','recovery')")
+            await tx.execute("UPDATE cost_calls SET state='uncertain' WHERE state='reserved'")
 
-    def close(self):
+    async def close(self):
         if self.connection:
-            self.connection.close()
+            await self.connection.close()
             self.connection=None
 
 

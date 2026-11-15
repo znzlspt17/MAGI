@@ -25,11 +25,11 @@ def _hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def _row(conn, owner, ident, *, lock=False):
-    row = conn.execute(
+async def _row(conn, owner, ident, *, lock=False):
+    row = (await (await conn.execute(
         "SELECT * FROM mcp_connections WHERE owner_id=%s AND id=%s" + (" FOR UPDATE" if lock else ""),
         (owner, ident),
-    ).fetchone()
+    )).fetchone())
     if not row or row["auth_type"] != "oauth":
         raise AccessError("MCP OAuth 연결을 찾을 수 없습니다.", "invalid")
     return row
@@ -149,9 +149,9 @@ async def _select_client(client, row, saved, origin, authorization):
     return {"client_id": result["client_id"], "client_secret": result.get("client_secret"), "method": method}
 
 
-def _run(coro):
+async def _run(coro):
     try:
-        return asyncio.run(asyncio.wait_for(coro, timeout=_REQUEST_TIMEOUT))
+        return await asyncio.wait_for(coro, timeout=_REQUEST_TIMEOUT)
     except AccessError:
         raise
     except Exception:
@@ -178,30 +178,30 @@ async def _prepare(row, saved, origin):
     return authorization, registered, scopes
 
 
-def begin(store, owner_id, connection_id, sid, origin):
+async def begin(store, owner_id, connection_id, sid, origin):
     if not isinstance(sid, str) or not sid or not isinstance(origin, str):
         raise AccessError("MCP OAuth 세션을 확인할 수 없습니다.", "unauthorized")
     public_url(origin)
-    with store.transaction(mode="read") as conn:
-        row = dict(_row(conn, owner_id, connection_id))
+    async with store.transaction(mode="read") as conn:
+        row = dict((await _row(conn, owner_id, connection_id)))
     saved = unseal(owner_id, connection_id, row["secret_ciphertext"])
-    authorization, registered, scopes = _run(_prepare(row, saved, origin))
+    authorization, registered, scopes = (await _run(_prepare(row, saved, origin)))
     state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(48)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode("ascii")
     payload = {"verifier": verifier, "origin": origin, "resource": row["url"],
                "issuer": authorization["issuer"], "token_endpoint": authorization["token_endpoint"],
                "client": registered, "version": row["version"] + 1}
-    with store.transaction() as conn:
-        current = _row(conn, owner_id, connection_id, lock=True)
+    async with store.transaction() as conn:
+        current = (await _row(conn, owner_id, connection_id, lock=True))
         if current["version"] != row["version"]:
             raise AccessError("MCP 연결이 변경되어 다시 연결해야 합니다.", "busy")
         ciphertext = seal(owner_id, connection_id, payload)
         # 새 연결 시도는 이전 인증 결과가 나중에 도착해 덮어쓰는 것을 방지한다.
-        conn.execute("UPDATE mcp_connections SET version=version+1,status='auth_required',enabled=false,updated_at=now() WHERE owner_id=%s AND id=%s",
-                     (owner_id, connection_id))
-        conn.execute("DELETE FROM mcp_oauth_states WHERE owner_id=%s AND connection_id=%s", (owner_id, connection_id))
-        conn.execute("INSERT INTO mcp_oauth_states(state_hash,owner_id,connection_id,session_hash,expires_at,payload_ciphertext) VALUES (%s,%s,%s,%s,%s,%s)",
-                     (_hash(state), owner_id, connection_id, _hash(sid), time.time() + _STATE_LIFETIME, ciphertext))
+        (await conn.execute("UPDATE mcp_connections SET version=version+1,status='auth_required',enabled=false,updated_at=now() WHERE owner_id=%s AND id=%s",
+                     (owner_id, connection_id)))
+        (await conn.execute("DELETE FROM mcp_oauth_states WHERE owner_id=%s AND connection_id=%s", (owner_id, connection_id)))
+        (await conn.execute("INSERT INTO mcp_oauth_states(state_hash,owner_id,connection_id,session_hash,expires_at,payload_ciphertext) VALUES (%s,%s,%s,%s,%s,%s)",
+                     (_hash(state), owner_id, connection_id, _hash(sid), time.time() + _STATE_LIFETIME, ciphertext)))
     params = {"response_type": "code", "client_id": registered["client_id"],
               "redirect_uri": origin + "/auth/mcp/callback", "state": state,
               "code_challenge": challenge, "code_challenge_method": "S256", "resource": row["url"]}
@@ -244,47 +244,47 @@ async def _exchange(grant, fields):
             "expires_at": time.time() + expires if expires is not None else None}
 
 
-def callback(store, owner_id, sid, state, code, origin):
+async def callback(store, owner_id, sid, state, code, origin):
     if not all(isinstance(item, str) and item and len(item) <= 4096 for item in (sid, state, code, origin)):
         raise AccessError("MCP OAuth 응답을 확인할 수 없습니다.", "invalid")
     # 2026-11-03: 일회성 state를 네트워크 요청 전에 소비해 중복 코드 교환을 막는다.
-    with store.transaction() as conn:
-        row = conn.execute("DELETE FROM mcp_oauth_states WHERE state_hash=%s AND owner_id=%s AND session_hash=%s AND expires_at>%s RETURNING connection_id,payload_ciphertext",
-                           (_hash(state), owner_id, _hash(sid), time.time())).fetchone()
+    async with store.transaction() as conn:
+        row = (await (await conn.execute("DELETE FROM mcp_oauth_states WHERE state_hash=%s AND owner_id=%s AND session_hash=%s AND expires_at>%s RETURNING connection_id,payload_ciphertext",
+                           (_hash(state), owner_id, _hash(sid), time.time()))).fetchone())
     if not row:
         raise AccessError("MCP 인증 요청이 만료되었거나 일치하지 않습니다.", "invalid")
     ident = row["connection_id"]
     grant = unseal(owner_id, ident, row["payload_ciphertext"])
     if not hmac.compare_digest(grant["origin"], origin):
         raise AccessError("MCP 인증 출처가 일치하지 않습니다.", "invalid")
-    with store.transaction(mode="read") as conn:
-        current = _row(conn, owner_id, ident)
+    async with store.transaction(mode="read") as conn:
+        current = (await _row(conn, owner_id, ident))
         if current["url"] != grant["resource"] or current["version"] != grant["version"]:
             raise AccessError("MCP 연결이 변경되어 다시 연결해야 합니다.", "invalid")
-    tokens = _run(_exchange(grant, {"grant_type": "authorization_code", "code": code,
-                                    "redirect_uri": origin + "/auth/mcp/callback", "code_verifier": grant["verifier"]}))
-    with store.transaction() as conn:
-        current = _row(conn, owner_id, ident, lock=True)
+    tokens = (await _run(_exchange(grant, {"grant_type": "authorization_code", "code": code,
+                                    "redirect_uri": origin + "/auth/mcp/callback", "code_verifier": grant["verifier"]})))
+    async with store.transaction() as conn:
+        current = (await _row(conn, owner_id, ident, lock=True))
         if current["url"] != grant["resource"] or current["version"] != grant["version"]:
             raise AccessError("MCP 연결이 변경되어 다시 연결해야 합니다.", "invalid")
         saved = unseal(owner_id, ident, current["secret_ciphertext"])
         saved["oauth_grant"] = {key: grant[key] for key in ("resource", "issuer", "token_endpoint", "client")}
         saved["oauth_tokens"] = tokens
-        conn.execute("UPDATE mcp_connections SET secret_ciphertext=%s,status='disconnected',enabled=false,updated_at=now() WHERE owner_id=%s AND id=%s",
-                     (seal(owner_id, ident, saved), owner_id, ident))
-        conn.execute("DELETE FROM mcp_oauth_refreshes WHERE owner_id=%s AND connection_id=%s", (owner_id, ident))
+        (await conn.execute("UPDATE mcp_connections SET secret_ciphertext=%s,status='disconnected',enabled=false,updated_at=now() WHERE owner_id=%s AND id=%s",
+                     (seal(owner_id, ident, saved), owner_id, ident)))
+        (await conn.execute("DELETE FROM mcp_oauth_refreshes WHERE owner_id=%s AND connection_id=%s", (owner_id, ident)))
 
 
-def _disable(store, owner_id, connection_id, version):
-    with store.transaction() as conn:
-        conn.execute("UPDATE mcp_connections SET status='auth_required',enabled=false,updated_at=now() WHERE owner_id=%s AND id=%s AND version=%s",
-                     (owner_id, connection_id, version))
+async def _disable(store, owner_id, connection_id, version):
+    async with store.transaction() as conn:
+        (await conn.execute("UPDATE mcp_connections SET status='auth_required',enabled=false,updated_at=now() WHERE owner_id=%s AND id=%s AND version=%s",
+                     (owner_id, connection_id, version)))
 
 
-def token(store, owner_id, connection_id, *, expected_version, expected_resource):
+async def token(store, owner_id, connection_id, *, expected_version, expected_resource):
     expired_without_refresh = False
-    with store.transaction() as conn:
-        row = _row(conn, owner_id, connection_id, lock=True)
+    async with store.transaction() as conn:
+        row = (await _row(conn, owner_id, connection_id, lock=True))
         # 2026-11-04: 이전 URL의 요청이 새 연결의 토큰을 가져가지 않게 묶는다.
         if row["version"] != expected_version or row["url"] != expected_resource:
             raise AccessError("MCP 연결이 변경되어 다시 확인해야 합니다.", "invalid")
@@ -298,28 +298,28 @@ def token(store, owner_id, connection_id, *, expected_version, expected_resource
             expired_without_refresh = True
         # 외부 호출 전 영속 예약한다. 프로세스 중단 후에도 동일 refresh token을 재전송하지 않는다.
         if not expired_without_refresh:
-            reserved = conn.execute("INSERT INTO mcp_oauth_refreshes(connection_id,owner_id,started_at) VALUES (%s,%s,%s) ON CONFLICT(connection_id) DO NOTHING RETURNING connection_id",
-                                    (connection_id, owner_id, time.time())).fetchone()
+            reserved = (await (await conn.execute("INSERT INTO mcp_oauth_refreshes(connection_id,owner_id,started_at) VALUES (%s,%s,%s) ON CONFLICT(connection_id) DO NOTHING RETURNING connection_id",
+                                    (connection_id, owner_id, time.time()))).fetchone())
             if not reserved:
                 raise AccessError("MCP OAuth 갱신이 진행 중이거나 완료 여부를 확인할 수 없습니다. 다시 연결하세요.", "busy")
         version = row["version"]
     if expired_without_refresh:
-        _disable(store, owner_id, connection_id, version)
+        (await _disable(store, owner_id, connection_id, version))
         raise AccessError("MCP OAuth 인증이 만료되었습니다. 다시 연결하세요.", "unavailable")
     try:
-        fresh = _run(_exchange(grant, {"grant_type": "refresh_token", "refresh_token": tokens["refresh_token"]}))
+        fresh = (await _run(_exchange(grant, {"grant_type": "refresh_token", "refresh_token": tokens["refresh_token"]})))
         if fresh["refresh_token"] is None:
             fresh["refresh_token"] = tokens["refresh_token"]
-        with store.transaction() as conn:
-            current = _row(conn, owner_id, connection_id, lock=True)
+        async with store.transaction() as conn:
+            current = (await _row(conn, owner_id, connection_id, lock=True))
             if current["version"] != version or current["url"] != grant["resource"]:
                 raise AccessError("MCP 연결이 변경되어 다시 연결해야 합니다.", "invalid")
             current_saved = unseal(owner_id, connection_id, current["secret_ciphertext"])
             current_saved["oauth_tokens"] = fresh
-            conn.execute("UPDATE mcp_connections SET secret_ciphertext=%s,updated_at=now() WHERE owner_id=%s AND id=%s",
-                         (seal(owner_id, connection_id, current_saved), owner_id, connection_id))
-            conn.execute("DELETE FROM mcp_oauth_refreshes WHERE owner_id=%s AND connection_id=%s", (owner_id, connection_id))
+            (await conn.execute("UPDATE mcp_connections SET secret_ciphertext=%s,updated_at=now() WHERE owner_id=%s AND id=%s",
+                         (seal(owner_id, connection_id, current_saved), owner_id, connection_id)))
+            (await conn.execute("DELETE FROM mcp_oauth_refreshes WHERE owner_id=%s AND connection_id=%s", (owner_id, connection_id)))
         return fresh["access_token"]
     except Exception:
-        _disable(store, owner_id, connection_id, version)
+        (await _disable(store, owner_id, connection_id, version))
         raise AccessError("MCP 인증 갱신을 완료하지 못했습니다. 다시 연결하세요.", "unavailable") from None
