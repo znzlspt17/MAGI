@@ -59,11 +59,15 @@ async function request(path: string, options: RequestInit, sensitiveOperationId?
     ...options,
     headers,
   });
+  // 2026-11-13: 계정 전환 전 요청이 늦게 완료되어 새 화면을 덮지 못하게 한다.
+  if (generation !== authGeneration) throw new ApiError("접속 계정이 변경되었습니다. 다시 조회하세요.", 409);
   if (signature !== null && generation === authGeneration && (response.ok || response.status < 500))
     pending.delete(signature);
-  if (publicMode && generation === authGeneration && response.status === 401)
+  // 2026-11-13: 세션 확인의 401은 익명 세션 발급을 위한 정상적인 분기다.
+  if (publicMode && generation === authGeneration && response.status === 401 && path !== "/api/me" && path !== "/api/auth/guest")
     window.dispatchEvent(new Event("signed-out"));
   const data = await responseData(response);
+  if (generation !== authGeneration) throw new ApiError("접속 계정이 변경되었습니다. 다시 조회하세요.", 409);
   if (!response.ok)
     throw new ApiError(
       responseError(data, "요청을 처리하지 못했습니다."),

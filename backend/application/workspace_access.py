@@ -2,6 +2,7 @@
 from __future__ import annotations
 import re
 from backend.access.context import ACTOR
+from backend.access.ownership import can_access
 from backend.knowledge.runtime import RunKnowledge
 
 
@@ -10,36 +11,37 @@ class WorkspaceAccess:
         self.knowledge = knowledge
         self.engine_factory = engine_factory
 
-    def get(self, ident):
+    async def get(self, ident):
         if not isinstance(ident, str) or not re.fullmatch(r"[0-9a-f]{32}", ident):
             raise KeyError(ident)
-        with self.knowledge.store.transaction(mode="read") as conn:
-            row = conn.execute(
+        async with self.knowledge.store.transaction(mode="read") as conn:
+            row = (await (await conn.execute(
                 "SELECT data,owner_id FROM jobs WHERE id=%s", (ident,)
-            ).fetchone()
+            )).fetchone())
         actor = ACTOR.get()
-        if not row or (actor is not None and row["owner_id"] != actor["id"]):
+        if not row or not can_access(actor, row["owner_id"]):
             raise KeyError(ident)
         return {**row["data"], "owner_id": row["owner_id"]}
 
-    def documents(self, ident):
-        self.get(ident)
+    async def documents(self, ident):
+        (await self.get(ident))
         return self.knowledge.store.documents(ident)
 
-    def state(self, ident):
-        return self.knowledge.store.state(self.get(ident)["id"])
+    async def state(self, ident):
+        return (await self.knowledge.store.state((await self.get(ident))["id"]))
 
-    def read_json(self, ident, name):
-        docs = self.documents(ident)
-        return docs.read_json(name) if docs.exists(name) else None
+    async def read_json(self, ident, name):
+        docs = (await self.documents(ident))
+        return (await docs.read_json(name)) if (await docs.exists(name)) else None
 
-    def read_text(self, ident, name):
-        docs = self.documents(ident)
-        return docs.read_text(name) if docs.exists(name) else None
+    async def read_text(self, ident, name):
+        docs = (await self.documents(ident))
+        return (await docs.read_text(name)) if (await docs.exists(name)) else None
 
-    def engine(self, ident, meter=None):
-        docs = self.documents(ident)
-        docs.state = self.state(ident)
-        runtime = RunKnowledge(self.knowledge, self.get(ident), docs, meter=meter)
+    async def engine(self, ident, meter=None):
+        docs = (await self.documents(ident))
+        docs.state = (await self.state(ident))
+        runtime = RunKnowledge(self.knowledge, (await self.get(ident)), docs, meter=meter)
+        await runtime.initialize()
         docs.runtime = runtime
         return self.engine_factory(docs, runtime)

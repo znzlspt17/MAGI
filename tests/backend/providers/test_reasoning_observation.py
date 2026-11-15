@@ -3,6 +3,7 @@ import json
 
 import httpx2
 import pytest
+from tests.backend.application.async_helpers import run_async
 from langchain_core.messages import AIMessage
 
 from backend.providers.llm_provider import ChatModelProvider, completion_result
@@ -11,7 +12,8 @@ from tests.support.model_helpers import response
 
 
 @pytest.mark.parametrize(("stage", "verbosity"), [("spec_compile", "high"), ("interview", "medium")])
-def test_stage_policy_is_sent(stage, verbosity):
+@run_async
+async def test_stage_policy_is_sent(stage, verbosity):
     requests = []
 
     def handle(request):
@@ -19,9 +21,9 @@ def test_stage_policy_is_sent(stage, verbosity):
         return httpx2.Response(200, json=response(), request=request)
 
     with transport(handle):
-        ChatModelProvider(api_key="fake-test-value").complete_result(
+        (await ChatModelProvider(api_key="fake-test-value").complete_result(
             [{"role": "user", "content": "Request"}], model="gpt-6-luna",
-            stage=stage, conversation_id="conv_test")
+            stage=stage, conversation_id="conv_test"))
     body = requests[0]
     assert body["reasoning"] == {"mode": "standard", "effort": "medium", "summary": "auto"}
     assert body["text"]["verbosity"] == verbosity
@@ -54,7 +56,8 @@ def test_normalized_reasoning_summary_is_observed():
     assert result.reasoning_summary == "판단 요약"
 
 
-def test_response_reasoning_summary_and_zero_usage_survive_http_observation():
+@run_async
+async def test_response_reasoning_summary_and_zero_usage_survive_http_observation():
     payload = response()
     payload["output"].insert(0, {"type": "reasoning", "id": "rs_1", "summary": [
         {"type": "summary_text", "text": "판단 근거"}], "encrypted_content": "never-store"})
@@ -64,15 +67,16 @@ def test_response_reasoning_summary_and_zero_usage_survive_http_observation():
         return httpx2.Response(200, json=payload, request=request)
 
     with transport(handle):
-        result = ChatModelProvider(api_key="fake-test-value").complete_result(
+        result = (await ChatModelProvider(api_key="fake-test-value").complete_result(
             [{"role": "user", "content": "Request"}], model="gpt-6-luna",
-            stage="interview", conversation_id="conv_test")
+            stage="interview", conversation_id="conv_test"))
     assert result.reasoning_summary == "판단 근거"
     assert result.reasoning_tokens == 0
     assert "never-store" not in repr(result)
 
 
-def test_native_tool_call_preserves_schema_and_result_precedence():
+@run_async
+async def test_native_tool_call_preserves_schema_and_result_precedence():
     from pydantic import BaseModel
 
     class Final(BaseModel):
@@ -94,11 +98,11 @@ def test_native_tool_call_preserves_schema_and_result_precedence():
         return httpx2.Response(200, json=payload, request=request)
 
     with transport(handle):
-        result = ChatModelProvider(api_key="fake-test-value").complete_result(
+        result = (await ChatModelProvider(api_key="fake-test-value").complete_result(
             [{"role": "tool", "tool_call_id": "call_previous", "content": "tool output"},
              {"role": "user", "content": "request"}], model="gpt-6-luna",
             stage="interview", text_format=Final, conversation_id="conv_test",
-            instructions="current instruction", tools=[tool], tool_choice="auto")
+            instructions="current instruction", tools=[tool], tool_choice="auto"))
     assert result.parsed is None
     assert result.tool_calls == [{"id": "call_1", "name": "search", "args": {"query": "term"}}]
     body = requests[0]
@@ -111,7 +115,8 @@ def test_native_tool_call_preserves_schema_and_result_precedence():
     assert all(item.get("role") != "assistant" for item in body["input"])
 
 
-def test_native_tool_limit_returns_strict_final_json():
+@run_async
+async def test_native_tool_limit_returns_strict_final_json():
     from pydantic import BaseModel
 
     class Final(BaseModel):
@@ -125,16 +130,17 @@ def test_native_tool_limit_returns_strict_final_json():
         return httpx2.Response(200, json=payload, request=request)
 
     with transport(handle):
-        result = ChatModelProvider(api_key="fake-test-value").complete_result(
+        result = (await ChatModelProvider(api_key="fake-test-value").complete_result(
             [{"role": "user", "content": "request"}], model="gpt-6-luna",
             stage="interview", text_format=Final, conversation_id="conv_test",
-            tools=[], tool_choice="none")
+            tools=[], tool_choice="none"))
     assert result.parsed == Final(answer="ok") and result.tool_calls == []
     assert requests[0]["tool_choice"] == "none"
     assert requests[0]["text"]["format"]["strict"] is True
 
 
-def test_invalid_native_arguments_remain_recoverable_with_call_id():
+@run_async
+async def test_invalid_native_arguments_remain_recoverable_with_call_id():
     from pydantic import BaseModel
 
     class Final(BaseModel):
@@ -150,9 +156,9 @@ def test_invalid_native_arguments_remain_recoverable_with_call_id():
         return httpx2.Response(200, json=payload, request=request)
 
     with transport(handle):
-        result = ChatModelProvider(api_key="fake-test-value").complete_result(
+        result = (await ChatModelProvider(api_key="fake-test-value").complete_result(
             [{"role": "user", "content": "request"}], model="gpt-6-luna",
-            stage="interview", text_format=Final, conversation_id="conv_test", tools=[tool])
+            stage="interview", text_format=Final, conversation_id="conv_test", tools=[tool]))
     assert result.tool_calls[0]["id"] == "call_1"
     assert isinstance(result.tool_calls[0]["args"], str)
     assert result.parsed is None

@@ -1,3 +1,4 @@
+from tests.backend.application.async_helpers import run_async
 """확정 근거 ID와 모델용 출처 참조가 같은 계약을 사용하는지 확인한다."""
 
 import json
@@ -11,12 +12,12 @@ from backend.models import ReviewResolutionResponse
 from tests.support.fakes import resolution_value
 
 
-def context():
+async def context():
     payload = messages("검토", "메모 앱", json.dumps({
         "confirmed_basis": {"FR-001": "Save notes.", "user_request": "메모 앱"},
         "issues": [], "previous_resolutions": [], "review_questions": [], "diagnose_keys": [],
     }))
-    prepared, refs = prepare_context(None, payload, "review_resolution")
+    prepared, refs = (await prepare_context(None, payload, "review_resolution"))
     canonical = json.loads(next(item["content"].split("\n", 1)[1] for item in prepared
                                 if item["content"].startswith("확정 문맥:\n")))
     return canonical, refs
@@ -29,16 +30,18 @@ def packet(ref):
 
 
 @pytest.mark.parametrize("ref", ["FR-001", "S1"])
-def test_supplied_product_id_and_source_restore(ref):
-    canonical, refs = context()
+@run_async
+async def test_supplied_product_id_and_source_restore(ref):
+    canonical, refs = (await context())
     assert canonical["allowed_resolution_refs"]["basis_refs"] == ["FR-001", "S1"]
     restored = refs.restore(packet(ref))
     assert restored.resolutions[0].basis_refs == (["user_request"] if ref == "S1" else [ref])
 
 
 @pytest.mark.parametrize("ref", ["FR-999", "S999", "WF-001", "I1", "user_request"])
-def test_unknown_references_still_fail_with_actionable_repair_context(ref):
-    _, refs = context()
+@run_async
+async def test_unknown_references_still_fail_with_actionable_repair_context(ref):
+    _, refs = (await context())
     with pytest.raises(ReviewValidationError) as caught:
         refs.restore(packet(ref))
     assert caught.value.failed_checks == ["source_reference"]
@@ -47,8 +50,9 @@ def test_unknown_references_still_fail_with_actionable_repair_context(ref):
     assert '["FR-001", "S1"]' in detail
 
 
-def test_conflicting_source_does_not_accept_product_id():
-    _, refs = context()
+@run_async
+async def test_conflicting_source_does_not_accept_product_id():
+    _, refs = (await context())
     result = packet("FR-001")
     result.resolutions[0].conflicting_source = "FR-001"
     with pytest.raises(ReviewValidationError) as caught:
@@ -57,14 +61,15 @@ def test_conflicting_source_does_not_accept_product_id():
     assert "allowed_resolution_refs.conflicting_source의 값만 사용하세요: []" in caught.value.validation_details[0]
 
 
-def test_question_intent_and_final_assessment_survive_provider_context_preparation():
+@run_async
+async def test_question_intent_and_final_assessment_survive_provider_context_preparation():
     intent = {"action": "ask_user", "target": "조작 키", "reason": "배치 결정 필요"}
     limits = {"repair_limit_reached": True, "remaining_review_passes": 0}
     payload = messages("검토", "게임", json.dumps({
         "confirmed_basis": {"user_request": "게임"}, "issues": [],
         "final_assessment": True, "planner_intent": intent, "execution_constraints": limits,
     }))
-    prepared, _ = prepare_context(None, payload, "review_resolution")
+    prepared, _ = (await prepare_context(None, payload, "review_resolution"))
     canonical = json.loads(next(item["content"].split("\n", 1)[1] for item in prepared
                                 if item["content"].startswith("확정 문맥:\n")))
     assert canonical["final_assessment"] is True

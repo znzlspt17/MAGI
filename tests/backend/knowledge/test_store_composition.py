@@ -1,6 +1,8 @@
 """저장 기능 구성에서도 같은 트랜잭션 경계를 사용한다."""
-from contextlib import contextmanager
+import asyncio
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from backend.knowledge.store import KnowledgeStore
 from backend.knowledge.chunk_search import rank_results
@@ -8,22 +10,25 @@ from copy import deepcopy
 
 
 def test_chunk_reader_uses_shared_read_transaction():
-    calls = []
+    async def scenario():
+        calls = []
 
-    class Connection:
-        def execute(self, sql, params):
-            calls.append(params)
-            return SimpleNamespace(fetchone=lambda: {"embedding": "[0.5]"})
+        class Connection:
+            async def execute(self, sql, params):
+                calls.append(params)
+                return SimpleNamespace(fetchone=AsyncMock(return_value={"embedding": "[0.5]"}))
 
-    @contextmanager
-    def transaction(*, mode="write"):
-        calls.append(mode)
-        yield Connection()
+        @asynccontextmanager
+        async def transaction(*, mode="write"):
+            calls.append(mode)
+            yield Connection()
 
-    store = KnowledgeStore(SimpleNamespace(), connect=lambda: None)
-    store.transaction = transaction
-    assert store.chunk_vector({"input_hash": "hash", "input": "text"}, "model") == [0.5]
-    assert calls == ["read", ("hash", "text", "model")]
+        store = KnowledgeStore(SimpleNamespace(), connect=lambda: None)
+        store.transaction = transaction
+        assert await store.chunk_vector({"input_hash": "hash", "input": "text"}, "model") == [0.5]
+        assert calls == ["read", ("hash", "text", "model")]
+
+    asyncio.run(scenario())
 
 
 def test_rank_results_combines_rankings_without_mutating_source_rows():

@@ -15,16 +15,17 @@ class JobQueries:
         self.read_json = access.read_json
         self.read_text = access.read_text
         self.state = access.state
+        self.knowledge = access.knowledge
 
-    def allowed(self, ident):
-        job = self.get(ident)
+    async def allowed(self, ident):
+        job = (await self.get(ident))
         if job["status"] in _ACTIVE:
             return []
         if job["status"] in {"error", "interrupted"}:
             from backend.infrastructure.workflow_store import retry_state
-            recovery = retry_state(self.documents(ident))
+            recovery = (await retry_state((await self.documents(ident))))
             return ["message", "retry"] if recovery["can_retry"] else ["message"]
-        state = self.state(ident)
+        state = (await self.state(ident))
         if not state:
             return []
         if state.get("status") == "FINALIZED":
@@ -34,14 +35,14 @@ class JobQueries:
             return list(dict.fromkeys([action for action in state.get("allowed_actions", []) if action != "approve"] + ["retry"]))
         return state.get("allowed_actions", [])
 
-    def summary(self, ident):
-        job = self.get(ident)
-        state = self.state(ident)
-        actions = self.allowed(ident)
+    async def summary(self, ident):
+        job = (await self.get(ident))
+        state = (await self.state(ident))
+        actions = (await self.allowed(ident))
         recovery = {}
         if job["status"] in {"error", "interrupted"}:
             from backend.infrastructure.workflow_store import retry_state
-            recovery = {k:v for k,v in retry_state(self.documents(ident)).items() if k != "task_id"}
+            recovery = {k:v for k,v in (await retry_state((await self.documents(ident)))).items() if k != "task_id"}
         keys = (
             "id",
             "request",
@@ -61,13 +62,14 @@ class JobQueries:
             "read_only": not state,
             "latest_completed": state.get("latest_completed"),
             "reused_decision_count": len(job.get("reused_decisions", [])),
+            **(await self.knowledge.store.projection_status(ident)),
             **recovery,
         }
 
-    def public(self, ident):
-        job = self.summary(ident)
-        state = self.state(ident)
-        history = ExecutionHistory(self.documents(ident))
+    async def public(self, ident):
+        job = (await self.summary(ident))
+        state = (await self.state(ident))
+        history = ExecutionHistory((await self.documents(ident)))
         keys = (
             "status",
             "blocking_questions",
@@ -86,7 +88,7 @@ class JobQueries:
         )
         job["state"] = {
             **{k: state[k] for k in keys if k in state and (k != "execution_diagnostic" or state[k])},
-            "allowed_actions": self.allowed(ident),
+            "allowed_actions": (await self.allowed(ident)),
             "saved_answers": saved_answer_dicts(state),
         }
         from backend.services.refinement import public_review
@@ -94,8 +96,8 @@ class JobQueries:
         if review:
             job["state"]["rubric_review"] = review
         job["execution_graph"], job["session_events"] = (
-            history.graph(),
-            history.conversation(),
+            (await history.graph()),
+            (await history.conversation()),
         )
         from backend.services.completed_specs import completed_references
 
@@ -114,10 +116,10 @@ class JobQueries:
             ("final/FINAL_AGENT_SPEC.md", "final"),
             ("critical/CRITICAL_REPORT.ko.md", "critical"),
         ]:
-            text = self.read_text(ident, name)
+            text = (await self.read_text(ident, name))
             if text is not None and (key != "critical" or state.get("critical_report")):
                 job[key] = text
-        review = self.read_json(ident, "analysis/change_review.json")
+        review = (await self.read_json(ident, "analysis/change_review.json"))
         from backend.services.change_review import digest, normalize
 
         if review and review.get("after_hash") == digest(

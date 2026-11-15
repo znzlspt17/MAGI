@@ -10,7 +10,7 @@ DRAFT = "draft/approval_candidate_spec.ko.md"
 DOCUMENTS = ("analysis/spec_trace.json", "analysis/implementation_plan.json", "analysis/spec_blocks.json")
 
 
-def record_round(writer, state, config):
+async def record_round(writer, state, config):
     evaluation = state["rubric_evaluation"]
     previous = state.get("refinement", {})
     current = deepcopy(previous) if previous.get("rubric_hash") == evaluation["rubric_hash"] else {
@@ -20,9 +20,9 @@ def record_round(writer, state, config):
         return current
     current["round"] += 1
     path = f"review/refinement/{current['rubric_hash']}/{current['cycle']}/{current['round']}.json"
-    snapshot = {"spec": writer.read_text(DRAFT), "evaluation": evaluation,
+    snapshot = {"spec": (await writer.read_text(DRAFT)), "evaluation": evaluation,
         "issues": state["structured_issues"], "resolution": state["resolution_history"][-1],
-        "documents": {name: writer.read_json(name) for name in DOCUMENTS if writer.exists(name)}}
+        "documents": {name: (await writer.read_json(name)) for name in DOCUMENTS if (await writer.exists(name))}}
     if hashlib.sha256(snapshot["spec"].encode()).hexdigest() != evaluation["draft_hash"]:
         raise InvalidStateError("검토 초안이 변경되었습니다.")
     improved = evaluation["score"] > current["best_score"]
@@ -32,7 +32,7 @@ def record_round(writer, state, config):
         "round_budget" if current["round"] >= config.max_critic_passes else "")
     snapshot["resolution"] = {**snapshot["resolution"], "action": "ask_user" if state.get("blocking_questions") else
         "approve" if current["termination"] else "repair"}
-    writer.write_json(path, snapshot)
+    (await writer.write_json(path, snapshot))
     if improved:
         current.update(best_score=evaluation["score"], best_path=path,
             best_round=current["round"], best_cycle=current["cycle"], best_hash=digest(snapshot))
@@ -40,23 +40,23 @@ def record_round(writer, state, config):
     return current
 
 
-def restore_best(writer, state, sheet):
+async def restore_best(writer, state, sheet):
     current = state.get("refinement", {})
     if not current.get("termination") or current.get("rubric_hash") != state["rubric"]["rubric_hash"]:
         raise InvalidStateError("종료된 최신 명세 평가가 필요합니다.")
-    snapshot = writer.read_json(current["best_path"])
+    snapshot = (await writer.read_json(current["best_path"]))
     if digest(snapshot) != current["best_hash"]:
         raise InvalidStateError("최고점 후보 보존본이 변경되었습니다.")
     restored = {**state, "rubric_evaluation": snapshot["evaluation"],
         "structured_issues": snapshot["issues"]}
     require_approval_evaluation(restored, sheet, snapshot["spec"])
-    writer.write_text(DRAFT, snapshot["spec"], overwrite=True)
+    (await writer.write_text(DRAFT, snapshot["spec"], overwrite=True))
     for name, value in snapshot["documents"].items():
-        writer.write_json(name, value)
-    writer.write_json("review/resolution.json", snapshot["resolution"])
-    writer.write_text("review/resolved_draft.ko.md", snapshot["spec"], overwrite=True)
+        (await writer.write_json(name, value))
+    (await writer.write_json("review/resolution.json", snapshot["resolution"]))
+    (await writer.write_text("review/resolved_draft.ko.md", snapshot["spec"], overwrite=True))
     from backend.services.rubric import save_evaluation
-    save_evaluation(writer, snapshot["evaluation"])
+    (await save_evaluation(writer, snapshot["evaluation"]))
     return {"rubric_evaluation": snapshot["evaluation"], "structured_issues": snapshot["issues"],
         "rubric_summary": summary(state["rubric"], snapshot["evaluation"]),
         "refinement": {**current, "selected": True}, "approval_acceptance": {}}

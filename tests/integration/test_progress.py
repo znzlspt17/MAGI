@@ -1,3 +1,5 @@
+from tests.backend.application.async_helpers import run_async
+from unittest.mock import AsyncMock
 """진행 projection·outbox·사용자/작업별 구독 경계를 검증한다."""
 from concurrent.futures import Future
 import pytest
@@ -6,11 +8,11 @@ from gateway.progress import Listener, ProgressHub
 from protocol.amqp import routing_key
 
 
-def job(store):
-    project = store.create_project('실행 모니터')
+async def job(store):
+    project = (await store.create_project('실행 모니터'))
     value = {'id': 'a' * 32, 'project_id': project['id'], 'status': 'queued', 'execution_id': 'e' * 32,
              'request': '요청', 'queued_at': '2026-11-03T00:00:00Z'}
-    store.save_job(value)
+    (await store.save_job(value))
     return value
 
 
@@ -20,32 +22,36 @@ def test_progress_allowlist_excludes_provider_output():
     assert 'DO_NOT_COPY' not in str(result)
 
 
-def test_outbox_and_state_rollback_together(store):
-    value = job(store)
-    progress = ProgressStore(store)
-    first = progress.snapshot(value['id'])
-    before = len(progress.pending())
-    with pytest.raises(RuntimeError):
-        with store.transaction():
-            store.save_job({**value, 'status': 'running'})
-            raise RuntimeError('rollback')
-    assert progress.snapshot(value['id'])['revision'] == first['revision']
-    assert progress.snapshot(value['id'])['job']['status'] == 'queued'
-    assert len(progress.pending()) == before
+@run_async
+async def test_outbox_and_state_rollback_together(async_store_factory):
+    async with async_store_factory() as store:
+        value = (await job(store))
+        progress = ProgressStore(store)
+        first = (await progress.snapshot(value['id']))
+        before = len((await progress.pending()))
+        with pytest.raises(RuntimeError):
+            async with store.transaction():
+                (await store.save_job({**value, 'status': 'running'}))
+                raise RuntimeError('rollback')
+        assert (await progress.snapshot(value['id']))['revision'] == first['revision']
+        assert (await progress.snapshot(value['id']))['job']['status'] == 'queued'
+        assert len((await progress.pending())) == before
 
 
-def test_revision_changes_only_for_observable_state(store):
-    value = job(store)
-    progress = ProgressStore(store)
-    first = progress.snapshot(value['id'])
-    store.save_job({**value, 'untrusted_diagnostic': 'DO_NOT_COPY'})
-    assert progress.snapshot(value['id'])['revision'] == first['revision']
-    store.save_job({**value, 'status': 'running'})
-    assert progress.snapshot(value['id'])['revision'] == first['revision'] + 1
-    assert 'DO_NOT_COPY' not in str(progress.pending())
-    with store.transaction() as conn:
-        conn.execute('DELETE FROM jobs WHERE id=%s', (value['id'],))
-    assert not progress.pending()
+@run_async
+async def test_revision_changes_only_for_observable_state(async_store_factory):
+    async with async_store_factory() as store:
+        value = (await job(store))
+        progress = ProgressStore(store)
+        first = (await progress.snapshot(value['id']))
+        (await store.save_job({**value, 'untrusted_diagnostic': 'DO_NOT_COPY'}))
+        assert (await progress.snapshot(value['id']))['revision'] == first['revision']
+        (await store.save_job({**value, 'status': 'running'}))
+        assert (await progress.snapshot(value['id']))['revision'] == first['revision'] + 1
+        assert 'DO_NOT_COPY' not in str((await progress.pending()))
+        async with store.transaction() as conn:
+            (await conn.execute('DELETE FROM jobs WHERE id=%s', (value['id'],)))
+        assert not (await progress.pending())
 
 
 class FakeBroker:
@@ -123,21 +129,23 @@ def test_expired_session_is_reported_before_socket_close():
     assert hub.detached
 
 
-def test_progress_authorization_checks_owner_without_consuming_user_request_quota():
+@run_async
+async def test_progress_authorization_checks_owner_without_consuming_user_request_quota():
     from types import SimpleNamespace
     from backend.access.service import PublicService
     from backend.access.context import ACTOR
-    def get(ident):
+    async def get(ident):
         assert ACTOR.get()['id'] == 'A'
         if ident != 'a'*32:
             raise KeyError(ident)
+        return {'owner_id': 'A'}
     service = object.__new__(PublicService)
     service.manager = SimpleNamespace(get=get)
-    service.access = SimpleNamespace(session=lambda sid: {'id': 'A'})
+    service.access = SimpleNamespace(session=AsyncMock(return_value={'id': 'A', 'owner_ids': ['A']}))
     packet = {'method': 'progress.authorize', 'params': {'id': 'a'*32}, 'session': 'fake-session'}
-    assert service.invoke(packet, None) == {'id': 'A'}
+    assert (await service.invoke(packet, None)) == {'id': 'A', 'owner_ids': ['A'], 'owner_id': 'A'}
     with pytest.raises(KeyError):
-        service.invoke({**packet, 'params': {'id': 'b'*32}}, None)
+        (await service.invoke({**packet, 'params': {'id': 'b'*32}}, None))
     assert ACTOR.get() is None
 
 

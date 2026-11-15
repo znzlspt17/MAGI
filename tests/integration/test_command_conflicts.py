@@ -1,3 +1,5 @@
+from tests.backend.application.async_helpers import run_async
+from unittest.mock import AsyncMock
 """문서 조회 후 작업 명령과 안전한 충돌 응답을 검증한다."""
 
 import pytest
@@ -8,34 +10,36 @@ from backend.server.diagnostics import safe_user_error
 from tests.support.workflow_helpers import manager_for
 
 
-def test_message_after_document_read_needs_no_provider_and_can_be_sent(store, monkeypatch):
-    manager, _ = manager_for(store, monkeypatch)
-    server = object.__new__(Server)
-    server.manager = manager
-    try:
-        ident = manager.create("메모를 저장해주세요")["id"]
-        manager._run(ident, "generate", None)
-        execution = manager.get(ident)["execution_id"]
-        monkeypatch.setattr(manager.workspace._documents, "step", lambda *args: {
-            "document": {"content": "저장된 한국어 명세입니다.", "filename": "SPEC.ko.md"},
-        })
-        def reject_engine(*args, **kwargs):
-            pytest.fail("원본 문서 조회에서 모델을 호출해서는 안 됩니다")
-        monkeypatch.setattr(manager.workspace._documents, "engine", reject_engine)
-        command = {"method": "message", "params": {
-            "id": ident, "execution_id": execution, "payload": "보관 기간은 30일로 정해주세요.",
-        }}
-        document = manager.workspace.document(ident, "spec")
-        assert document["content"] == "저장된 한국어 명세입니다."
-        assert document["language"] == "ko"
-        assert manager.get(ident)["execution_id"] == execution
-        assert manager.get(ident)["status"] == "PASS_PENDING_USER_APPROVAL"
-        result = server._dispatch_request(command)
-        assert result["status"] == "queued"
-        assert result["execution_id"] != execution
-        assert manager._submit_locked.call_args.args[1:] == ("message", command["params"]["payload"])
-    finally:
-        manager.close()
+@run_async
+async def test_message_after_document_read_needs_no_provider_and_can_be_sent(async_store_factory, monkeypatch):
+    async with async_store_factory() as store:
+        manager, _ = (await manager_for(store, monkeypatch))
+        server = object.__new__(Server)
+        server.manager = manager
+        try:
+            ident = (await manager.create("메모를 저장해주세요"))["id"]
+            (await manager._run(ident, "generate", None))
+            execution = (await manager.get(ident))["execution_id"]
+            monkeypatch.setattr(manager.workspace._documents, "step", AsyncMock(return_value={
+                "document": {"content": "저장된 한국어 명세입니다.", "filename": "SPEC.ko.md"},
+            }))
+            def reject_engine(*args, **kwargs):
+                pytest.fail("원본 문서 조회에서 모델을 호출해서는 안 됩니다")
+            monkeypatch.setattr(manager.workspace._documents, "engine", reject_engine)
+            command = {"method": "message", "params": {
+                "id": ident, "execution_id": execution, "payload": "보관 기간은 30일로 정해주세요.",
+            }}
+            document = (await manager.workspace.document(ident, "spec"))
+            assert document["content"] == "저장된 한국어 명세입니다."
+            assert document["language"] == "ko"
+            assert (await manager.get(ident))["execution_id"] == execution
+            assert (await manager.get(ident))["status"] == "PASS_PENDING_USER_APPROVAL"
+            result = (await server._dispatch_request(command))
+            assert result["status"] == "queued"
+            assert result["execution_id"] != execution
+            assert manager._submit_locked.call_args.args[1:] == ("message", command["params"]["payload"])
+        finally:
+            (await manager.close())
 
 
 @pytest.mark.parametrize("message", [

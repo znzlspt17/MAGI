@@ -20,98 +20,98 @@ class DocumentQueries:
         self.state = access.state
         self._activities = activities
 
-    def document(self, ident, step_id, *, meter=None):
-        doc = self.step(ident, step_id).get("document")
+    async def document(self, ident, step_id, *, meter=None):
+        doc = (await self.step(ident, step_id)).get("document")
         if not doc or not isinstance(doc.get("content"), str):
             raise KeyError(step_id)
         return {**doc, "language": "ko"}
 
-    def step(self, ident: str, step_id: str) -> dict:
+    async def step(self, ident: str, step_id: str) -> dict:
         """선택한 실행 노드의 저장된 상세만 돌려준다."""
-        with self.lock:
-            self.get(ident)
-            if not isinstance(step_id, str) or len(step_id) > 64:
-                raise KeyError(ident)
-            history = ExecutionHistory(self.documents(ident))
-            if re.fullmatch("[0-9a-f]{64}", step_id):
+        # 2026-11-13: 불변 자료 조회의 DB 대기 동안 전역 메모리 잠금을 점유하지 않는다.
+        (await self.get(ident))
+        if not isinstance(step_id, str) or len(step_id) > 64:
+            raise KeyError(ident)
+        history = ExecutionHistory((await self.documents(ident)))
+        if re.fullmatch("[0-9a-f]{64}", step_id):
+            from backend.services.completed_specs import (
+                completed_references,
+                load_completed,
+            )
+
+            state = (await self.state(ident)) or {}
+            if f"completed/{step_id}.json" not in completed_references(state):
+                raise KeyError(step_id)
+            content = (await load_completed((await self.documents(ident)), step_id))["content"]
+            detail: dict[str, Any] | None = {
+                "id": step_id,
+                "stage": "completed_document",
+                "title": "보존된 완료 명세",
+                "status": "completed",
+                "document": {
+                    "content": content,
+                    "filename": "FINAL_AGENT_SPEC.ko.md",
+                    "kind": "final",
+                    "completed_id": step_id,
+                },
+            }
+        else:
+            detail = (await history.detail(step_id))
+        if detail is None:
+            raise KeyError(ident)
+        document = detail.get("document")
+        if isinstance(document, dict) and isinstance(document.get("content"), str):
+            document["source_hash"] = source_key(document["content"])
+            document["language"] = "ko"
+            filename = document.get("filename", "SPEC.md")
+            if not filename.endswith(".ko.md"):
+                document["filename"] = Path(filename).stem + ".ko.md"
+            if document.get("kind") == "final":
                 from backend.services.completed_specs import (
                     completed_references,
                     load_completed,
                 )
 
-                state = self.state(ident) or {}
-                if f"completed/{step_id}.json" not in completed_references(state):
-                    raise KeyError(step_id)
-                content = load_completed(self.documents(ident), step_id)["content"]
-                detail: dict[str, Any] | None = {
-                    "id": step_id,
-                    "stage": "completed_document",
-                    "title": "보존된 완료 명세",
-                    "status": "completed",
-                    "document": {
-                        "content": content,
-                        "filename": "FINAL_AGENT_SPEC.ko.md",
-                        "kind": "final",
-                        "completed_id": step_id,
-                    },
-                }
-            else:
-                detail = history.detail(step_id)
-            if detail is None:
-                raise KeyError(ident)
-            document = detail.get("document")
-            if isinstance(document, dict) and isinstance(document.get("content"), str):
-                document["source_hash"] = source_key(document["content"])
-                document["language"] = "ko"
-                filename = document.get("filename", "SPEC.md")
-                if not filename.endswith(".ko.md"):
-                    document["filename"] = Path(filename).stem + ".ko.md"
-                if document.get("kind") == "final":
-                    from backend.services.completed_specs import (
-                        completed_references,
-                        load_completed,
-                    )
+                state = (await self.state(ident)) or {}
+                matches = []
+                for path in completed_references(state):
+                    try:
+                        if (
+                            (await load_completed((await self.documents(ident)), Path(path).stem))[
+                                "content"
+                            ]
+                            == document["content"]
+                        ):
+                            matches.append(Path(path).stem)
+                    except InvalidStateError:
+                        continue
+                if document.get("completed_id") not in matches:
+                    document.pop("completed_id", None)
+                if not document.get("completed_id") and len(matches) == 1:
+                    document["completed_id"] = matches[0]
+        return detail
 
-                    state = self.state(ident) or {}
-                    matches = []
-                    for path in completed_references(state):
-                        try:
-                            if (
-                                load_completed(self.documents(ident), Path(path).stem)[
-                                    "content"
-                                ]
-                                == document["content"]
-                            ):
-                                matches.append(Path(path).stem)
-                        except InvalidStateError:
-                            continue
-                    if document.get("completed_id") not in matches:
-                        document.pop("completed_id", None)
-                    if not document.get("completed_id") and len(matches) == 1:
-                        document["completed_id"] = matches[0]
-            return detail
-
-    def implementation_package(self, ident, params, *, read_file=False):
+    async def implementation_package(self, ident, params, *, read_file=False):
         from backend.services.completed_specs import (
             completed_references,
             load_completed,
         )
         from backend.services.implementation_package import create_package, file_chunk
 
-        with self.lock:
-            self.get(ident)
-            writer = self.documents(ident)
-            state = self.state(ident) or {}
-            completed_id = params.get("completed_id")
-            if completed_id is None:
-                completed_id = (state.get("latest_completed") or {}).get("id")
-            if not isinstance(completed_id, str) or not re.fullmatch(
-                "[0-9a-f]{64}", completed_id
-            ):
-                raise KeyError(ident)
-            if f"completed/{completed_id}.json" not in completed_references(state):
-                raise KeyError(ident)
-            archive = load_completed(writer, completed_id)
+        # 2026-11-13: 불변 자료 조회의 DB 대기 동안 전역 메모리 잠금을 점유하지 않는다.
+        (await self.get(ident))
+        writer = (await self.documents(ident))
+        state = (await self.state(ident)) or {}
+        completed_id = params.get("completed_id")
+        if completed_id is None:
+            completed_id = (state.get("latest_completed") or {}).get("id")
+        if not isinstance(completed_id, str) or not re.fullmatch(
+            "[0-9a-f]{64}", completed_id
+        ):
+            raise KeyError(ident)
+        if f"completed/{completed_id}.json" not in completed_references(state):
+            raise KeyError(ident)
+        archive = (await load_completed(writer, completed_id))
         bundle_id = params.get("bundle_id")
         if (read_file or bundle_id is not None) and (
             not isinstance(bundle_id, str)

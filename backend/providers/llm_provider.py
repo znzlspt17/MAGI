@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import re
 import json
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
+import threading
 from dataclasses import replace
 from typing import Any
 import httpx2
@@ -14,11 +18,38 @@ from langchain_core.messages import AIMessage
 from pydantic import BaseModel, ValidationError
 
 from backend.errors import Error, MissingCredentialError, ReviewValidationError
+from backend.access.capacity import MAX_PARALLEL
 from backend.infrastructure.cache_diagnostics import safe_response_id, safe_diagnostics
 from backend.models import CompletionResult, RubricResponse, ReviewResponse
 from backend.model_policy import require_model, MAX_OUTPUT_TOKENS, SERVICE_TIER, request_settings
 from backend.infrastructure.model_usage import UsageObservation
 from backend.infrastructure.conversation_state import valid_conversation_id
+
+
+_network_executor = None
+_network_guard = threading.Lock()
+
+
+def _executor():
+    global _network_executor
+    with _network_guard:
+        if _network_executor is None:
+            # 2026-11-13: sync 외부 통신 전용, 워크플로 100개의 실제 동시 호출을 허용한다.
+            _network_executor = ThreadPoolExecutor(max_workers=MAX_PARALLEL, thread_name_prefix="model-network")
+        return _network_executor
+
+
+async def _network_call(function, *args):
+    context = copy_context()
+    return await asyncio.get_running_loop().run_in_executor(_executor(), context.run, function, *args)
+
+
+async def close_network_executor():
+    global _network_executor
+    with _network_guard:
+        executor, _network_executor = _network_executor, None
+    if executor is not None:
+        await asyncio.to_thread(executor.shutdown, wait=True, cancel_futures=True)
 
 
 class ChatModelProvider:
@@ -33,7 +64,10 @@ class ChatModelProvider:
         if not self.api_key and not os.environ.get("OPENAI_API_KEY"):
             raise MissingCredentialError("OPENAI_API_KEY is not set for MAGI runtime.")
 
-    def create_conversation(self) -> str:
+    async def create_conversation(self) -> str:
+        return await _network_call(self._create_conversation)
+
+    def _create_conversation(self) -> str:
         try:
             with OpenAI(api_key=self.api_key, timeout=120, max_retries=0) as client:
                 identifier = client.conversations.create().id
@@ -43,7 +77,10 @@ class ChatModelProvider:
         except Exception:
             raise Error("OpenAI 대화 생성 완료 여부를 확인할 수 없습니다. 자동 재생성을 중단했습니다.") from None
 
-    def initialize_conversation(self, conversation_id, messages):
+    async def initialize_conversation(self, conversation_id, messages):
+        return await _network_call(self._initialize_conversation, conversation_id, messages)
+
+    def _initialize_conversation(self, conversation_id, messages):
         if not valid_conversation_id(conversation_id):
             raise Error("OpenAI 대화 ID가 올바르지 않습니다.")
         try:
@@ -53,7 +90,7 @@ class ChatModelProvider:
             raise Error("OpenAI 대화 초기 문맥 저장 완료 여부를 확인할 수 없습니다. 자동 반복을 중단했습니다.") from None
 
 
-    def complete_result(
+    async def complete_result(
         self, messages: list[dict], *, model: str,
         temperature: float | None = None, instructions: str | None = None,
         text_format: type[BaseModel] | None = None,
@@ -107,7 +144,7 @@ class ChatModelProvider:
             tool_outputs = [item for item in inputs if item.get("role") == "tool"]
             inputs = [*tool_outputs, {"role": "developer", "content": instructions},
                       *(item for item in inputs if item.get("role") not in {"system", "developer", "tool"})]
-        reservation = meter.reserve(model) if meter else None
+        reservation = await meter.reserve(model) if meter else None
         result = None
         parsing_error = None
         observation = UsageObservation()
@@ -127,25 +164,25 @@ class ChatModelProvider:
                 bound = llm.bind_tools(tools, tool_choice=tool_choice, parallel_tool_calls=False,
                                        response_format=response_format)
                 if before_request is not None:
-                    before_request()
-                provider_entered()
-                raw = bound.invoke(inputs)
+                    await before_request()
+                await provider_entered()
+                raw = await _network_call(bound.invoke, inputs)
                 parsed = raw.additional_kwargs.get("parsed")
             elif text_format is not None:
                 structured = llm.with_structured_output(
                     text_format, method="json_schema", include_raw=True, strict=True,
                 )
                 if before_request is not None:
-                    before_request()
-                provider_entered()
-                packet = structured.invoke(inputs)
+                    await before_request()
+                await provider_entered()
+                packet = await _network_call(structured.invoke, inputs)
                 raw, parsed = packet["raw"], packet["parsed"]
                 parsing_error = packet["parsing_error"]
             else:
                 if before_request is not None:
-                    before_request()
-                provider_entered()
-                raw, parsed, parsing_error = llm.invoke(inputs), None, None
+                    await before_request()
+                await provider_entered()
+                raw, parsed, parsing_error = await _network_call(llm.invoke, inputs), None, None
             if not isinstance(raw, AIMessage):
                 raise Error("모델 응답 형식을 확인할 수 없습니다.")
             result = completion_result(raw, parsed)
@@ -162,15 +199,20 @@ class ChatModelProvider:
                     or raw.response_metadata.get("finish_reason") in {"length", "content_filter"}
                     or (text_format is None and not result.text and not result.tool_calls)):
                 raise Error("모델 응답이 거부되었거나 완전한 결과를 반환하지 않았습니다.")
+        except asyncio.CancelledError:
+            # 2026-11-13: 네트워크 요청은 취소 후에도 완료될 수 있어 비용을 미확정으로 남긴다.
+            if meter:
+                await asyncio.shield(meter.settle(reservation, model, None))
+            raise
         except Exception as exc:
             if result is None and observation.values is not None:
                 result = CompletionResult(text="", **observation.values)
             if meter:
                 if result is not None:
-                    meter.record_usage(reservation, model, result.input_tokens, result.output_tokens,
+                    await meter.record_usage(reservation, model, result.input_tokens, result.output_tokens,
                                        result.cached_tokens, result.cache_write_tokens,
                                        result.cache_write_30m_tokens, result.cache_write_12h_tokens)
-                meter.settle(reservation, model, None)
+                await meter.settle(reservation, model, None)
             # 통합 예외에는 요청 본문이 포함될 수 있으므로 외부로 전달하지 않는다.
             message = "모델 호출을 완료하지 못했습니다."
             if getattr(exc, "status_code", None) == 404:
@@ -189,7 +231,7 @@ class ChatModelProvider:
             if client is not None:
                 client.close()
         if meter:
-            meter.settle(reservation, model, result)
+            await meter.settle(reservation, model, result)
         return result
 
 

@@ -34,7 +34,7 @@ class SpecInterviewer:
         candidates = select_questions(request_type, answered_ids={item.question_id for item in answers})
         return _build_messages(request, manifest, candidates, answers, state)
 
-    def run(
+    async def run(
         self,
         state: Mapping[str, Any],
         manifest: dict[str, Any],
@@ -55,7 +55,7 @@ class SpecInterviewer:
             )
 
         payload = self.prepare_messages(state, manifest)
-        raw = provider_messages_fn(payload)
+        raw = await provider_messages_fn(payload)
         if not isinstance(raw, InterviewResponse):
             raise InvalidStateError("Interview response schema is invalid.")
         parsed = _normalise_response(raw.model_dump())

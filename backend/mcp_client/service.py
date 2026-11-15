@@ -6,7 +6,8 @@ import json
 import re
 from uuid import uuid4
 
-from backend.access.context import AccessError
+from backend.access.context import ACTOR, AccessError
+from backend.access.ownership import can_access, owner_ids
 from backend.mcp_client import remote
 from backend.mcp_client.secrets import seal, unseal
 from backend.mcp_client.security import MCPValidationError, public_url
@@ -25,9 +26,9 @@ def _public(row):
                       for item in row["tools"]]}
 
 
-def _row(conn, owner_id, ident, lock=False):
-    row = conn.execute("SELECT * FROM mcp_connections WHERE owner_id=%s AND id=%s" + (" FOR UPDATE" if lock else ""),
-                       (owner_id, ident)).fetchone()
+async def _row(conn, owner_id, ident, lock=False):
+    row = (await (await conn.execute("SELECT * FROM mcp_connections WHERE owner_id=%s AND id=%s" + (" FOR UPDATE" if lock else ""),
+                       (owner_id, ident))).fetchone())
     if not row:
         raise AccessError("MCP 연결을 찾을 수 없습니다.", "invalid")
     return row
@@ -72,62 +73,78 @@ class MCPService:
     def __init__(self, store):
         self.store = store
 
-    def list(self, owner_id):
-        with self.store.transaction(mode="read") as conn:
-            rows = conn.execute("SELECT * FROM mcp_connections WHERE owner_id=%s ORDER BY created_at,id", (owner_id,)).fetchall()
+    async def list(self, owner_id, owners=None):
+        async with self.store.transaction(mode="read") as conn:
+            rows = (await (await conn.execute("SELECT * FROM mcp_connections WHERE owner_id=ANY(%s) ORDER BY created_at,id", (list(owners or [owner_id]),))).fetchall())
             return {"connections": [_public(row) for row in rows]}
 
-    def snapshot(self, owner_id):
+    async def connection_owner(self, owners, ident):
+        # 2026-11-13: 암호문은 원래 소유자에 결합되어 있어 소유자를 이전하지 않는다.
+        async with self.store.transaction(mode="read") as conn:
+            row = await (await conn.execute(
+                "SELECT owner_id FROM mcp_connections WHERE id=%s AND owner_id=ANY(%s)",
+                (ident, list(owners)),
+            )).fetchone()
+        if not row:
+            raise AccessError("MCP 연결을 찾을 수 없습니다.", "invalid")
+        return row['owner_id']
+
+    async def snapshot(self, owners):
         """새 작업에 허용 도구만 고정하며 인증정보를 포함하지 않는다."""
-        with self.store.transaction(mode="read") as conn:
-            rows = conn.execute("SELECT * FROM mcp_connections WHERE owner_id=%s AND enabled=true AND status='ready' ORDER BY created_at,id", (owner_id,)).fetchall()
+        owners = [owners] if isinstance(owners, str) else list(owners)
+        async with self.store.transaction(mode="read") as conn:
+            rows = (await (await conn.execute("SELECT * FROM mcp_connections WHERE owner_id=ANY(%s) AND enabled=true AND status='ready' ORDER BY created_at,id", (owners,))).fetchall())
             result = [{"connection_id": row["id"], "connection_version": row["version"], "name": tool["name"], "schema_hash": tool["schema_hash"]}
                       for row in rows for tool in row["tools"] if tool.get("enabled") and tool.get("available")]
             if len(result) > 20:
                 raise AccessError("활성화된 MCP 도구가 20개를 초과합니다. 연결 설정을 조정하세요.", "invalid")
             return result
 
-    def available(self, owner_id, snapshot):
-        with self.store.transaction(mode="read") as conn:
-            rows = conn.execute("SELECT * FROM mcp_connections WHERE owner_id=%s AND enabled=true AND status='ready'", (owner_id,)).fetchall()
+    async def available(self, owner_id, snapshot):
+        actor = ACTOR.get()
+        if actor is not None and not can_access(actor, owner_id):
+            raise AccessError("MCP 연결을 찾을 수 없습니다.", "invalid")
+        owners = list(owner_ids(actor)) if actor else [owner_id]
+        async with self.store.transaction(mode="read") as conn:
+            rows = (await (await conn.execute("SELECT * FROM mcp_connections WHERE owner_id=ANY(%s) AND enabled=true AND status='ready'", (owners,))).fetchall())
         allowed = {(entry.get("connection_id"), entry.get("connection_version"), entry.get("name"), entry.get("schema_hash")) for entry in snapshot}
         return [(row, tool) for row in rows for tool in row["tools"]
                 if tool.get("enabled") and tool.get("available") and
                 (row["id"], row["version"], tool.get("name"), tool.get("schema_hash")) in allowed]
 
-    def invoke(self, owner_id, snapshot, connection_id, name, arguments):
-        selected = next(((row, tool) for row, tool in self.available(owner_id, snapshot)
+    async def invoke(self, owner_id, snapshot, connection_id, name, arguments):
+        selected = next(((row, tool) for row, tool in (await self.available(owner_id, snapshot))
                          if row["id"] == connection_id and tool["name"] == name), None)
         if selected is None:
             raise MCPValidationError("현재 작업에서 허용되지 않은 도구입니다.")
         row, tool = selected
-        headers = self.headers(row)
+        headers = (await self.headers(row))
         try:
-            return remote.invoke(row["url"], headers, tool, arguments)
+            return (await remote.invoke(row["url"], headers, tool, arguments))
         except Exception:
             # 원격 예외에는 인증값·도구 입력이 포함될 수 있어 유출하지 않는다.
             raise AccessError("MCP 도구 실행 완료 여부를 확인할 수 없습니다.", "unavailable") from None
 
-    def get(self, owner_id, ident):
-        with self.store.transaction(mode="read") as conn:
-            return _public(_row(conn, owner_id, ident))
+    async def get(self, owner_id, ident):
+        async with self.store.transaction(mode="read") as conn:
+            return _public((await _row(conn, owner_id, ident)))
 
-    def create(self, owner_id, data):
+    async def create(self, owner_id, data):
         _check_input(data, create=True)
         if data.get("enabled") or data.get("selected_tools"):
             raise AccessError("연결을 시험하고 도구를 선택한 후 활성화하세요.", "invalid")
         ident = uuid4().hex
         secrets = {key: data[key] for key in ("credential", "oauth_client_secret") if data.get(key)}
         encrypted = seal(owner_id, ident, secrets) if secrets else None
-        with self.store.transaction() as conn:
-            conn.execute("INSERT INTO mcp_connections(id,owner_id,name,url,auth_type,api_key_header,oauth_client_id,secret_ciphertext) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
-                (ident, owner_id, data["name"].strip(), data["url"], data["auth_type"], data.get("api_key_header"), data.get("oauth_client_id"), encrypted))
-            return _public(_row(conn, owner_id, ident))
+        async with self.store.transaction() as conn:
+            (await conn.execute("INSERT INTO mcp_connections(id,owner_id,name,url,auth_type,api_key_header,oauth_client_id,secret_ciphertext) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                (ident, owner_id, data["name"].strip(), data["url"], data["auth_type"], data.get("api_key_header"), data.get("oauth_client_id"), encrypted)))
+            return _public((await _row(conn, owner_id, ident)))
 
-    def update(self, owner_id, ident, data):
+    async def update(self, owner_id, ident, data):
         _check_input(data)
-        with self.store.transaction() as conn:
-            row = _row(conn, owner_id, ident, lock=True)
+        async with self.store.transaction() as conn:
+            row = (await _row(conn, owner_id, ident, lock=True))
             changing_connection = any(key in data and data[key] != row[key] for key in ("url", "auth_type", "api_key_header", "oauth_client_id"))
             has_new_secrets = any(data.get(key) for key in ("credential", "oauth_client_secret"))
             secrets = unseal(owner_id, ident, row["secret_ciphertext"]) if row["secret_ciphertext"] else {}
@@ -151,33 +168,33 @@ class MCPService:
             if enabled and (status != "ready" or not any(item.get("enabled") for item in tools)):
                 raise AccessError("연결을 시험하고 도구를 선택한 후 활성화하세요.", "invalid")
             if enabled:
-                others = conn.execute("SELECT tools FROM mcp_connections WHERE owner_id=%s AND id<>%s AND enabled=true AND status='ready'", (owner_id, ident)).fetchall()
+                others = (await (await conn.execute("SELECT tools FROM mcp_connections WHERE owner_id=%s AND id<>%s AND enabled=true AND status='ready'", (owner_id, ident))).fetchall())
                 total = sum(bool(item.get("enabled")) for other in others for item in other["tools"])
                 total += sum(bool(item.get("enabled")) for item in tools)
                 if total > 20:
                     raise AccessError("활성화된 MCP 도구는 총 20개까지 허용됩니다.", "invalid")
             encrypted = seal(owner_id, ident, secrets) if secrets else None
-            conn.execute("UPDATE mcp_connections SET name=%s,url=%s,auth_type=%s,api_key_header=%s,oauth_client_id=%s,secret_ciphertext=%s,enabled=%s,status=%s,tools=%s,version=version+1,updated_at=now() WHERE id=%s AND owner_id=%s",
+            (await conn.execute("UPDATE mcp_connections SET name=%s,url=%s,auth_type=%s,api_key_header=%s,oauth_client_id=%s,secret_ciphertext=%s,enabled=%s,status=%s,tools=%s,version=version+1,updated_at=now() WHERE id=%s AND owner_id=%s",
                 (data.get("name", row["name"]).strip(), data.get("url", row["url"]), data.get("auth_type", row["auth_type"]),
                  data.get("api_key_header", row["api_key_header"]), data.get("oauth_client_id", row["oauth_client_id"]), encrypted,
-                 enabled, status, self.store._json(tools), ident, owner_id))
-            return _public(_row(conn, owner_id, ident))
+                 enabled, status, self.store._json(tools), ident, owner_id)))
+            return _public((await _row(conn, owner_id, ident)))
 
-    def delete(self, owner_id, ident):
-        with self.store.transaction() as conn:
-            _row(conn, owner_id, ident, lock=True)
-            conn.execute("DELETE FROM mcp_connections WHERE id=%s AND owner_id=%s", (ident, owner_id))
+    async def delete(self, owner_id, ident):
+        async with self.store.transaction() as conn:
+            (await _row(conn, owner_id, ident, lock=True))
+            (await conn.execute("DELETE FROM mcp_connections WHERE id=%s AND owner_id=%s", (ident, owner_id)))
         return {"ok": True}
 
-    def headers(self, row):
+    async def headers(self, row):
         kind = row["auth_type"]
         if kind == "none":
             return {}
         secrets = unseal(row["owner_id"], row["id"], row["secret_ciphertext"])
         if kind == "oauth":
             from backend.mcp_client.oauth import token
-            value = token(self.store, row["owner_id"], row["id"],
-                          expected_version=row["version"], expected_resource=row["url"])
+            value = (await token(self.store, row["owner_id"], row["id"],
+                          expected_version=row["version"], expected_resource=row["url"]))
             return {"Authorization": "Bearer " + value}
         value = secrets.get("credential")
         if not value:
@@ -188,24 +205,24 @@ class MCPService:
             raise AccessError("인증 헤더 이름이 필요합니다.", "invalid")
         return {row["api_key_header"]: value}
 
-    def test(self, owner_id, ident):
-        with self.store.transaction(mode="read") as conn:
-            row = _row(conn, owner_id, ident)
+    async def test(self, owner_id, ident):
+        async with self.store.transaction(mode="read") as conn:
+            row = (await _row(conn, owner_id, ident))
         try:
-            headers = self.headers(row)
-            found = remote.catalog(row["url"], headers)
+            headers = (await self.headers(row))
+            found = (await remote.catalog(row["url"], headers))
         except Exception as exc:
             status = "auth_required" if isinstance(exc, AccessError) else "error"
-            with self.store.transaction() as conn:
-                current = _row(conn, owner_id, ident, lock=True)
+            async with self.store.transaction() as conn:
+                current = (await _row(conn, owner_id, ident, lock=True))
                 if current["version"] == row["version"]:
-                    conn.execute("UPDATE mcp_connections SET status=%s,enabled=false,version=version+1,updated_at=now() WHERE id=%s AND owner_id=%s",
-                                 (status, ident, owner_id))
+                    (await conn.execute("UPDATE mcp_connections SET status=%s,enabled=false,version=version+1,updated_at=now() WHERE id=%s AND owner_id=%s",
+                                 (status, ident, owner_id)))
             if isinstance(exc, AccessError):
                 raise
             raise AccessError("MCP 서버에 연결하거나 도구 목록을 읽을 수 없습니다.", "unavailable") from None
-        with self.store.transaction() as conn:
-            current = _row(conn, owner_id, ident, lock=True)
+        async with self.store.transaction() as conn:
+            current = (await _row(conn, owner_id, ident, lock=True))
             if current["version"] != row["version"]:
                 raise AccessError("연결 설정이 변경되었습니다. 다시 시험하세요.", "busy")
             previous = {item["name"]: item for item in current["tools"]}
@@ -217,6 +234,6 @@ class MCPService:
                 item["schema_changed"] = changed or bool(prior.get("schema_changed"))
                 item["enabled"] = bool(prior.get("enabled") and item["available"] and not changed)
             enabled = bool(current["enabled"] and any(item["enabled"] for item in found))
-            conn.execute("UPDATE mcp_connections SET tools=%s,status='ready',enabled=%s,version=version+1,updated_at=now() WHERE owner_id=%s AND id=%s",
-                         (self.store._json(found), enabled, owner_id, ident))
-            return _public(_row(conn, owner_id, ident))
+            (await conn.execute("UPDATE mcp_connections SET tools=%s,status='ready',enabled=%s,version=version+1,updated_at=now() WHERE owner_id=%s AND id=%s",
+                         (self.store._json(found), enabled, owner_id, ident)))
+            return _public((await _row(conn, owner_id, ident)))

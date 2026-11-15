@@ -11,21 +11,21 @@ class ProjectQueries:
         self.knowledge = access.knowledge
         self.state = access.state
 
-    def knowledge_call(self, method: str, params: dict):
+    async def knowledge_call(self, method: str, params: dict):
         store = self.knowledge.store
         if method == "projects.list":
-            return store.projects()
+            return (await store.projects())
         if method == "projects.create":
-            return store.create_project(params.get("name"))
+            return (await store.create_project(params.get("name")))
         if method == "projects.reused_decisions":
             from backend.services.project_decisions import page
 
-            job = self.get(params.get("job_id"))
+            job = (await self.get(params.get("job_id")))
             items = copy.deepcopy(job.get("reused_decisions", []))
             for item in items:
                 item["source_available"] = False
                 try:
-                    self._validate_reuse_sources([item])
+                    (await self._validate_reuse_sources([item]))
                     item["source_available"] = True
                 except (
                     KeyError,
@@ -37,14 +37,14 @@ class ProjectQueries:
                     pass
             return page({"rows": items, "total": len(items)}, params.get("offset", 0))
         if method == "projects.decisions":
-            return self.project_decisions(params)
+            return (await self.project_decisions(params))
         if method == "projects.decisions.register":
-            with store.transaction():
+            async with store.transaction():
                 if not isinstance(params.get("completed_id"), str):
                     raise ValueError("등록할 승인본을 선택하세요.")
-                with store.transaction(mode="read") as conn:
-                    store.require_project(conn, params.get("project_id"))
-                packet = self.decision_candidates(params.get("job_id"), params)
+                async with store.transaction(mode="read") as conn:
+                    (await store.require_project(conn, params.get("project_id")))
+                packet = (await self.decision_candidates(params.get("job_id"), params))
                 candidate = next(
                     (
                         d
@@ -59,30 +59,30 @@ class ProjectQueries:
                     or candidate["source_hash"] != params.get("source_hash")
                 ):
                     raise ValueError("승인된 결정과 출처를 다시 확인하세요.")
-                return store.register_decision(params["project_id"], candidate)
+                return (await store.register_decision(params["project_id"], candidate))
         if method == "projects.decisions.deactivate":
-            return store.deactivate_decision(
+            return (await store.deactivate_decision(
                 params.get("project_id"),
                 params.get("decision_id"),
                 params.get("version"),
-            )
+            ))
         if method == "projects.decision_candidates":
             from backend.services.project_decisions import page
 
             return page(
-                self.decision_candidates(params.get("job_id"), params),
+                (await self.decision_candidates(params.get("job_id"), params)),
                 params.get("offset", 0),
             )
         if method == "knowledge.search":
-            return self.knowledge.search(
+            return (await self.knowledge.search(
                 params.get("query"),
                 params.get("project_id"),
                 params.get("kind"),
                 params.get("status"),
                 job_id=params.get("job_id"),
-            )
+            ))
         if method == "knowledge.node":
-            return store.node(params.get("node_id"))
+            return (await store.node(params.get("node_id")))
         if method == "knowledge.graph":
             allowed = {
                 "project_id",
@@ -93,31 +93,31 @@ class ProjectQueries:
                 "depth",
                 "limit",
             }
-            return store.graph(
+            return (await store.graph(
                 **{key: value for key, value in params.items() if key in allowed}
-            )
+            ))
         if method == "knowledge.document":
-            return store.artifact_page(
+            return (await store.artifact_page(
                 params.get("job_id"),
                 params.get("path"),
                 params.get("content_hash"),
                 params.get("offset", 0),
-            )
+            ))
         if method == "knowledge.retry":
             self.knowledge.schedule()
             return {"status": "queued"}
         raise ValueError("알 수 없는 지식 조회입니다.")
 
-    def decision_candidates(self, ident, params):
+    async def decision_candidates(self, ident, params):
         from backend.services.completed_specs import (
             completed_references,
             load_completed,
         )
         from backend.services.project_decisions import candidates
 
-        job = self.get(ident)
-        writer = self.documents(ident)
-        state = self.state(ident) or {}
+        job = (await self.get(ident))
+        writer = (await self.documents(ident))
+        state = (await self.state(ident)) or {}
         completed_id = params.get("completed_id") or (
             state.get("latest_completed") or {}
         ).get("id")
@@ -125,7 +125,7 @@ class ProjectQueries:
             completed_id, str
         ) or f"completed/{completed_id}.json" not in completed_references(state):
             raise KeyError("completed")
-        archive = load_completed(writer, completed_id)
+        archive = (await load_completed(writer, completed_id))
         rows = candidates(archive, completed_id, ident, job.get("project_id"))
         return {
             "rows": rows,
@@ -134,18 +134,18 @@ class ProjectQueries:
             "total": len(rows),
         }
 
-    def _validate_reuse_sources(self, items):
+    async def _validate_reuse_sources(self, items):
         for item in items:
-            with self.knowledge.store.transaction(mode="read") as conn:
-                if not conn.execute(
+            async with self.knowledge.store.transaction(mode="read") as conn:
+                if not (await (await conn.execute(
                     "SELECT 1 FROM jobs WHERE id=%s AND project_id=%s",
                     (item["job_id"], item["project_id"]),
-                ).fetchone():
+                )).fetchone()):
                     raise KeyError("source")
             try:
-                packet = self.decision_candidates(
+                packet = (await self.decision_candidates(
                     item["job_id"], {"completed_id": item["completed_id"]}
-                )
+                ))
             except (ArtifactError, InvalidStateError):
                 raise ValueError(
                     "결정의 승인 출처를 읽을 수 없습니다. 다시 확인하세요."
@@ -173,7 +173,7 @@ class ProjectQueries:
                     "결정의 승인 출처를 검증하지 못했습니다. 다시 확인하세요."
                 )
 
-    def project_decisions(self, params):
+    async def project_decisions(self, params):
         offset = params.get("offset", 0)
         query, status = (params.get("query", ""), params.get("status", "active"))
         if (
@@ -184,7 +184,7 @@ class ProjectQueries:
             or (status not in {"active", "inactive", "all"})
         ):
             raise ValueError("목록 조회 형식을 확인하세요.")
-        rows = self.knowledge.store.registered_decisions(params.get("project_id"))
+        rows = (await self.knowledge.store.registered_decisions(params.get("project_id")))
         rows = [
             r
             for r in rows
@@ -202,8 +202,8 @@ class ProjectQueries:
             item["source_available"] = False
             item["stale"] = False
             try:
-                self._validate_reuse_sources([item])
-                source = self.state(item["job_id"]) or {}
+                (await self._validate_reuse_sources([item]))
+                source = (await self.state(item["job_id"])) or {}
                 item["stale"] = bool(
                     source.get("latest_completed")
                     and source["latest_completed"]["id"] != item["completed_id"]

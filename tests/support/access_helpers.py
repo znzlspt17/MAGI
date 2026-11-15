@@ -2,6 +2,6 @@
 
 
 
-def account(access, subject):
-    sid = access.login(subject, "fake-test-pepper")
-    return sid, access.session(sid)
+async def account(access, subject):
+    sid = await access.login(subject, "fake-test-pepper")
+    return sid, await access.session(sid)

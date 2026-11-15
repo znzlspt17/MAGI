@@ -1,4 +1,3 @@
-import { LoginForm } from "./LoginForm";
 import {
   createContext,
   useContext,
@@ -10,7 +9,7 @@ import {
 } from "react";
 import { api, post, configureAuth, clearRequests, ApiError } from "../../shared/api/api";
 import type { ServiceStatus, Usage, User } from "../../shared/types";
-import { clearAccountDrafts } from "../conversation/session-drafts";
+import { clearAccountDrafts, copyAccountDrafts } from "../conversation/session-drafts";
 import { decodeAuthInfo, decodeServiceStatus, decodeUsage, decodeUser } from "./account-response";
 interface AuthState {
   publicMode: boolean;
@@ -19,13 +18,22 @@ interface AuthState {
   usage: Usage | null;
   ready: boolean;
   authenticated: boolean;
+  loginAvailable: boolean;
   notice: string;
   setNotice: (value: string) => void;
   refreshStatus: () => Promise<void>;
   logout: () => Promise<void>;
+  rememberLink: () => void;
 }
 const Context = createContext<AuthState>(null!);
 export const useAuth = () => useContext(Context);
+const LINK_STATE = "magi-account-link";
+let guestStart: Promise<unknown> | undefined;
+function startGuest() {
+  // 2026-11-13: StrictMode와 중복 인증 갱신이 각각 익명 계정을 만들지 않게 한다.
+  if (!guestStart) guestStart = post("/api/auth/guest", {}).finally(() => { guestStart = undefined; });
+  return guestStart;
+}
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [publicMode, setPublic] = useState(true),
     [user, setUser] = useState<User | null>(null),
@@ -34,7 +42,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [ready, setReady] = useState(false),
     [notice, setNotice] = useState(""),
     [loginAvailable, setLoginAvailable] = useState(false);
-  const [pollEpoch, setPollEpoch] = useState(0);
+  const [pollEpoch, setPollEpoch] = useState(0), [authEpoch, setAuthEpoch] = useState(0);
+  const realtimeConnected = useRef(false);
+  const resetting = useRef(false);
+  const previousUser = useRef<User | null>(null);
+  const statusVersion = useRef(0);
   useEffect(() => {
     const resume = (event: PageTransitionEvent) => {
       if (event.persisted) setPollEpoch((value) => value + 1);
@@ -46,9 +58,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     currentUser = useRef(user),
     authenticated = !publicMode || !!user;
   currentUser.current = user;
-  const signedOut = () => {
+  const resetSession = (logout = false) => {
+    if (resetting.current) return;
+    resetting.current = true;
     generation.current++;
-    if (currentUser.current) {
+    previousUser.current = logout ? null : currentUser.current;
+    if (logout && currentUser.current) {
       try {
         clearAccountDrafts(sessionStorage, currentUser.current.id);
       } catch {
@@ -60,8 +75,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setUsage(null);
     setStatus({ checkState: "loading" });
-    if (/^\/jobs\/[0-9a-f]{32}$/.test(location.pathname))
-      sessionStorage.setItem("return-path", location.pathname);
+    realtimeConnected.current = false;
+    setReady(false);
+    if (logout) {
+      sessionStorage.removeItem(LINK_STATE);
+      sessionStorage.removeItem("return-path");
+      if (location.pathname !== "/" || location.search) {
+        history.replaceState(null, "", "/");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }
+    } else setNotice("세션이 만료되어 새 작업 공간을 시작합니다.");
+    setAuthEpoch(value => value + 1);
+  };
+  const signedOut = () => resetSession();
+  const rememberLink = () => {
+    if (!currentUser.current) return;
+    try {
+      sessionStorage.setItem(LINK_STATE, JSON.stringify({ owner: currentUser.current.id, path: location.pathname + location.search }));
+    } catch {
+      setNotice("이 브라우저에서 작성 중인 내용은 계정 연결 후 복구되지 않을 수 있습니다.");
+    }
   };
   const statusRequest = useRef<{ generation: number; pending: boolean; promise: Promise<void> } | null>(null);
   const refreshStatus = useCallback((): Promise<void> => {
@@ -76,11 +109,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     request.promise = (async () => {
       do {
         request.pending = false;
+        const version = statusVersion.current;
         try {
           const value = decodeServiceStatus(await api("/api/service/status"));
-          if (g === generation.current) setStatus({ ...value, checkState: "ready" });
+          if (g === generation.current && version === statusVersion.current) setStatus({ ...value, checkState: "ready" });
         } catch {
-          if (g === generation.current) setStatus({ checkState: "error" });
+          if (g === generation.current && version === statusVersion.current) setStatus({ checkState: "error" });
         }
       } while (request.pending && g === generation.current);
     })().finally(() => {
@@ -101,26 +135,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         configureAuth({ publicMode: info.public });
         if (!info.public) return;
         try {
-          const actor = decodeUser(await api("/api/me"));
+          let actor, guestCreated = false;
+          try {
+            actor = decodeUser(await api("/api/me"));
+          } catch (error) {
+            if (!(error instanceof ApiError) || error.status !== 401) throw error;
+            await startGuest();
+            guestCreated = true;
+            if (!valid()) return;
+            actor = decodeUser(await api("/api/me"));
+          }
           if (!valid()) return;
+          // 2026-11-13: 익명 세션은 방문할 때마다 서버 만료 시각과 쿠키를 함께 연장한다.
+          if (actor.identity_kind === "guest" && !guestCreated) {
+            await startGuest();
+            if (!valid()) return;
+            // 조회와 갱신 사이 만료나 계정 연결이 발생할 수 있어 현재 세션을 다시 읽는다.
+            actor = decodeUser(await api("/api/me"));
+            if (!valid()) return;
+          }
           configureAuth({ publicMode: true, csrf: actor.csrf });
+          // 2026-11-13: 다른 탭의 계정 연결은 서버가 확인한 소유 범위에서만 초안을 옮긴다.
+          const previous = previousUser.current;
+          if (previous) {
+            try {
+              if (previous.id !== actor.id && previous.identity_kind === "guest" && actor.identity_kind === "google" && actor.owner_ids?.includes(previous.id)) {
+                copyAccountDrafts(sessionStorage, previous.id, actor.id);
+              } else if (previous.id !== actor.id) {
+                clearAccountDrafts(sessionStorage, previous.id);
+              }
+              previousUser.current = null;
+            } catch { /* 저장소가 막혀도 인증은 계속한다. */ }
+          }
           const { csrf: _, ...safe } = actor;
           setUser(safe);
-          const path = sessionStorage.getItem("return-path");
-          if (
-            location.pathname === "/" &&
-            /^\/jobs\/[0-9a-f]{32}$/.test(path || "")
-          )
-            location.replace(path!);
-          sessionStorage.removeItem("return-path");
+          // 2026-11-13: OAuth 콜백 후 기존 작업과 이 탭의 초안을 계정에 연결한다.
+          const callback = new URLSearchParams(location.search).get("auth");
+          if (callback === "linked" || callback === "failed") {
+            let path = "/";
+            try {
+              const saved = JSON.parse(sessionStorage.getItem(LINK_STATE) || "null") as { owner?: unknown; path?: unknown } | null;
+              if (callback === "linked" && actor.identity_kind === "google" && typeof saved?.owner === "string" && actor.owner_ids?.includes(saved.owner)) copyAccountDrafts(sessionStorage, saved.owner, actor.id);
+              if (typeof saved?.path === "string" && /^\/(?:jobs\/[0-9a-f]{32})?(?:\?[^#]*)?$/.test(saved.path)) path = saved.path;
+              sessionStorage.removeItem(LINK_STATE);
+            } catch { /* 저장소가 막혀도 계정 연결은 유지한다. */ }
+            if (callback === "failed") setNotice("Google 계정을 연결하지 못했습니다. 기존 작업 공간을 계속 사용할 수 있습니다.");
+            history.replaceState(null, "", path);
+            window.dispatchEvent(new PopStateEvent("popstate"));
+          }
         } catch (e) {
-          // 미로그인 응답은 정상적인 로그인 진입이므로 오류로 표시하지 않는다.
-          if (live && !(e instanceof ApiError && e.status === 401)) setNotice((e as Error).message);
+          if (valid()) setNotice((e as Error).message);
         }
       } catch (e) {
-        if (live) setNotice((e as Error).message);
+        if (valid()) setNotice((e as Error).message);
       } finally {
-        if (live) setReady(true);
+        if (valid()) { resetting.current = false; setReady(true); }
       }
     })();
     window.addEventListener("signed-out", signedOut);
@@ -129,7 +198,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       generation.current++;
       window.removeEventListener("signed-out", signedOut);
     };
-  }, []);
+  }, [authEpoch]);
   useEffect(() => {
     if (!ready || !authenticated || !publicMode) return;
     let live = true;
@@ -144,15 +213,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (live) setNotice((e as Error).message);
       }
     };
-    void load();
-    void refreshStatus();
-    const statusTimer = setInterval(
-        () => void refreshStatus().catch((e) => live && setNotice(e.message)),
-        2000,
-      ),
-      usageTimer = setInterval(() => void load(), 30000);
-    const update = () => { void refreshStatus(); };
+    if (document.visibilityState !== "hidden") { void load(); void refreshStatus(); }
+    // 2026-11-13: 실시간 연결이 있을 때 반복 상태 조회를 피하고 숨겨진 탭은 쉬게 한다.
+    const statusTimer = setInterval(() => {
+      if (document.visibilityState !== "hidden" && !realtimeConnected.current) void refreshStatus();
+    }, 10000), usageTimer = setInterval(() => {
+      if (document.visibilityState !== "hidden") void load();
+    }, 60000);
+    const update = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail;
+      if (detail !== undefined) {
+        try {
+          const value = decodeServiceStatus(detail);
+          statusVersion.current++;
+          setStatus({ ...value, checkState: "ready" });
+          return;
+        } catch { /* 잘못된 이벤트는 보이는 화면에서만 재조회한다. */ }
+      }
+      if (document.visibilityState !== "hidden") void refreshStatus();
+    };
+    const visibility = () => { if (document.visibilityState !== "hidden") { void refreshStatus(); void load(); } };
     window.addEventListener("service-status", update);
+    document.addEventListener("visibilitychange", visibility);
     const stop = () => {
       live = false;
       generation.current++;
@@ -160,6 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearInterval(statusTimer);
       clearInterval(usageTimer);
       window.removeEventListener("service-status", update);
+      document.removeEventListener("visibilitychange", visibility);
     };
     window.addEventListener("pagehide", stop);
     return () => {
@@ -167,11 +250,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("pagehide", stop);
     };
   }, [ready, authenticated, publicMode, pollEpoch, refreshStatus]);
+  useEffect(() => {
+    const update = (event: Event) => { realtimeConnected.current = (event as CustomEvent<{ connected: boolean }>).detail?.connected === true; };
+    window.addEventListener("realtime-connection", update);
+    return () => window.removeEventListener("realtime-connection", update);
+  }, []);
   async function logout() {
     try {
       await post("/api/logout", {});
-    } finally {
-      signedOut();
+      resetSession(true);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "로그아웃하지 못했습니다. 다시 시도해 주세요.");
     }
   }
   if (!ready)
@@ -181,7 +270,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         <p role="status">서비스 연결 확인 중…</p>
       </main>
     );
-  if (!authenticated) return <LoginForm available={loginAvailable} notice={notice} />;
+  if (!authenticated) return <main className="login"><h1>MAGI</h1><p role="alert">{notice || "서비스에 연결할 수 없습니다."}</p><button type="button" onClick={() => { setReady(false); setAuthEpoch(value => value + 1); }}>다시 시도</button></main>;
   return (
     <Context.Provider
       value={{
@@ -191,10 +280,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         usage,
         ready,
         authenticated,
+        loginAvailable,
         notice,
         setNotice,
         refreshStatus,
         logout,
+        rememberLink,
       }}
     >
       {children}

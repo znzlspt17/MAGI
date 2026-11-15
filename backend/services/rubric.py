@@ -98,25 +98,25 @@ def current_record(record, sheet, state):
     return record.get("rubric_hash") == digest([POLICY_VERSION, input_hash, response.model_dump()])
 
 
-def ensure_rubric(writer, provider, model, sheet, state):
+async def ensure_rubric(writer, provider, model, sheet, state):
     sheet.require_validated()
     canonical, input_hash = inputs(sheet, state)
     record = state.get("rubric", {})
     if current_record(record, sheet, state):
         return record
     # 검증 재시도나 작업 재개에서도 이미 완료한 생성 호출을 반복하지 않는다.
-    if writer.exists(PATH):
-        record = writer.read_json(PATH)
+    if (await writer.exists(PATH)):
+        record = (await writer.read_json(PATH))
         if current_record(record, sheet, state):
             return record
-    response = complete_with_usage(writer, provider,
+    response = (await complete_with_usage(writer, provider,
         messages(load_prompt("rubric_generate"), "", json.dumps(canonical, ensure_ascii=False)),
-        model=model, stage="rubric_generate", temperature=0)
+        model=model, stage="rubric_generate", temperature=0))
     validate_items(response, sheet, canonical)
     record = {"policy_version": POLICY_VERSION, "input_hash": input_hash,
               "rubric_hash": digest([POLICY_VERSION, input_hash, response.model_dump()]), **response.model_dump()}
-    writer.write_json(f"review/rubrics/{record['rubric_hash']}.json", record)
-    writer.write_json(PATH, record)
+    (await writer.write_json(f"review/rubrics/{record['rubric_hash']}.json", record))
+    (await writer.write_json(PATH, record))
     return record
 
 
@@ -177,10 +177,10 @@ def validate_evaluation(response: ReviewResponse, rubric, spec):
             "critical_failures": sorted(critical)}
 
 
-def save_evaluation(writer, evaluation):
+async def save_evaluation(writer, evaluation):
     key = digest(evaluation)
-    writer.write_json(f"review/rubric_evaluations/{key}.json", evaluation)
-    writer.write_json(EVALUATION_PATH, evaluation)
+    (await writer.write_json(f"review/rubric_evaluations/{key}.json", evaluation))
+    (await writer.write_json(EVALUATION_PATH, evaluation))
 
 
 def deterministic_score_cap(issues):

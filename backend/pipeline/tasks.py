@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import asyncio
 from protocol.logging import get_logger
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -70,17 +71,17 @@ class WorkflowTasks:
         )
         self.critical_reporter = CriticalReporter(skills=self.skills)
 
-    def project_context(self, state):
+    async def project_context(self, state):
         manifest = {"file_count": 0, "files": []}
-        self.writer.write_json("context/project_manifest.json", manifest)
+        (await self.writer.write_json("context/project_manifest.json", manifest))
         return {}
 
-    def spec_compile(self, state: WorkflowState) -> dict[str, Any]:
+    async def spec_compile(self, state: WorkflowState) -> dict[str, Any]:
         created = list(state.get("created_artifacts", []))
         try:
-            manifest: dict[str, Any] = self.writer.read_json(
+            manifest: dict[str, Any] = (await self.writer.read_json(
                 "context/project_manifest.json"
-            )
+            ))
         except Exception:
             manifest = {}
         sheet_data = state.get("requirement_lock_sheet")
@@ -90,11 +91,11 @@ class WorkflowTasks:
             RequirementLockSheet.from_dict(sheet_data).require_validated(), state
         )
         from backend.services.rubric import ensure_rubric, summary as rubric_summary, PATH as RUBRIC_PATH
-        rubric = ensure_rubric(self.writer, self.provider, self.config.model_routing["critic"].model, sheet, state)
+        rubric = (await ensure_rubric(self.writer, self.provider, self.config.model_routing["critic"].model, sheet, state))
         if state.get("rubric_recovery_pending"):
             # 2026-11-05: 기준 복구만 필요할 때 보존된 초안을 다시 생성하지 않는다.
             path = "draft/approval_candidate_spec.ko.md"
-            spec = self.writer.read_text(path)
+            spec = (await self.writer.read_text(path))
             if not spec or not self.compiler.korean_document(spec):
                 raise InvalidStateError("Reviewed candidate is missing or invalid.")
             if RUBRIC_PATH not in created:
@@ -108,10 +109,10 @@ class WorkflowTasks:
         previous_spec = ""
         if issues or state.get("revision_feedback") or state.get("revision_history") or state.get("rubric_evaluation"):
             try:
-                previous_spec = self.writer.read_text(path)
+                previous_spec = (await self.writer.read_text(path))
             except Exception:
                 previous_spec = ""
-        spec = self.compiler.compile(
+        spec = (await self.compiler.compile(
             sheet,
             manifest,
             issues,
@@ -123,8 +124,8 @@ class WorkflowTasks:
             revision_history=list(state.get("revision_history", [])),
             writer=self.writer,
             rubric={**rubric, "latest_evaluation": state.get("rubric_evaluation", {})},
-        )
-        self.writer.write_text(path, spec, overwrite=True)
+        ))
+        (await self.writer.write_text(path, spec, overwrite=True))
         if path not in created:
             created.append(path)
         if RUBRIC_PATH not in created:
@@ -138,10 +139,10 @@ class WorkflowTasks:
             "rubric_summary": rubric_summary(rubric),
         }
 
-    def compose_candidate(self, state: WorkflowState) -> dict[str, Any]:
+    async def compose_candidate(self, state: WorkflowState) -> dict[str, Any]:
         from backend.services.refinement import restore_best
         sheet = validate_locked_sources(RequirementLockSheet.from_dict(state.get("requirement_lock_sheet")).require_validated(), state)
-        selected = restore_best(self.writer, state, sheet)
+        selected = (await restore_best(self.writer, state, sheet))
         state = {**state, **selected}
         issues = parse_issue_list(state.get("structured_issues", []))
         if (
@@ -157,7 +158,7 @@ class WorkflowTasks:
         created = list(state.get("created_artifacts", []))
         path = "draft/approval_candidate_spec.ko.md"
         try:
-            spec = self.writer.read_text(path)
+            spec = (await self.writer.read_text(path))
         except Exception:
             spec = ""
         if not spec or not self.compiler.korean_document(spec):
@@ -178,13 +179,13 @@ class WorkflowTasks:
         )
 
         try:
-            review_candidate(self, state, spec)
+            (await review_candidate(self, state, spec))
         except Exception as exc:
             get_logger(__name__).warning(
                 "change review unavailable exception_type=%s", type(exc).__name__
             )
             try:
-                self.writer.write_json(
+                (await self.writer.write_json(
                     CURRENT_REVIEW,
                     {
                         "status": "failed",
@@ -195,7 +196,7 @@ class WorkflowTasks:
                         "analysed": 0,
                         "remaining": None,
                     },
-                )
+                ))
             except Exception:
                 get_logger(__name__).warning(
                     "change review failure could not be saved"
@@ -209,31 +210,31 @@ class WorkflowTasks:
             "created_artifacts": created,
         }
 
-    def interview(self, state: WorkflowState) -> dict[str, Any]:
+    async def interview(self, state: WorkflowState) -> dict[str, Any]:
         created = list(state.get("created_artifacts", []))
         try:
-            manifest: dict[str, Any] = self.writer.read_json(
+            manifest: dict[str, Any] = (await self.writer.read_json(
                 "context/project_manifest.json"
-            )
+            ))
         except Exception:
             manifest = {}
         route = self.config.model_routing[self.interviewer.agent_id]
         provider = self.provider
 
-        def complete(messages: list[dict[str, str]]) -> InterviewResponse:
+        async def complete(messages: list[dict[str, str]]) -> InterviewResponse:
             response = state.get("mcp", {}).get("response")
             if response is not None:
                 return InterviewResponse.model_validate(response)
-            return complete_with_usage(
+            return (await complete_with_usage(
                 self.writer,
                 provider,
                 messages,
                 model=route.model,
                 stage="interview",
                 temperature=0,
-            )
+            ))
 
-        result = self.interviewer.run(state, manifest, provider_messages_fn=complete)
+        result = (await self.interviewer.run(state, manifest, provider_messages_fn=complete))
         files = {
             "analysis/01_intent_parse.ko.md": f"# 의도 분석\n\n요청 유형: {result.request_type}\n",
             "analysis/03_scope_classification.ko.md": "# 범위 분류\n\n- v2 파이프라인: Requirement Lock Sheet에서 관리됩니다.\n",
@@ -248,7 +249,7 @@ class WorkflowTasks:
             ),
         }
         for path, content in files.items():
-            self.writer.write_text(path, content, overwrite=True)
+            (await self.writer.write_text(path, content, overwrite=True))
             if path not in created:
                 created.append(path)
         for assumption in result.assumptions:
@@ -265,26 +266,26 @@ class WorkflowTasks:
             "created_artifacts": created,
         }
 
-    def requirement_lock_stage(self, state: WorkflowState) -> dict[str, Any]:
+    async def requirement_lock_stage(self, state: WorkflowState) -> dict[str, Any]:
         created = list(state.get("created_artifacts", []))
         try:
-            manifest: dict[str, Any] = self.writer.read_json(
+            manifest: dict[str, Any] = (await self.writer.read_json(
                 "context/project_manifest.json"
-            )
+            ))
         except Exception:
             manifest = {}
         route = self.config.model_routing[self.lock_builder.agent_id]
         provider = self.provider
 
-        def complete(messages: list[dict[str, str]]) -> LockResponse:
-            return complete_with_usage(
+        async def complete(messages: list[dict[str, str]]) -> LockResponse:
+            return (await complete_with_usage(
                 self.writer,
                 provider,
                 messages,
                 model=route.model,
                 stage="requirement_lock",
                 temperature=0,
-            )
+            ))
 
         interview = InterviewResult(
             request_type=state.get("request_type", "feature"),
@@ -299,21 +300,21 @@ class WorkflowTasks:
                 ]
             ),
         )
-        sheet = self.lock_builder.build(
+        sheet = (await self.lock_builder.build(
             state,
             manifest,
             interview,
             provider_messages_fn=complete,
             runtime=self.runtime,
-        )
+        ))
         sheet = _merge_existing_sheet(sheet, state)
-        self.writer.write_json("analysis/requirement_lock_sheet.json", sheet.to_dict())
-        self.writer.write_text(
+        (await self.writer.write_json("analysis/requirement_lock_sheet.json", sheet.to_dict()))
+        (await self.writer.write_text(
             "analysis/requirement_lock_sheet.ko.md", sheet.to_markdown()
-        )
-        self.writer.write_text(
+        ))
+        (await self.writer.write_text(
             "analysis/02_requirement_lock.ko.md", sheet.to_markdown()
-        )
+        ))
         created.extend(
             [
                 "analysis/requirement_lock_sheet.json",
@@ -328,9 +329,9 @@ class WorkflowTasks:
             "created_artifacts": created,
         }
 
-    def checklist_critic(self, state: WorkflowState) -> dict[str, Any]:
+    async def checklist_critic(self, state: WorkflowState) -> dict[str, Any]:
         created = list(state.get("created_artifacts", []))
-        spec = self.writer.read_text("draft/approval_candidate_spec.ko.md")
+        spec = (await self.writer.read_text("draft/approval_candidate_spec.ko.md"))
         sheet_data = state.get("requirement_lock_sheet")
         from backend.services.workflow_constraints import validate_locked_sources
 
@@ -345,17 +346,17 @@ class WorkflowTasks:
         route = self.config.model_routing[self.critic.agent_id]
         provider = self.provider
 
-        def complete(messages: list[dict[str, str]]) -> ReviewResponse:
-            return complete_with_usage(
+        async def complete(messages: list[dict[str, str]]) -> ReviewResponse:
+            return (await complete_with_usage(
                 self.writer,
                 provider,
                 messages,
                 model=route.model,
                 stage="checklist_critic",
                 temperature=0,
-            )
+            ))
 
-        issues = self.critic.critique(
+        issues = (await self.critic.critique(
             spec,
             sheet,
             provider_messages_fn=complete,
@@ -367,11 +368,11 @@ class WorkflowTasks:
             revision_history=list(state.get("revision_history", [])),
             rubric=rubric,
             evaluation_sink=evaluations.append,
-        )
+        ))
         if len(evaluations) != 1:
             raise invalid("rubric_evaluation_coverage", stage="checklist_critic")
         evaluation = evaluations[0]
-        save_evaluation(self.writer, evaluation)
+        (await save_evaluation(self.writer, evaluation))
         if EVALUATION_PATH not in created:
             created.append(EVALUATION_PATH)
         history = list(state.get("review_history", []))
@@ -380,7 +381,7 @@ class WorkflowTasks:
         history.append(
             {"review_round": len(history) + 1, "pass": passes, "issues": issue_data}
         )
-        self.writer.write_json(
+        (await self.writer.write_json(
             "review/checklist_issues.json",
             {
                 "pass": passes,
@@ -389,7 +390,7 @@ class WorkflowTasks:
                 "issues": issue_data,
             },
             overwrite=True,
-        )
+        ))
         if "review/checklist_issues.json" not in created:
             created.append("review/checklist_issues.json")
         return {
@@ -404,7 +405,7 @@ class WorkflowTasks:
             "created_artifacts": created,
         }
 
-    def review_resolution(self, state, *, final=False):
+    async def review_resolution(self, state, *, final=False):
         sheet = validate_locked_sources(
             RequirementLockSheet.from_dict(
                 state.get("requirement_lock_sheet")
@@ -439,7 +440,7 @@ class WorkflowTasks:
         diagnosed = set(state.get("diagnosed_keys", []))
         to_diagnose = repeated - diagnosed
         stop = False
-        draft = self.writer.read_text("draft/approval_candidate_spec.ko.md")
+        draft = (await self.writer.read_text("draft/approval_candidate_spec.ko.md"))
         basis = confirmed_basis(state, sheet.to_dict())
         pending_resolution = selected
         reconfirm = set()
@@ -464,14 +465,14 @@ class WorkflowTasks:
                 json.dumps(canonical, ensure_ascii=False),
                 ("명세 초안", draft),
             )
-            packet = complete_with_usage(
+            packet = (await complete_with_usage(
                 self.writer,
                 self.provider,
                 payload,
                 model=self.config.model_routing["critic"].model,
                 stage="review_resolution",
                 temperature=0,
-            )
+            ))
             reconfirm = validate_resolutions(
                 packet,
                 pending_resolution,
@@ -498,15 +499,15 @@ class WorkflowTasks:
         reviews = [dict(entry) for entry in state.get("review_history", [])]
         if reviews:
             reviews[-1].update(issues=data, draft_hash=record["draft_hash"])
-        self.writer.write_text("review/resolved_draft.ko.md", draft, overwrite=True)
-        self.writer.write_json("review/resolution.json", record, overwrite=True)
-        self.writer.write_text(
+        (await self.writer.write_text("review/resolved_draft.ko.md", draft, overwrite=True))
+        (await self.writer.write_json("review/resolution.json", record, overwrite=True))
+        (await self.writer.write_text(
             "analysis/05_blocking_questions.ko.md",
             "# 요구사항 확인 필요\n\n"
             + ("\n".join("- " + question for question in pending) or "- 없음")
             + "\n",
             overwrite=True,
-        )
+        ))
         created = list(
             dict.fromkeys(
                 [
@@ -538,10 +539,10 @@ class WorkflowTasks:
         if final and not state.get("rubric_evaluation"):
             return result
         from backend.services.refinement import record_round
-        refinement = record_round(self.writer, {**state, **result}, self.config)
+        refinement = (await record_round(self.writer, {**state, **result}, self.config))
         action = "ask_user" if pending else "approve" if refinement.get("termination") else "repair"
         history[-1]["action"] = action
-        self.writer.write_json("review/resolution.json", history[-1], overwrite=True)
+        (await self.writer.write_json("review/resolution.json", history[-1], overwrite=True))
         return {**result, "refinement": refinement}
 
     def await_user(self, state: WorkflowState) -> dict[str, Any]:
@@ -553,18 +554,18 @@ class WorkflowTasks:
             "review_questions": list(state.get("review_questions", [])),
         }
 
-    def critical_report(self, state: WorkflowState) -> dict[str, Any]:
+    async def critical_report(self, state: WorkflowState) -> dict[str, Any]:
         path = "draft/approval_candidate_spec.ko.md"
         try:
-            failed_draft = self.writer.read_text(path)
+            failed_draft = (await self.writer.read_text(path))
         except Exception as exc:
             raise InvalidStateError("Reviewed candidate draft is missing.") from exc
         if not failed_draft.strip():
             raise InvalidStateError("Reviewed candidate draft is missing.")
         report = self.critical_reporter.generate(state)
         created = list(state.get("created_artifacts", []))
-        self.writer.write_text("critical/FAILED_AGENT_SPEC_DRAFT.ko.md", failed_draft)
-        self.writer.write_text("critical/CRITICAL_REPORT.ko.md", report)
+        (await self.writer.write_text("critical/FAILED_AGENT_SPEC_DRAFT.ko.md", failed_draft))
+        (await self.writer.write_text("critical/CRITICAL_REPORT.ko.md", report))
         created.extend(
             ["critical/FAILED_AGENT_SPEC_DRAFT.ko.md", "critical/CRITICAL_REPORT.ko.md"]
         )
@@ -574,7 +575,7 @@ class WorkflowTasks:
             "created_artifacts": created,
         }
 
-    def web_research(self, state: WorkflowState) -> dict[str, Any]:
+    async def web_research(self, state: WorkflowState) -> dict[str, Any]:
         created = list(state.get("created_artifacts", []))
         mode = state.get("web_search_mode", "auto")
         sources: list[dict[str, Any]] = []
@@ -593,7 +594,7 @@ class WorkflowTasks:
         failure = None
         if performed:
             try:
-                sources = web_search(state.get("user_request", ""), max_results=5)
+                sources = await asyncio.to_thread(web_search, state.get("user_request", ""), max_results=5)
                 research.update(
                     outcome="links_found" if sources else "no_results",
                     reason="search_results",
@@ -602,7 +603,7 @@ class WorkflowTasks:
                 research.update(outcome="failed", reason="search_failed")
                 failure = exc
         research.update(sources=sources, result_count=len(sources))
-        self.writer.write_json("research/research_record.json", research)
+        (await self.writer.write_json("research/research_record.json", research))
         if failure is not None and mode == "on":
             setattr(failure, "research_record", research)
             raise failure
@@ -613,10 +614,10 @@ class WorkflowTasks:
                 source.get("url", ""),
                 metadata={"query": source.get("query", "")},
             )
-        self.writer.write_json("research/web_sources.json", {"sources": sources})
-        self.writer.write_text(
+        (await self.writer.write_json("research/web_sources.json", {"sources": sources}))
+        (await self.writer.write_text(
             "research/web_research_summary.ko.md", summarize_web_research(sources, mode)
-        )
+        ))
         created.extend(
             [
                 "research/web_sources.json",

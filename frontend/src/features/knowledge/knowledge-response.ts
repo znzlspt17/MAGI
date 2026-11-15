@@ -1,4 +1,4 @@
-import { array, boolean, number, object, optional, requiredObject, text } from "../../shared/api/response-contract";
+import { array, boolean, literal, number, object, optional, requiredObject, text } from "../../shared/api/response-contract";
 import type { KnowledgeNode } from "./graph-data";
 
 export const decodeProject = requiredObject({ id: text, name: text });
@@ -11,6 +11,7 @@ const node = requiredObject({ id: text, kind: text, body: text, job_id: optional
   matches: optional(array(requiredObject({ quote: text }))), document: optional(text), document_has_more: optional(boolean),
   document_next_offset: optional(number), title: optional(text), project_id: optional(text), edges: optional(array(edge)) });
 export const decodeKnowledgeNode: (value: unknown) => KnowledgeNode = node;
-export const decodeKnowledgeGraph = requiredObject({ nodes: array(node), edges: array(edge), has_more: optional(boolean) });
-export const decodeSearch = requiredObject({ nodes: array(node) });
+const index = { index_status: optional(literal("pending", "ready", "failed")), index_source_revision: optional(number), index_applied_revision: optional(number) };
+export const decodeKnowledgeGraph = requiredObject({ nodes: array(node), edges: array(edge), has_more: optional(boolean), ...index });
+export const decodeSearch = requiredObject({ nodes: array(node), ...index });
 export const decodeDocumentPage = requiredObject({ content: text, has_more: boolean, next_offset: number });

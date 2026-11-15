@@ -58,6 +58,7 @@ RPC_METHODS = {
     "admin.usage": None,
     "admin.usage.rows": None,
     "auth.info": None,
+    "auth.guest": None,
     "auth.start": None,
     "auth.callback": None,
     "auth.me": None,

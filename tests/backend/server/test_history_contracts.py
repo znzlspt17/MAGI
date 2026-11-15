@@ -2,6 +2,8 @@
 
 from copy import deepcopy
 from types import SimpleNamespace
+import asyncio
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -14,9 +16,9 @@ ISSUE = {"issue_id": "I1", "requirement_id": "R1", "decision_key": "policy",
 
 def read_detail(nodes):
     history = ExecutionHistory(SimpleNamespace())
-    history._load = lambda **kwargs: {"nodes": nodes}
-    history._read_document = lambda document: None
-    return history.detail("stop")
+    history._load = AsyncMock(return_value={"nodes": nodes})
+    history._read_document = AsyncMock(return_value=None)
+    return asyncio.run(history.detail("stop"))
 
 
 def stop(**values):

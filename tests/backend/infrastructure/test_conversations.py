@@ -1,10 +1,11 @@
 """원격 통신 없이 작업 대화의 수명주기·호출 계약·중복 보호를 검증한다."""
 
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+import asyncio
+from contextlib import asynccontextmanager
 import json
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, AsyncMock
+from tests.backend.application.async_helpers import run_async
 
 import httpx2
 import pytest
@@ -28,27 +29,28 @@ class Output(BaseModel):
     value: str
 
 
-def documents(store, ident="job-a"):
-    project = store.create_project("대화 테스트")
-    store.save_job({"id": ident, "project_id": project["id"], "request": "보존할 원본"})
+async def documents(store, ident="job-a"):
+    project = (await store.create_project("대화 테스트"))
+    (await store.save_job({"id": ident, "project_id": project["id"], "request": "보존할 원본"}))
     return Documents(store, ident)
 
 
 def provider():
     return SimpleNamespace(
-        provider_name="openai", create_conversation=Mock(return_value="conv_test"),
-        initialize_conversation=Mock(),
-        complete_result=Mock(return_value=CompletionResult(text="", parsed=Output(value="ok"), response_id="resp_test")),
+        provider_name="openai", create_conversation=AsyncMock(return_value="conv_test"),
+        initialize_conversation=AsyncMock(),
+        complete_result=AsyncMock(return_value=CompletionResult(text="", parsed=Output(value="ok"), response_id="resp_test")),
     )
 
 
-def saved(store, ident="job-a"):
-    with store.transaction(mode="read") as conn:
-        return conn.execute("SELECT openai_conversation_id,openai_conversation_state,openai_call_pending,"
-                            "openai_last_response_id FROM jobs WHERE id=%s", (ident,)).fetchone()
+async def saved(store, ident="job-a"):
+    async with store.transaction(mode="read") as conn:
+        return (await (await conn.execute("SELECT openai_conversation_id,openai_conversation_state,openai_call_pending,"
+                            "openai_last_response_id FROM jobs WHERE id=%s", (ident,))).fetchone())
 
 
-def test_http_initialization_and_followup_preserve_boundaries_and_delta():
+@run_async
+async def test_http_initialization_and_followup_preserve_boundaries_and_delta():
     requests = []
 
     def handle(request):
@@ -67,14 +69,14 @@ def test_http_initialization_and_followup_preserve_boundaries_and_delta():
                  {"role": "user", "content": [cache_block("original request")]}]
     with transport(handle):
         client = ChatModelProvider(api_key="fake-test-value")
-        ident = client.create_conversation()
-        client.initialize_conversation(ident, bootstrap)
+        ident = (await client.create_conversation())
+        (await client.initialize_conversation(ident, bootstrap))
         for stage in ("interview", "spec_compile"):
-            client.complete_result([
+            (await client.complete_result([
                 {"role": "user", "content": "원본 사용자 요청 (변경 불가):\noriginal request"},
                 {"role": "assistant", "content": "do not replay"},
                 {"role": "user", "content": "new input"},
-            ], model=MODEL, conversation_id=ident, instructions=stage, cache_key=cache_key("job-a"))
+            ], model=MODEL, conversation_id=ident, instructions=stage, cache_key=cache_key("job-a")))
     assert requests[1][1]["items"] == bootstrap
     for _, body in requests[2:]:
         assert body["conversation"] == ident
@@ -86,166 +88,184 @@ def test_http_initialization_and_followup_preserve_boundaries_and_delta():
     assert cache_key("job-a") != cache_key("job-b")
 
 
-def test_existing_job_bootstrap_and_restart_do_not_recreate_or_replay(store):
-    docs, client = documents(store), provider()
-    docs.state = {"requirement_lock_sheet": {"decisions": ["현재 확정"]}, "review_questions": ["미해결"]}
-    docs.write_text("draft/approval_candidate_spec.ko.md", "current specification")
-    with job_conversation(docs, client) as ident:
-        assert saved(store)["openai_conversation_state"] == "ready"
-        call_started(docs, client)
-        call_finished(docs, client, CompletionResult(text="ok", response_id="resp_first"))
-    initial = json.dumps(client.initialize_conversation.call_args.args[1], ensure_ascii=False)
-    assert all(value in initial for value in ("보존할 원본", "현재 확정", "미해결", "current specification"))
-    store.save_job({"id": docs.job_id, "project_id": store.jobs()[0]["project_id"], "request": "changed metadata"})
-    with job_conversation(Documents(store, docs.job_id), client) as resumed:
-        assert resumed == ident
-    client.create_conversation.assert_called_once()
-    client.initialize_conversation.assert_called_once()
-    assert saved(store)["openai_last_response_id"] == "resp_first"
+@run_async
+async def test_existing_job_bootstrap_and_restart_do_not_recreate_or_replay(async_store_factory):
+    async with async_store_factory() as store:
+        docs, client = (await documents(store)), provider()
+        docs.state = {"requirement_lock_sheet": {"decisions": ["현재 확정"]}, "review_questions": ["미해결"]}
+        (await docs.write_text("draft/approval_candidate_spec.ko.md", "current specification"))
+        async with job_conversation(docs, client) as ident:
+            assert (await saved(store))["openai_conversation_state"] == "ready"
+            (await call_started(docs, client))
+            (await call_finished(docs, client, CompletionResult(text="ok", response_id="resp_first")))
+        initial = json.dumps(client.initialize_conversation.call_args.args[1], ensure_ascii=False)
+        assert all(value in initial for value in ("보존할 원본", "현재 확정", "미해결", "current specification"))
+        (await store.save_job({"id": docs.job_id, "project_id": (await store.jobs())[0]["project_id"], "request": "changed metadata"}))
+        async with job_conversation(Documents(store, docs.job_id), client) as resumed:
+            assert resumed == ident
+        client.create_conversation.assert_called_once()
+        client.initialize_conversation.assert_called_once()
+        assert (await saved(store))["openai_last_response_id"] == "resp_first"
 
 
 @pytest.mark.parametrize("failure", ["create", "initialize", "save_id"])
-def test_uncertain_initialization_never_repeats_automatically(store, monkeypatch, failure):
-    docs, client = documents(store), provider()
-    if failure == "create":
-        client.create_conversation.side_effect = Error("safe create failure")
-    elif failure == "initialize":
-        client.initialize_conversation.side_effect = Error("safe initialize failure")
-    else:
-        transaction = store.transaction
+@run_async
+async def test_uncertain_initialization_never_repeats_automatically(async_store_factory, monkeypatch, failure):
+    async with async_store_factory() as store:
+        docs, client = (await documents(store)), provider()
+        if failure == "create":
+            client.create_conversation.side_effect = Error("safe create failure")
+        elif failure == "initialize":
+            client.initialize_conversation.side_effect = Error("safe initialize failure")
+        else:
+            transaction = store.transaction
 
-        @contextmanager
-        def fail_save(**kwargs):
-            with transaction(**kwargs) as conn:
-                if saved_state[0]:
-                    raise ValueError("safe database failure")
-                yield conn
+            @asynccontextmanager
+            async def fail_save(**kwargs):
+                async with transaction(**kwargs) as conn:
+                    if saved_state[0]:
+                        raise ValueError("safe database failure")
+                    yield conn
 
-        saved_state = [False]
-        client.create_conversation.side_effect = lambda: (saved_state.__setitem__(0, True) or "conv_test")
-        monkeypatch.setattr(store, "transaction", fail_save)
-    with pytest.raises((Error, ValueError)):
-        with job_conversation(docs, client):
-            pytest.fail("초기화 실패 후 호출하면 안 된다")
-    if failure == "save_id":
-        monkeypatch.setattr(store, "transaction", transaction)
-    with pytest.raises(InvalidStateError, match="초기화"):
-        with job_conversation(docs, client):
-            pytest.fail("초기화를 자동 반복하면 안 된다")
-    client.create_conversation.assert_called_once()
-    client.complete_result.assert_not_called()
-
-
-def test_all_schema_paths_share_conversation_and_explicit_stage_contract(store):
-    docs, client = documents(store), provider()
-    stages = ("planner", "interview", "requirement_lock", "spec_compile", "checklist_critic",
-              "review_resolution", "change_review", "impact_review")
-    for stage in stages:
-        assert _complete_once(docs, client, [{"role": "system", "content": "stage policy"},
-                                            {"role": "user", "content": "current evidence"}],
-                              model=MODEL, stage=stage, isolated_schema=Output).value == "ok"
-    assert {call.kwargs["conversation_id"] for call in client.complete_result.call_args_list} == {"conv_test"}
-    assert len({call.kwargs["cache_key"] for call in client.complete_result.call_args_list}) == 1
-    for stage, call in zip(stages, client.complete_result.call_args_list):
-        assert f"현재 단계: {stage}." in call.kwargs["instructions"]
-        assert "이전 출력과 대체된 초안은 과거 자료" in call.kwargs["instructions"]
+            saved_state = [False]
+            client.create_conversation.side_effect = lambda: (saved_state.__setitem__(0, True) or "conv_test")
+            monkeypatch.setattr(store, "transaction", fail_save)
+        with pytest.raises((Error, ValueError)):
+            async with job_conversation(docs, client):
+                pytest.fail("초기화 실패 후 호출하면 안 된다")
+        if failure == "save_id":
+            monkeypatch.setattr(store, "transaction", transaction)
+        with pytest.raises(InvalidStateError, match="초기화"):
+            async with job_conversation(docs, client):
+                pytest.fail("초기화를 자동 반복하면 안 된다")
+        client.create_conversation.assert_called_once()
+        client.complete_result.assert_not_called()
 
 
-def test_uncertain_call_blocks_until_explicit_replay_and_records_response(store):
-    docs, client = documents(store), provider()
-    with job_conversation(docs, client):
-        call_started(docs, client)
-    with pytest.raises(InvalidStateError, match="호출 반복"):
-        with job_conversation(docs, client):
-            pytest.fail("불확실한 호출을 반복하면 안 된다")
-    # 실제 PostgreSQL과 로컬 대체 저장소 모두 운영 checkpointer 연결을 사용한다.
-    with workflow_store(store, docs.job_id) as (_, journal):
-        journal.begin("task")
-        token = CURRENT_ATTEMPT.set({"allow_replay": True, "journal": journal, "task_id": "task"})
-        try:
-            with job_conversation(docs, client):
-                call_finished(docs, client, CompletionResult(text="ok", response_id="resp_replayed"))
-            assert CURRENT_ATTEMPT.get()["allow_replay"] is False
-            row = journal.conn.execute("SELECT payload FROM workflow_task_results WHERE thread_id=%s", (docs.job_id,)).fetchone()
-            assert json.loads(row["payload"])["response_ids"] == ["resp_replayed"]
-        finally:
-            CURRENT_ATTEMPT.reset(token)
-    assert saved(store)["openai_call_pending"] is False
-    client.create_conversation.assert_called_once()
+@run_async
+async def test_all_schema_paths_share_conversation_and_explicit_stage_contract(async_store_factory):
+    async with async_store_factory() as store:
+        docs, client = (await documents(store)), provider()
+        stages = ("planner", "interview", "requirement_lock", "spec_compile", "checklist_critic",
+                  "review_resolution", "change_review", "impact_review")
+        for stage in stages:
+            assert (await _complete_once(docs, client, [{"role": "system", "content": "stage policy"},
+                                                {"role": "user", "content": "current evidence"}],
+                                  model=MODEL, stage=stage, isolated_schema=Output)).value == "ok"
+        assert {call.kwargs["conversation_id"] for call in client.complete_result.call_args_list} == {"conv_test"}
+        assert len({call.kwargs["cache_key"] for call in client.complete_result.call_args_list}) == 1
+        for stage, call in zip(stages, client.complete_result.call_args_list):
+            assert f"현재 단계: {stage}." in call.kwargs["instructions"]
+            assert "이전 출력과 대체된 초안은 과거 자료" in call.kwargs["instructions"]
 
 
-def test_response_failure_keeps_same_conversation_and_no_automatic_retry(store):
-    docs, client = documents(store), provider()
-    client.complete_result.side_effect = Error("safe transport failure")
-    arguments = dict(model=MODEL, stage="planner", isolated_schema=Output)
-    with pytest.raises(Error):
-        _complete_once(docs, client, [], **arguments)
-    with pytest.raises(InvalidStateError, match="호출 반복"):
-        _complete_once(docs, client, [], **arguments)
-    client.complete_result.assert_called_once()
-    assert saved(store)["openai_call_pending"] is True
-    client.create_conversation.assert_called_once()
+@run_async
+async def test_uncertain_call_blocks_until_explicit_replay_and_records_response(async_store_factory):
+    async with async_store_factory() as store:
+        docs, client = (await documents(store)), provider()
+        async with job_conversation(docs, client):
+            (await call_started(docs, client))
+        with pytest.raises(InvalidStateError, match="호출 반복"):
+            async with job_conversation(docs, client):
+                pytest.fail("불확실한 호출을 반복하면 안 된다")
+        # 실제 PostgreSQL과 로컬 대체 저장소 모두 운영 checkpointer 연결을 사용한다.
+        async with workflow_store(store, docs.job_id) as (_, journal):
+            (await journal.begin("task"))
+            token = CURRENT_ATTEMPT.set({"allow_replay": True, "journal": journal, "task_id": "task"})
+            try:
+                async with job_conversation(docs, client):
+                    (await call_finished(docs, client, CompletionResult(text="ok", response_id="resp_replayed")))
+                assert CURRENT_ATTEMPT.get()["allow_replay"] is False
+                async with store.transaction(mode="read") as conn:
+                    row = await (await conn.execute("SELECT payload FROM workflow.workflow_task_results WHERE thread_id=%s", (docs.job_id,))).fetchone()
+                assert json.loads(row["payload"])["response_ids"] == ["resp_replayed"]
+            finally:
+                CURRENT_ATTEMPT.reset(token)
+        assert (await saved(store))["openai_call_pending"] is False
+        client.create_conversation.assert_called_once()
 
 
-def test_received_invalid_result_can_be_corrected_in_same_conversation(store):
-    docs, client = documents(store), provider()
-    error = Error("safe validation failure")
-    error.completion = CompletionResult(text="", response_id="resp_invalid")
-    client.complete_result.side_effect = [error, CompletionResult(text="", parsed=Output(value="fixed"), response_id="resp_fixed")]
-    arguments = dict(model=MODEL, stage="spec_compile", isolated_schema=Output)
-    with pytest.raises(Error):
-        _complete_once(docs, client, [], **arguments)
-    assert saved(store)["openai_call_pending"] is False
-    assert _complete_once(docs, client, [{"role": "user", "content": "validation correction"}], **arguments).value == "fixed"
-    assert {call.kwargs["conversation_id"] for call in client.complete_result.call_args_list} == {"conv_test"}
-    client.create_conversation.assert_called_once()
+@run_async
+async def test_response_failure_keeps_same_conversation_and_no_automatic_retry(async_store_factory):
+    async with async_store_factory() as store:
+        docs, client = (await documents(store)), provider()
+        client.complete_result.side_effect = Error("safe transport failure")
+        arguments = dict(model=MODEL, stage="planner", isolated_schema=Output)
+        with pytest.raises(Error):
+            (await _complete_once(docs, client, [], **arguments))
+        with pytest.raises(InvalidStateError, match="호출 반복"):
+            (await _complete_once(docs, client, [], **arguments))
+        client.complete_result.assert_called_once()
+        assert (await saved(store))["openai_call_pending"] is True
+        client.create_conversation.assert_called_once()
 
 
-def test_budget_failure_before_http_does_not_mark_remote_call_uncertain(store):
-    docs, fake = documents(store), provider()
-    with job_conversation(docs, fake):
-        pass
-    meter = Mock()
-    meter.reserve.side_effect = Error("safe budget failure")
-    client = ChatModelProvider(api_key="fake-test-value", meter=meter)
-    with transport(Mock(side_effect=AssertionError("예산 예약 실패 뒤 HTTP 요청 금지"))), pytest.raises(Error, match="budget"):
-        _complete_once(docs, client, [], model=MODEL, stage="planner", isolated_schema=Output)
-    assert saved(store)["openai_call_pending"] is False
+@run_async
+async def test_received_invalid_result_can_be_corrected_in_same_conversation(async_store_factory):
+    async with async_store_factory() as store:
+        docs, client = (await documents(store)), provider()
+        error = Error("safe validation failure")
+        error.completion = CompletionResult(text="", response_id="resp_invalid")
+        client.complete_result.side_effect = [error, CompletionResult(text="", parsed=Output(value="fixed"), response_id="resp_fixed")]
+        arguments = dict(model=MODEL, stage="spec_compile", isolated_schema=Output)
+        with pytest.raises(Error):
+            (await _complete_once(docs, client, [], **arguments))
+        assert (await saved(store))["openai_call_pending"] is False
+        assert (await _complete_once(docs, client, [{"role": "user", "content": "validation correction"}], **arguments)).value == "fixed"
+        assert {call.kwargs["conversation_id"] for call in client.complete_result.call_args_list} == {"conv_test"}
+        client.create_conversation.assert_called_once()
+
+
+@run_async
+async def test_budget_failure_before_http_does_not_mark_remote_call_uncertain(async_store_factory):
+    async with async_store_factory() as store:
+        docs, fake = (await documents(store)), provider()
+        async with job_conversation(docs, fake):
+            pass
+        meter = SimpleNamespace(reserve=AsyncMock(), access=SimpleNamespace(execution=AsyncMock()),
+                                uid="owner", jid=docs.job_id, generation=1, execution_id="run")
+        meter.reserve.side_effect = Error("safe budget failure")
+        client = ChatModelProvider(api_key="fake-test-value", meter=meter)
+        with transport(Mock(side_effect=AssertionError("예산 예약 실패 뒤 HTTP 요청 금지"))), pytest.raises(Error, match="budget"):
+            (await _complete_once(docs, client, [], model=MODEL, stage="planner", isolated_schema=Output))
+        assert (await saved(store))["openai_call_pending"] is False
 
 
 @pytest.mark.parametrize("status,code,expected", [
     (404, "not_found", "접근할 수 없습니다"),
     (400, "context_length_exceeded", "문맥 한도"),
 ])
-def test_http_permanent_failures_have_safe_specific_diagnostics(status, code, expected):
+@run_async
+async def test_http_permanent_failures_have_safe_specific_diagnostics(status, code, expected):
     def handle(request):
         return httpx2.Response(status, json={"error": {"code": code, "message": "DO_NOT_PROPAGATE", "type": "invalid_request_error"}}, request=request)
     with transport(handle), pytest.raises(Error) as caught:
-        ChatModelProvider(api_key="fake-test-value").complete_result(
-            [{"role": "user", "content": "input"}], model=MODEL, conversation_id="conv_test")
+        (await ChatModelProvider(api_key="fake-test-value").complete_result(
+            [{"role": "user", "content": "input"}], model=MODEL, conversation_id="conv_test"))
     assert expected in str(caught.value) and "DO_NOT_PROPAGATE" not in str(caught.value)
     from backend.server.diagnostics import diagnose_exception
     assert expected in diagnose_exception(caught.value)["reason"]
 
 
-def test_parallel_same_job_initializes_once_and_separate_jobs_are_isolated(store):
-    docs, client = documents(store), provider()
-    active = []
+@run_async
+async def test_parallel_same_job_initializes_once_and_separate_jobs_are_isolated(async_store_factory):
+    async with async_store_factory() as store:
+        docs, client = (await documents(store)), provider()
+        active = []
 
-    def run(_):
-        with job_conversation(docs, client) as ident:
-            assert not active
-            active.append(ident)
-            call_started(docs, client)
-            call_finished(docs, client, CompletionResult(text="ok", response_id="resp_parallel"))
-            active.pop()
-        return ident
+        async def run(_):
+            async with job_conversation(docs, client) as ident:
+                assert not active
+                active.append(ident)
+                (await call_started(docs, client))
+                (await call_finished(docs, client, CompletionResult(text="ok", response_id="resp_parallel")))
+                active.pop()
+            return ident
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        assert list(pool.map(run, range(2))) == ["conv_test", "conv_test"]
-    client.create_conversation.assert_called_once()
-    other = documents(store, "job-b")
-    other_client = provider()
-    other_client.create_conversation.return_value = "conv_other"
-    with job_conversation(other, other_client) as ident:
-        assert ident != saved(store)["openai_conversation_id"]
+        assert await asyncio.gather(*(run(index) for index in range(2))) == ["conv_test", "conv_test"]
+        client.create_conversation.assert_called_once()
+        other = (await documents(store, "job-b"))
+        other_client = provider()
+        other_client.create_conversation.return_value = "conv_other"
+        async with job_conversation(other, other_client) as ident:
+            assert ident != (await saved(store))["openai_conversation_id"]

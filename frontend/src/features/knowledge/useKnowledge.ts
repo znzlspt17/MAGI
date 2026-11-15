@@ -38,6 +38,7 @@ export function useKnowledge({ admin, selectedJobId, onDeleted }: { admin: boole
     [orphans, setOrphans] = useState(false),
     [list, setList] = useState(false),
     [notice, setNotice] = useState(""),
+    [indexStatus, setIndexStatus] = useState<"pending" | "ready" | "failed" | undefined>(),
     [busy, setBusy] = useState(false),
     [spacing, setSpacing] = useState(26),
     [distance, setDistance] = useState(95),
@@ -74,6 +75,7 @@ export function useKnowledge({ admin, selectedJobId, onDeleted }: { admin: boole
     setResults(null);
     setMatches([]);
     setGraph(empty);
+    setIndexStatus(undefined);
     setFocused(false);
   }
   function params() {
@@ -193,12 +195,14 @@ export function useKnowledge({ admin, selectedJobId, onDeleted }: { admin: boole
         const data = decodeKnowledgeGraph(await api(path("graph", p)));
         if (ticket !== generation.current || !active.current) return;
         setGraph(data);
+        setIndexStatus(data.index_status);
         if (query.trim()) {
           const s = params();
           s.set("query", query.trim());
           const result = decodeSearch(await api(path("search", s)));
           if (ticket !== generation.current || !active.current) return;
           setResults(result.nodes);
+          setIndexStatus(result.index_status ?? data.index_status);
           setMatches(result.nodes.map((n) => n.id));
           setList(true);
         }
@@ -364,7 +368,7 @@ export function useKnowledge({ admin, selectedJobId, onDeleted }: { admin: boole
     kind, setKind, status, setStatus, graph,
     results, matches, selected, group, setGroup,
     newRequirement, mode, setMode, setExpanded, orphans,
-    setOrphans, list, setList, notice, busy,
+    setOrphans, list, setList, notice, busy, indexStatus,
     spacing, setSpacing, distance, setDistance, labels,
     setLabels, paused, setPaused, relation, setRelation,
     setRefresh, focused, projectOperation, setProjectOperation, handle,

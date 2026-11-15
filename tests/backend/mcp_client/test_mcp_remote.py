@@ -1,13 +1,15 @@
 """공식 MCP SDK 메시지 교환은 모의 HTTP 전송으로 검증한다."""
 
 import json
+from tests.backend.application.async_helpers import run_async
 
 import httpx
 
 from backend.mcp_client import remote
 
 
-def test_streamable_http_catalog_and_call_with_real_sdk(monkeypatch):
+@run_async
+async def test_streamable_http_catalog_and_call_with_real_sdk(monkeypatch):
     calls = []
     tool = {"name": "find", "description": "find document", "inputSchema": {
         "type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
@@ -38,9 +40,9 @@ def test_streamable_http_catalog_and_call_with_real_sdk(monkeypatch):
 
     monkeypatch.setattr(remote, "public_client", lambda headers=None: httpx.AsyncClient(
         transport=httpx.MockTransport(handle), headers=headers, timeout=30))
-    tools = remote.catalog("https://example.com/mcp", {})
+    tools = await remote.catalog("https://example.com/mcp", {})
     assert len(tools) == 1 and tools[0]["available"] is True
-    result = remote.invoke("https://example.com/mcp", {}, tools[0], {"query": "hello"})
+    result = await remote.invoke("https://example.com/mcp", {}, tools[0], {"query": "hello"})
     assert result == {"status": "ok", "text": 'documentation\nmore\n{"source": "catalog"}'}
     assert calls.count("initialize") == 2
     assert calls.count("tools/list") == 2

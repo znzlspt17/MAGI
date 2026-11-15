@@ -70,8 +70,8 @@ class ExecutionHistory:
     def __init__(self, documents):
         self.documents = documents
 
-    def conversation(self):
-        data = self._load(read_only=True) or {"nodes": [], "executions": []}
+    async def conversation(self):
+        data = (await self._load(read_only=True)) or {"nodes": [], "executions": []}
         result = []
         for execution in data["executions"]:
             nodes = [
@@ -128,11 +128,11 @@ class ExecutionHistory:
             )
         return result
 
-    def start_execution(
+    async def start_execution(
         self, action: str, execution_id: str | None = None, *, input_data: object = None
     ) -> str:
         execution_id = execution_id or uuid4().hex
-        data = self._load()
+        data = (await self._load())
         execution = next(
             (item for item in data["executions"] if item.get("id") == execution_id),
             None,
@@ -161,10 +161,10 @@ class ExecutionHistory:
         ):
             execution["retry_of"] = input_data["retry_of"]
             node["summary"] = "저장된 작업을 다시 시도합니다."
-        self._save(data)
+        (await self._save(data))
         return execution_id
 
-    def stage(
+    async def stage(
         self, execution_id: str, stage: str, state: str, *, result: dict | None = None
     ) -> None:
         if stage not in _STAGES or state not in {
@@ -174,7 +174,7 @@ class ExecutionHistory:
             "failed",
         }:
             return
-        data = self._load()
+        data = (await self._load())
         nodes = data["nodes"]
         current = next(
             (
@@ -200,7 +200,7 @@ class ExecutionHistory:
         elif state == "started":
             if current is None:
                 node = _node(stage, execution_id, "running")
-                node["usage_start"] = _usage_attempt_count(self.documents)
+                node["usage_start"] = (await _usage_attempt_count(self.documents))
                 nodes.append(node)
         else:
             had_start = current is not None
@@ -231,12 +231,12 @@ class ExecutionHistory:
                     attempts.append({"attempt": len(attempts) + 1, **diagnostic})
                 if attempts:
                     current.setdefault("result", {}).setdefault("diagnostic", {})["attempts"] = attempts
-                current["usage"] = _usage_since(self.documents, current.get("usage_start"))
+                current["usage"] = (await _usage_since(self.documents, current.get("usage_start")))
                 # 2026-11-07: 호출 범위와 실행 ID를 끝난 시점에 고정해 이후 이력과 섞지 않는다.
-                current["model_calls"] = _model_calls_since(self.documents, current.get("usage_start"), execution_id)
-        self._save(data)
+                current["model_calls"] = (await _model_calls_since(self.documents, current.get("usage_start"), execution_id))
+        (await self._save(data))
 
-    def terminal(
+    async def terminal(
         self,
         execution_id: str,
         status: str,
@@ -244,7 +244,7 @@ class ExecutionHistory:
         *,
         result: dict | None = None,
     ) -> None:
-        data = self._load()
+        data = (await self._load())
         for item in reversed(data["nodes"]):
             if (
                 item.get("execution_id") == execution_id
@@ -281,7 +281,7 @@ class ExecutionHistory:
                     "status": status,
                     **_safe_result(result or {}),
                 }
-                self._save(data)
+                (await self._save(data))
                 return
         if message or status == "NEEDS_USER_INPUT":
             terminal = _node(
@@ -327,11 +327,11 @@ class ExecutionHistory:
                 if isinstance(prior, dict) and isinstance(prior.get("attempts"), list):
                     terminal.setdefault("result", {}).setdefault("diagnostic", {})["attempts"] = copy.deepcopy(prior["attempts"])
             data["nodes"].append(terminal)
-        self._save(data)
+        (await self._save(data))
 
-    def capture(self, execution_id: str, stage: str, *, state=None) -> None:
+    async def capture(self, execution_id: str, stage: str, *, state=None) -> None:
         """완료 시점 산출물을 복사해 이후 초안 덮어쓰기를 막는다."""
-        data = self._load()
+        data = (await self._load())
         node = next(
             (
                 item
@@ -358,19 +358,19 @@ class ExecutionHistory:
             node["status"] = "waiting"
             node["summary"] = "사용자 답변을 기다리고 있습니다."
         elif stage == "spec_compile":
-            self._copy_document(
+            (await self._copy_document(
                 "draft/approval_candidate_spec.ko.md", detail, node, "draft"
-            )
+            ))
         elif stage in {"checklist_critic", "review_resolution"}:
-            self._copy_document(
+            (await self._copy_document(
                 "draft/approval_candidate_spec.ko.md", detail, node, "draft"
-            )
-            issues = _read_json(
+            ))
+            issues = (await _read_json(
                 root,
                 "review/resolution.json"
                 if stage == "review_resolution"
                 else "review/checklist_issues.json",
-            )
+            ))
             if stage == "review_resolution" and isinstance(issues, dict):
                 detail.setdefault("result", {}).update(
                     {
@@ -413,7 +413,7 @@ class ExecutionHistory:
                     node["status"] = "completed"
                     node["summary"] = "검토를 통과했습니다."
         elif stage == "requirement_lock":
-            sheet = _read_json(root, "analysis/requirement_lock_sheet.json")
+            sheet = (await _read_json(root, "analysis/requirement_lock_sheet.json"))
             if isinstance(sheet, dict):
                 detail["requirements"] = {
                     key: copy.deepcopy(sheet.get(key, []))
@@ -426,28 +426,28 @@ class ExecutionHistory:
                     if isinstance(sheet.get(key), list)
                 }
         elif stage == "compose_candidate":
-            self._copy_document(
+            (await self._copy_document(
                 "draft/approval_candidate_spec.ko.md", detail, node, "candidate"
-            )
-            review = _read_json(root, "analysis/change_review.json")
+            ))
+            review = (await _read_json(root, "analysis/change_review.json"))
             from backend.services.change_review import digest, normalize
 
-            content = self._read_document(detail.get("document", {}))
+            content = (await self._read_document(detail.get("document", {})))
             if isinstance(review, dict) and review.get("after_hash") == digest(
                 normalize(content)
             ):
                 detail["change_review"] = copy.deepcopy(review)
-            pointer = _read_json(root, "state/candidate_snapshot.json")
+            pointer = (await _read_json(root, "state/candidate_snapshot.json"))
             if isinstance(pointer, dict):
                 detail["review_snapshot_id"] = pointer.get("id")
             node["status"] = "waiting_approval"
             node["summary"] = "사용자 승인을 기다리고 있습니다."
         elif stage == "critical_report":
-            self._copy_document(
+            (await self._copy_document(
                 "critical/FAILED_AGENT_SPEC_DRAFT.ko.md", detail, node, "draft"
-            )
+            ))
             try:
-                report = root.read_text("critical/CRITICAL_REPORT.ko.md")
+                report = (await root.read_text("critical/CRITICAL_REPORT.ko.md"))
             except (OSError, UnicodeError):
                 report = ""
             if report:
@@ -470,17 +470,17 @@ class ExecutionHistory:
                 detail["approval_review"] = {"score": evaluation["score"], "evaluation_hash": digest(evaluation),
                     "accepted": saved_state.get("approval_acceptance", {}).get("accepted") is True,
                     "remaining_issue_ids": [item["issue_id"] for item in saved_state.get("structured_issues", []) if item.get("status") != "resolved"]}
-            self._copy_document("final/FINAL_AGENT_SPEC.md", detail, node, "final")
+            (await self._copy_document("final/FINAL_AGENT_SPEC.md", detail, node, "final"))
             saved = root.state
             completed = (
                 (saved.get("latest_completed") or {}) if isinstance(saved, dict) else {}
             )
             if isinstance(completed.get("id"), str) and detail.get("document"):
                 detail["document"]["completed_id"] = completed["id"]
-            pointer = _read_json(root, "state/candidate_snapshot.json")
+            pointer = (await _read_json(root, "state/candidate_snapshot.json"))
             if isinstance(pointer, dict):
                 detail["review_snapshot_id"] = pointer.get("id")
-        self._save(data)
+        (await self._save(data))
 
     @staticmethod
     def _previous_review_issues(
@@ -518,8 +518,8 @@ class ExecutionHistory:
                 return detail
         return {}
 
-    def graph(self) -> dict:
-        data = self._load(read_only=True)
+    async def graph(self) -> dict:
+        data = (await self._load(read_only=True))
         if data is None:
             return {"version": 1, "nodes": [], "recording_incomplete": True}
         nodes = data["nodes"]
@@ -529,20 +529,25 @@ class ExecutionHistory:
             "recording_incomplete": bool(data.get("recording_incomplete")),
         }
 
-    def detail(self, step_id: str) -> dict | None:
+    async def detail(self, step_id: str) -> dict | None:
         from backend.application.history_detail import detail_payload
 
-        data = self._load(read_only=True)
+        data = (await self._load(read_only=True))
         if data is None:
             return None
+        selected: dict = next((node for node in data["nodes"] if node.get("id") == step_id), {})
+        captured = selected.get("detail")
+        document = captured.get("document") if isinstance(captured, dict) else None
+        # 불변 문서를 먼저 비동기로 읽고 상세 응답 조립은 순수 함수로 유지한다.
+        content = await self._read_document(document) if isinstance(document, dict) else None
         payload = detail_payload(data["nodes"], step_id, summarize=_summary_node,
-                                 read_document=self._read_document)
+                                 read_document=lambda _: content)
         if payload is not None and data.get("recording_incomplete"):
             payload["recording_incomplete"] = True
         return payload
 
-    def interrupt_running(self) -> None:
-        data = self._load(read_only=True)
+    async def interrupt_running(self) -> None:
+        data = (await self._load(read_only=True))
         if data is None:
             return
         changed = False
@@ -553,12 +558,12 @@ class ExecutionHistory:
                 node["duration_ms"] = None
                 changed = True
         if changed:
-            self._save(data)
+            (await self._save(data))
 
-    def interrupt_execution(self, execution_id: object) -> None:
+    async def interrupt_execution(self, execution_id: object) -> None:
         if not isinstance(execution_id, str):
             return
-        data = self._load(read_only=True)
+        data = (await self._load(read_only=True))
         if data is None:
             return
         for execution in data["executions"]:
@@ -573,32 +578,32 @@ class ExecutionHistory:
                 node["status"] = "interrupted"
                 node["completed_at"] = None
                 node["duration_ms"] = None
-        self._save(data)
+        (await self._save(data))
 
-    def _copy_document(self, name, detail, node, kind):
-        if not self.documents.exists(name):
+    async def _copy_document(self, name, detail, node, kind):
+        if not (await self.documents.exists(name)):
             node["detail_available"] = False
             return
         detail["document"] = {
-            "version_id": self.documents.reference(name),
+            "version_id": (await self.documents.reference(name)),
             "filename": name.rsplit("/", 1)[-1],
             "kind": kind,
         }
         node["has_document"] = True
 
-    def _read_document(self, document):
+    async def _read_document(self, document):
         ident = document.get("version_id")
-        return self.documents.version(ident) if ident else None
+        return (await self.documents.version(ident)) if ident else None
 
     def _repository(self):
         from backend.infrastructure.history_repository import HistoryRepository
         return HistoryRepository(self.documents, _user_action_result)
 
-    def _load(self, *, read_only=False):
-        return self._repository().load()
+    async def _load(self, *, read_only=False):
+        return (await self._repository().load())
 
-    def _save(self, data):
-        self._repository().save(data)
+    async def _save(self, data):
+        (await self._repository().save(data))
 
 
 def _is_wait_terminal(node: dict) -> bool:
@@ -643,17 +648,17 @@ def _duration(started_at: object, completed_at: object) -> int | None:
         return None
 
 
-def _read_json(documents, name):
-    return documents.read_json(name) if documents.exists(name) else None
+async def _read_json(documents, name):
+    return (await documents.read_json(name)) if (await documents.exists(name)) else None
 
 
-def _usage_attempt_count(documents):
-    value = documents.usage()
+async def _usage_attempt_count(documents):
+    value = (await documents.usage())
     return len(value.get("attempts", []))
 
 
-def _usage_since(documents, start):
-    value = documents.usage()
+async def _usage_since(documents, start):
+    value = (await documents.usage())
     if not isinstance(start, int):
         return None
     return provider_usage_summary(
@@ -661,11 +666,11 @@ def _usage_since(documents, start):
     )
 
 
-def _model_calls_since(documents, start, execution_id):
+async def _model_calls_since(documents, start, execution_id):
     if not isinstance(start, int):
         return []
     from backend.infrastructure.call_usage import public_model_calls
-    value = documents.usage()
+    value = (await documents.usage())
     attempts = value.get("attempts", [])
     if not isinstance(attempts, list):
         return []

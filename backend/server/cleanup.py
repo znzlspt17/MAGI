@@ -18,9 +18,9 @@ from backend.application.activity import tracked as tracked
 
 def synchronized(function):
     @wraps(function)
-    def wrapped(self, *args, **kwargs):
-        with self.lock:
-            return function(self, *args, **kwargs)
+    async def wrapped(self, *args, **kwargs):
+        async with self.lock:
+            return await function(self, *args, **kwargs)
 
     return wrapped
 
@@ -29,46 +29,46 @@ class Cleanup:
     def __init__(self, manager):
         self.manager, self.store = manager, manager.knowledge.store
 
-    def write(self, operation):
-        with self.store.transaction() as conn:
-            conn.execute(
+    async def write(self, operation):
+        async with self.store.transaction() as conn:
+            (await conn.execute(
                 "INSERT INTO cleanup_commits(id,data) VALUES (%s,%s) ON CONFLICT(id) DO UPDATE SET data=EXCLUDED.data",
                 (operation["id"], self.store._json(operation)),
-            )
+            ))
 
-    def load(self, ident):
+    async def load(self, ident):
         if not isinstance(ident, str) or not ID.fullmatch(ident):
             raise CleanupConflict("정리 요청을 확인하세요.")
-        with self.store.transaction(mode="read") as conn:
-            row = conn.execute(
+        async with self.store.transaction(mode="read") as conn:
+            row = (await (await conn.execute(
                 "SELECT data FROM cleanup_commits WHERE id=%s", (ident,)
-            ).fetchone()
+            )).fetchone())
         if not row or not row["data"]:
             raise CleanupConflict("정리 미리보기가 없습니다.")
         return row["data"]
 
-    def catalog(self):
-        with self.store.transaction(mode="read") as conn:
+    async def catalog(self):
+        async with self.store.transaction(mode="read") as conn:
             jobs = [
                 {**r["data"], "owner_id": r["owner_id"]}
-                for r in conn.execute(
+                for r in (await (await conn.execute(
                     "SELECT data,owner_id FROM jobs ORDER BY id"
-                ).fetchall()
+                )).fetchall())
             ]
             pending = [
                 r["id"]
-                for r in conn.execute(
+                for r in (await (await conn.execute(
                     "SELECT id FROM cleanup_commits WHERE data->>'state'='checkpoints_pending'"
-                ).fetchall()
+                )).fetchall())
             ]
         return {
             "jobs": jobs,
-            "projects": self.store.projects(),
+            "projects": (await self.store.projects()),
             "database": True,
             "pending": pending,
         }
 
-    def preview(self, params):
+    async def preview(self, params):
         scope, ids = params.get("scope"), params.get("ids", [])
         if (
             scope not in {"jobs", "projects", "all"}
@@ -78,8 +78,9 @@ class Cleanup:
             raise ValueError("삭제 범위를 확인하세요.")
         if scope != "all" and not ids:
             raise ValueError("삭제할 대상을 선택하세요.")
-        with self.manager.lock, self.store.transaction(mode="maintenance") as conn:
-            inventory = self.store.cleanup_inventory(conn, scope, ids)
+        # 2026-11-13: 유지보수 DB 잠금 대기 중 관리자 메모리 잠금을 붙잡지 않는다.
+        async with self.store.transaction(mode="maintenance") as conn:
+            inventory = (await self.store.cleanup_inventory(conn, scope, ids))
             targets = [j["id"] for j in inventory["jobs"]]
             self.require_idle(targets)
             operation = {
@@ -95,7 +96,7 @@ class Cleanup:
                 "state": "preview",
                 "expires_at": time.time() + 600,
             }
-            self.write(operation)
+            (await self.write(operation))
             return operation
 
     def require_idle(self, targets):
@@ -106,9 +107,9 @@ class Cleanup:
         ):
             raise CleanupConflict("실행·저장 중인 작업은 삭제할 수 없습니다.")
 
-    def execute(self, params):
-        with self.manager.lock, self.store.transaction(mode="maintenance") as conn:
-            op = self.load(params.get("id"))
+    async def execute(self, params):
+        async with self.store.transaction(mode="maintenance") as conn:
+            op = (await self.load(params.get("id")))
             if op["state"] == "completed":
                 return op
             if op["state"] == "preview":
@@ -119,19 +120,19 @@ class Cleanup:
                     raise CleanupConflict(
                         "정리 미리보기와 확인 문구를 다시 확인하세요."
                     )
-                inventory = self.store.cleanup_inventory(conn, op["scope"], op["ids"])
+                inventory = (await self.store.cleanup_inventory(conn, op["scope"], op["ids"]))
                 if inventory["fingerprint"] != op["fingerprint"]:
                     raise CleanupConflict("삭제 대상이 변경되었습니다.")
                 self.require_idle(op["targets"])
-                self.store.cleanup_delete(conn, inventory)
+                (await self.store.cleanup_delete(conn, inventory))
                 op["state"] = "checkpoints_pending"
-                self.write(op)
-        return self.finish(op)
+                (await self.write(op))
+        return (await self.finish(op))
 
-    def finish(self, operation):
+    async def finish(self, operation):
         from backend.infrastructure.workflow_store import delete_workflow_threads
 
-        delete_workflow_threads(self.store, operation["targets"])
+        (await delete_workflow_threads(self.store, operation["targets"]))
         for ident in operation["targets"]:
             self.manager.jobs.pop(ident, None)
             self.manager._activities.pop(ident, None)
@@ -139,13 +140,13 @@ class Cleanup:
                 if key[0] == ident:
                     del self.manager.workspace._document_locks[key]
         operation["state"] = "completed"
-        self.write(operation)
+        (await self.write(operation))
         return operation
 
-    def recover(self):
-        with self.store.transaction(mode="read") as conn:
-            operations = conn.execute(
+    async def recover(self):
+        async with self.store.transaction(mode="read") as conn:
+            operations = (await (await conn.execute(
                 "SELECT data FROM cleanup_commits WHERE data->>'state'='checkpoints_pending'"
-            ).fetchall()
+            )).fetchall())
         for row in operations:
-            self.finish(row["data"])
+            (await self.finish(row["data"]))

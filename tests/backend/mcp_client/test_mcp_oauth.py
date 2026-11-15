@@ -3,7 +3,9 @@
 import asyncio
 import base64
 import hashlib
-from contextlib import contextmanager
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock
+from tests.backend.application.async_helpers import run_async
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -23,7 +25,7 @@ class Result:
     def __init__(self, row=None):
         self.row = row
 
-    def fetchone(self):
+    async def fetchone(self):
         return self.row
 
 
@@ -35,11 +37,11 @@ class MemoryStore:
         self.states = {}
         self.refresh = False
 
-    @contextmanager
-    def transaction(self, **kwargs):
+    @asynccontextmanager
+    async def transaction(self, **kwargs):
         yield self
 
-    def execute(self, sql, params=()):
+    async def execute(self, sql, params=()):
         if sql.startswith("SELECT * FROM mcp_connections"):
             owner, ident = params
             return Result(dict(self.connection) if (owner, ident) == (OWNER, CONNECTION) else None)
@@ -96,8 +98,8 @@ def discovery(monkeypatch):
     monkeypatch.setattr(oauth, "_prepare", prepare)
 
 
-def begin(store):
-    url = oauth.begin(store, OWNER, CONNECTION, SID, ORIGIN)["url"]
+async def begin(store):
+    url = (await oauth.begin(store, OWNER, CONNECTION, SID, ORIGIN))["url"]
     return parse_qs(urlsplit(url).query)
 
 
@@ -124,8 +126,9 @@ def test_oauth_authorize_dns_uses_explicit_https_port(monkeypatch):
     assert observed == [("auth.example", 8443)]
 
 
-def test_state_pkce_and_session_binding(store, discovery, monkeypatch):
-    params = begin(store)
+@run_async
+async def test_state_pkce_and_session_binding(store, discovery, monkeypatch):
+    params = (await begin(store))
     assert params["code_challenge_method"] == ["S256"]
     assert params["resource"] == [RESOURCE]
     state = params["state"][0]
@@ -138,9 +141,9 @@ def test_state_pkce_and_session_binding(store, discovery, monkeypatch):
         return {"access_token": "fake-access", "refresh_token": "fake-refresh", "expires_at": 9999999999}
     monkeypatch.setattr(oauth, "_exchange", fake_exchange)
     with pytest.raises(AccessError):
-        oauth.callback(store, OWNER, "wrong-session", state, "fake-code", ORIGIN)
+        (await oauth.callback(store, OWNER, "wrong-session", state, "fake-code", ORIGIN))
     assert not exchange
-    oauth.callback(store, OWNER, SID, state, "fake-code", ORIGIN)
+    (await oauth.callback(store, OWNER, SID, state, "fake-code", ORIGIN))
     assert exchange[0]["code_verifier"]
     expected = base64.urlsafe_b64encode(hashlib.sha256(exchange[0]["code_verifier"].encode()).digest()).rstrip(b"=").decode()
     assert params["code_challenge"] == [expected]
@@ -148,27 +151,29 @@ def test_state_pkce_and_session_binding(store, discovery, monkeypatch):
     assert tokens["access_token"] == "fake-access"
     assert "fake-access" not in store.connection["secret_ciphertext"]
     with pytest.raises(AccessError):
-        oauth.callback(store, OWNER, SID, state, "fake-code", ORIGIN)
+        (await oauth.callback(store, OWNER, SID, state, "fake-code", ORIGIN))
     assert len(exchange) == 1
 
 
-def test_expired_state_and_changed_connection_fail_before_token_request(store, discovery, monkeypatch):
-    params = begin(store)
+@run_async
+async def test_expired_state_and_changed_connection_fail_before_token_request(store, discovery, monkeypatch):
+    params = (await begin(store))
     next(iter(store.states.values()))["expires_at"] = 0
     with pytest.raises(AccessError):
-        oauth.callback(store, OWNER, SID, params["state"][0], "fake-code", ORIGIN)
-    params = begin(store)
+        (await oauth.callback(store, OWNER, SID, params["state"][0], "fake-code", ORIGIN))
+    params = (await begin(store))
     store.connection["version"] += 1
     called = []
     async def no_exchange(*args):
         called.append(True)
     monkeypatch.setattr(oauth, "_exchange", no_exchange)
     with pytest.raises(AccessError):
-        oauth.callback(store, OWNER, SID, params["state"][0], "fake-code", ORIGIN)
+        (await oauth.callback(store, OWNER, SID, params["state"][0], "fake-code", ORIGIN))
     assert not called
 
 
-def test_token_refresh_rotation_and_pending_uncertainty(store, monkeypatch):
+@run_async
+async def test_token_refresh_rotation_and_pending_uncertainty(store, monkeypatch):
     grant = {"resource": RESOURCE, "issuer": "https://auth.example", "token_endpoint": "https://auth.example/token",
              "client": {"client_id": "test-client", "client_secret": None}}
     store.connection["secret_ciphertext"] = seal(OWNER, CONNECTION, {"oauth_grant": grant,
@@ -177,7 +182,7 @@ def test_token_refresh_rotation_and_pending_uncertainty(store, monkeypatch):
         assert data["refresh_token"] == "old"
         return {"access_token": "fresh", "refresh_token": "rotated", "expires_at": 9999999999}
     monkeypatch.setattr(oauth, "_exchange", exchange)
-    assert oauth.token(store, OWNER, CONNECTION, expected_version=1, expected_resource=RESOURCE) == "fresh"
+    assert (await oauth.token(store, OWNER, CONNECTION, expected_version=1, expected_resource=RESOURCE)) == "fresh"
     assert unseal(OWNER, CONNECTION, store.connection["secret_ciphertext"])["oauth_tokens"]["refresh_token"] == "rotated"
     assert not store.refresh
     saved = unseal(OWNER, CONNECTION, store.connection["secret_ciphertext"])
@@ -185,11 +190,12 @@ def test_token_refresh_rotation_and_pending_uncertainty(store, monkeypatch):
     store.connection["secret_ciphertext"] = seal(OWNER, CONNECTION, saved)
     store.refresh = True
     with pytest.raises(AccessError):
-        oauth.token(store, OWNER, CONNECTION, expected_version=1, expected_resource=RESOURCE)
+        (await oauth.token(store, OWNER, CONNECTION, expected_version=1, expected_resource=RESOURCE))
 
 
 @pytest.mark.parametrize("expires_at", [1, 9999999999])
-def test_stale_connection_never_sends_new_resource_token(store, monkeypatch, expires_at):
+@run_async
+async def test_stale_connection_never_sends_new_resource_token(store, monkeypatch, expires_at):
     from unittest.mock import Mock
     from backend.mcp_client.service import MCPService
 
@@ -200,16 +206,17 @@ def test_stale_connection_never_sends_new_resource_token(store, monkeypatch, exp
         "oauth_grant": {"resource": new_resource, "client": {"client_id": "fake"}},
         "oauth_tokens": {"access_token": "new-fake-token", "refresh_token": "new-fake-refresh", "expires_at": expires_at}}))
     service = MCPService(store)
-    monkeypatch.setattr(service, "available", lambda *_: [(stale, {"name": "find"})])
+    monkeypatch.setattr(service, "available", AsyncMock(return_value=[(stale, {"name": "find"})]))
     network = Mock()
     monkeypatch.setattr("backend.mcp_client.remote.invoke", network)
     with pytest.raises(AccessError, match="변경"):
-        service.invoke(OWNER, [], CONNECTION, "find", {})
+        (await service.invoke(OWNER, [], CONNECTION, "find", {}))
     network.assert_not_called()
     assert not store.refresh
 
 
-def test_refresh_failure_disables_connection_and_retains_reservation(store, monkeypatch):
+@run_async
+async def test_refresh_failure_disables_connection_and_retains_reservation(store, monkeypatch):
     grant = {"resource": RESOURCE, "token_endpoint": "https://auth.example/token", "client": {"client_id": "test"}}
     store.connection.update(enabled=True, status="ready", secret_ciphertext=seal(OWNER, CONNECTION,
         {"oauth_grant": grant, "oauth_tokens": {"access_token": "old", "refresh_token": "old", "expires_at": 1}}))
@@ -217,7 +224,7 @@ def test_refresh_failure_disables_connection_and_retains_reservation(store, monk
         raise OSError("network")
     monkeypatch.setattr(oauth, "_exchange", fail)
     with pytest.raises(AccessError):
-        oauth.token(store, OWNER, CONNECTION, expected_version=1, expected_resource=RESOURCE)
+        (await oauth.token(store, OWNER, CONNECTION, expected_version=1, expected_resource=RESOURCE))
     assert store.connection["status"] == "auth_required" and not store.connection["enabled"]
     assert store.refresh
 
@@ -296,10 +303,11 @@ def test_token_exchange_confidential_client_and_invalid_token_type(monkeypatch):
         asyncio.run(oauth._exchange(grant, {"grant_type": "authorization_code", "code": "sample-code"}))
 
 
-def test_no_refresh_token_marks_connection_unavailable(store):
+@run_async
+async def test_no_refresh_token_marks_connection_unavailable(store):
     grant = {"resource": RESOURCE}
     store.connection.update(status="ready", enabled=True, secret_ciphertext=seal(OWNER, CONNECTION,
         {"oauth_grant": grant, "oauth_tokens": {"access_token": "old", "refresh_token": None, "expires_at": 1}}))
     with pytest.raises(AccessError):
-        oauth.token(store, OWNER, CONNECTION, expected_version=1, expected_resource=RESOURCE)
+        (await oauth.token(store, OWNER, CONNECTION, expected_version=1, expected_resource=RESOURCE))
     assert store.connection["status"] == "auth_required" and not store.connection["enabled"]

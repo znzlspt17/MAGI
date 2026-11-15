@@ -98,7 +98,7 @@ def _time(value):
         return None
 
 
-def validation_page(service, actor, params):
+async def validation_page(service, actor, params):
     service.require_admin(actor)
     if not isinstance(params, dict) or set(params) - {"id", "limit", "offset"}:
         raise AccessError("지원하지 않는 진단 조회 조건입니다.", "invalid")
@@ -108,18 +108,18 @@ def validation_page(service, actor, params):
     limit, offset = _integer(params.get("limit"), 20, 100), _integer(params.get("offset"), 0, 100000)
     if not limit:
         raise AccessError("조회 개수를 확인하세요.", "invalid")
-    with service.store.transaction(mode="read") as conn:
-        if not conn.execute("SELECT id FROM jobs WHERE id=%s", (ident,)).fetchone():
+    async with service.store.transaction(mode="read") as conn:
+        if not (await (await conn.execute("SELECT id FROM jobs WHERE id=%s", (ident,))).fetchone()):
             raise AccessError("작업을 찾을 수 없습니다.", "not_found")
-        rows = conn.execute(
+        rows = (await (await conn.execute(
             "SELECT d.id,d.created_at,CASE WHEN octet_length(b.content)<=65536 THEN b.content ELSE NULL END AS content "
             "FROM document_versions d JOIN document_bodies b ON (b.job_id,b.hash)=(d.job_id,d.content_hash) "
             "WHERE d.job_id=%s AND d.name=%s ORDER BY d.sequence DESC LIMIT %s OFFSET %s",
             (ident, DOCUMENT, limit + 1, offset),
-        ).fetchall()
+        )).fetchall())
         items = [{"record_id": row["id"], "created_at": _time(row["created_at"]), **safe_record(row["content"])} for row in rows[:limit]]
         candidates = list({item["execution_id"] for item in items if item["execution_id"]})
-        linked = {row["id"] for row in conn.execute("SELECT id FROM executions WHERE job_id=%s AND id=ANY(%s)", (ident, candidates)).fetchall()} if candidates else set()
+        linked = {row["id"] for row in (await (await conn.execute("SELECT id FROM executions WHERE job_id=%s AND id=ANY(%s)", (ident, candidates))).fetchall())} if candidates else set()
         for item in items:
             if item["execution_id"] in linked:
                 item["execution_link"] = "confirmed"

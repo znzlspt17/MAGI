@@ -1,6 +1,7 @@
 """사용자 입력마다 보완 예산을 갱신하고 한도에서는 명시적 재개를 기다린다."""
 
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
+from tests.backend.application.async_helpers import run_async
 
 import pytest
 
@@ -20,11 +21,12 @@ def exhausted():
 
 
 @pytest.mark.parametrize("action", ["answer", "message", "revise", "retry"])
-def test_new_segment_resets_budget_without_deleting_evidence(action):
+@run_async
+async def test_new_segment_resets_budget_without_deleting_evidence(action):
     flow = workflow()
     state = {**exhausted(), "resolution_stop": True, "diagnosed_keys": ["weapons:boss_weapon"],
              "pending_input": {"action": action}}
-    fresh = {**state, **flow.prepare(state)}
+    fresh = {**state, **(await flow.prepare(state))}
     assert fresh["critic_pass_count"] == 0
     assert not fresh["resolution_stop"]
     assert fresh["diagnosed_keys"] == []
@@ -36,7 +38,8 @@ def test_new_segment_resets_budget_without_deleting_evidence(action):
         assert "compose_candidate" not in allowed_tasks(fresh, flow.engine.config)
 
 
-def test_answered_weapon_policy_waits_without_model_call(monkeypatch):
+@run_async
+async def test_answered_weapon_policy_waits_without_model_call(monkeypatch):
     import backend.pipeline.planner as planner
 
     flow = workflow()
@@ -44,7 +47,7 @@ def test_answered_weapon_policy_waits_without_model_call(monkeypatch):
     complete = Mock(side_effect=AssertionError("한도 대기에는 모델 호출이 필요하지 않습니다."))
     monkeypatch.setattr(planner, "_complete_once", complete)
     state = exhausted()
-    plan = plan_next(state, flow.nodes)
+    plan = await plan_next(state, flow.nodes)
     assert plan["action"] == "compose_candidate"
     assert "compose_candidate" in allowed_tasks(state, flow.engine.config)
     flow.nodes.interview.assert_not_called()
@@ -52,15 +55,16 @@ def test_answered_weapon_policy_waits_without_model_call(monkeypatch):
     complete.assert_not_called()
 
 
-def test_limit_and_repeated_defect_are_separate_and_pending_questions_win():
+@run_async
+async def test_limit_and_repeated_defect_are_separate_and_pending_questions_win():
     flow = workflow()
     state = exhausted()
     constraints = execution_constraints(state, flow.engine.config)
     assert constraints["repair_limit_reached"] and not constraints["no_progress"]
-    assert plan_next({**state, "resolution_stop": True}, flow.engine)["action"] == "compose_candidate"
+    assert (await plan_next({**state, "resolution_stop": True}, flow.engine))["action"] == "compose_candidate"
     pending = {**state, "blocking_questions": ["[Q2] 새 정책을 정해주세요."]}
     assert "ask_user" in allowed_tasks(pending, flow.engine.config)
-    assert flow.blocked(pending)["status"] == "NEEDS_USER_INPUT"
+    assert (await flow.blocked(pending))["status"] == "NEEDS_USER_INPUT"
 
 
 def test_reviewed_clean_candidate_remains_available_at_limit():
@@ -116,7 +120,8 @@ def test_weapon_answer_is_reused_instead_of_asking_again():
     assert issue.status != "resolved"
 
 
-def test_graph_wait_retry_repair_and_review(monkeypatch):
+@run_async
+async def test_graph_wait_retry_repair_and_review(monkeypatch):
     from backend.models import RequirementLockSheet, RequirementItem
     from langgraph.checkpoint.memory import InMemorySaver
     from langgraph.types import Command
@@ -124,18 +129,19 @@ def test_graph_wait_retry_repair_and_review(monkeypatch):
 
     flow = workflow()
     state = exhausted()
-    flow.nodes.spec_compile = Mock(return_value={})
-    flow.nodes.checklist_critic = Mock(return_value={"critic_pass_count": 1})
+    flow.nodes.spec_compile = AsyncMock(return_value={})
+    flow.nodes.checklist_critic = AsyncMock(return_value={"critic_pass_count": 1})
     repaired = {**state["structured_issues"][0], "status": "resolved"}
     flow.nodes.review_resolution.return_value = {"structured_issues": [repaired], "refinement": {"termination": "max_score"}}
-    flow.nodes.compose_candidate = Mock(return_value={})
+    flow.nodes.compose_candidate = AsyncMock(return_value={})
     flow.writer = Mock()
-    flow.writer.read_text.return_value = "draft"
+    flow.writer.read_text = AsyncMock(return_value="draft")
+    flow.writer.write_text = AsyncMock()
     import hashlib
-    flow._candidate_hash = lambda: hashlib.sha256(b"draft").hexdigest()
-    monkeypatch.setattr("backend.server.execution_history.ExecutionHistory.graph", lambda _: {"nodes": []})
+    flow._candidate_hash = AsyncMock(return_value=hashlib.sha256(b"draft").hexdigest())
+    monkeypatch.setattr("backend.server.execution_history.ExecutionHistory.graph", AsyncMock(return_value={"nodes": []}))
 
-    def plan(current, _):
+    async def plan(current, _):
         if current["critic_pass_count"] >= 3:
             return {"action": "blocked", "stop_reason": "repair_limit", "reason": "횟수 소진"}
         done = current["completed_tasks"]
@@ -152,14 +158,14 @@ def test_graph_wait_retry_repair_and_review(monkeypatch):
     monkeypatch.setattr(agent, "plan_next", plan)
     graph = flow.build(InMemorySaver())
     config = {"configurable": {"thread_id": "repair-retry"}}
-    graph.invoke(state, config)
-    saved = graph.get_state(config)
+    await graph.ainvoke(state, config)
+    saved = await graph.aget_state(config)
     assert saved.tasks[0].interrupts
     assert saved.values["stop_reason"] == ""
     assert "approve" in saved.values["allowed_actions"]
     flow.nodes.spec_compile.assert_not_called()
-    graph.invoke(Command(resume={"action": "retry", "state": saved.values}), config)
-    final = graph.get_state(config).values
+    await graph.ainvoke(Command(resume={"action": "retry", "state": saved.values}), config)
+    final = (await graph.aget_state(config)).values
     flow.nodes.spec_compile.assert_called_once()
     flow.nodes.checklist_critic.assert_called_once()
     flow.nodes.review_resolution.assert_called_once()
@@ -187,7 +193,8 @@ def test_stop_diagnostic_links_proposals_to_changed_draft_reviews():
     assert "확인되지 않습니다" in stop_diagnostic(state)["issues"][0]["attempts"][0]["outcome"]
 
 
-def test_old_terminal_diagnostic_uses_same_execution_only():
+@run_async
+async def test_old_terminal_diagnostic_uses_same_execution_only():
     from types import SimpleNamespace
     from backend.server.execution_history import ExecutionHistory
 
@@ -198,13 +205,13 @@ def test_old_terminal_diagnostic_uses_same_execution_only():
         {"id": "review", "execution_id": "current", "detail": {"issues": [issue]}},
         {"id": "stop", "execution_id": "current", "stage": "workflow", "status": "blocked"},
     ]
-    history._load = lambda **kwargs: {"nodes": nodes}
-    diagnostic = history.detail("stop")["result"]["stop_diagnostic"]
+    history._load = AsyncMock(return_value={"nodes": nodes})
+    diagnostic = (await history.detail("stop"))["result"]["stop_diagnostic"]
     assert diagnostic["issues"][0]["problem"] == issue["problem"]
     assert diagnostic["issues"][0]["attempts"] == []
     assert diagnostic["recording_incomplete"]
     nodes[1].pop("detail")
-    assert history.detail("stop")["result"]["stop_diagnostic"]["issues"] == []
+    assert (await history.detail("stop"))["result"]["stop_diagnostic"]["issues"] == []
 
 
 def test_terminal_diagnostic_records_only_completed_work_counts():

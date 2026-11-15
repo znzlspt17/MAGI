@@ -1,9 +1,7 @@
 """Run the MAGI loopback WebSocket service."""
 
-import asyncio
-
-from backend.server.app import main
+from backend.server.app import run
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    run()

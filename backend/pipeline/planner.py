@@ -58,7 +58,7 @@ RubricRefine은 검토 횟수, 점수 향상, 정체, 종료와 최적 후보 �
 """
 
 
-def plan_next(state, context):
+async def plan_next(state, context):
     execution = evaluate_execution(state, context.config)
     forced = required_plan(state, execution)
     if forced:
@@ -81,9 +81,9 @@ def plan_next(state, context):
         if errors:
             messages.append({"role": "user", "content": "유효하지 않은 계획: " + errors[-1]})
         try:
-            decision = _complete_once(context.writer, context.provider, messages,
+            decision = (await _complete_once(context.writer, context.provider, messages,
                 model=context.config.model_routing["planner"].model, stage="planner",
-                isolated_schema=PlannerDecision)
+                isolated_schema=PlannerDecision))
             if decision.action == "blocked":
                 raise ValueError("No verified stop condition exists; choose a useful permitted action.")
             if decision.action not in allowed:

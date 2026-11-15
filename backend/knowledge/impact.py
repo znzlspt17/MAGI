@@ -10,21 +10,24 @@ READY = {"PASS_PENDING_USER_APPROVAL", "FINALIZED"}
 GROUPS = ("mandatory_requirements", "recommended_requirements", "optional_requirements", "constraints", "non_scope")
 
 
-def impact_context(store, job_id, node_id=None):
-    state = store.state(job_id)
-    with store.transaction(mode="read") as conn:
-        job = conn.execute("SELECT data FROM jobs WHERE id=%s", (job_id,)).fetchone()
+async def impact_context(store, job_id, node_id=None):
+    # 2026-11-13: 이전 명세의 그래프를 최신 명세의 영향으로 해석하지 않는다.
+    if not await store.projection_ready(job_id):
+        raise ValueError("검색 데이터 반영 중입니다. 잠시 후 다시 시도하세요.")
+    state = (await store.state(job_id))
+    async with store.transaction(mode="read") as conn:
+        job = (await (await conn.execute("SELECT data FROM jobs WHERE id=%s", (job_id,))).fetchone())
         if not job:
             raise KeyError(job_id)
         if state.get("status") not in READY or job["data"].get("status") not in READY:
             raise ValueError("승인 후보가 준비된 작업에서 변경 영향을 검토할 수 있습니다.")
         path = "final/FINAL_AGENT_SPEC.md" if state["status"] == "FINALIZED" else "draft/approval_candidate_spec.ko.md"
-        source_hash = digest(store.documents(job_id).read_text(path))
-        rows = conn.execute("SELECT id,logical_key,kind,body,attrs FROM nodes WHERE job_id=%s AND active "
+        source_hash = digest((await store.documents(job_id).read_text(path)))
+        rows = (await (await conn.execute("SELECT id,logical_key,kind,body,attrs FROM nodes WHERE job_id=%s AND active "
             "AND (kind IN ('requirement','decision') AND attrs->>'scope'='product' "
             "OR kind='spec' AND attrs->>'artifact_hash'=%s "
             "OR kind='review' AND attrs->>'reviewed_artifact_hash'=%s) ORDER BY id",
-            (job_id, source_hash, source_hash)).fetchall()
+            (job_id, source_hash, source_hash))).fetchall())
         nodes = {row["id"]: dict(row) for row in rows}
         sheet = state.get("requirement_lock_sheet") or {}
         requirements = {item["id"]: item for group in GROUPS for item in sheet.get(group, [])}
@@ -32,8 +35,8 @@ def impact_context(store, job_id, node_id=None):
         if node_id and (not node or node["kind"] != "requirement" or
                         requirements.get(node["attrs"].get("requirement_id"), {}).get("text") != node["body"]):
             raise ValueError("현재 기준 명세와 일치하는 요구사항을 선택하세요.")
-        edges = conn.execute("SELECT source,target,kind FROM edges WHERE source=ANY(%s) AND target=ANY(%s) "
-            "AND kind IN ('derived','implemented','reviewed') ORDER BY source,target,kind", (list(nodes), list(nodes))).fetchall()
+        edges = (await (await conn.execute("SELECT source,target,kind FROM edges WHERE source=ANY(%s) AND target=ANY(%s) "
+            "AND kind IN ('derived','implemented','reviewed') ORDER BY source,target,kind", (list(nodes), list(nodes)))).fetchall())
     paths = recorded_paths(node_id, nodes, edges) if node_id else []
     basis = {"id": digest([job_id, source_hash, node_id, sorted(nodes), edges]), "job_id": job_id,
              "source_hash": source_hash, "node_id": node_id, "status": state["status"]}

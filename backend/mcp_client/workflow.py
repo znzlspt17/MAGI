@@ -20,9 +20,9 @@ class MCPDecision(BaseModel):
     interview: InterviewResponse | None
 
 
-def interview_messages(nodes, writer, state):
+async def interview_messages(nodes, writer, state):
     try:
-        manifest = writer.read_json("context/project_manifest.json")
+        manifest = await writer.read_json("context/project_manifest.json")
     except Exception:
         manifest = {}
 

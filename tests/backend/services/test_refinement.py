@@ -1,9 +1,11 @@
 """RubricRefine의 점수·후보 선택·재개·승인 경계를 검증한다."""
 from copy import deepcopy
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 import hashlib
 
 import pytest
+from tests.backend.application.async_helpers import run_async
 
 from backend.config import Config
 from backend.errors import InvalidStateError, ReviewValidationError
@@ -14,10 +16,10 @@ from tests.support.rubric_helpers import case, review, failed_review, Documents
 
 
 class MemoryDocuments(Documents):
-    def read_text(self, name):
+    async def read_text(self, name):
         return self.data[name]
 
-    def write_text(self, name, value, **kwargs):
+    async def write_text(self, name, value, **kwargs):
         self.data[name] = value
 
 
@@ -27,25 +29,26 @@ class MemoryDocuments(Documents):
     ([10], "max_score", 1, 0),
     ([8, 8, 8], "patience", 1, 2),
 ])
-def test_algorithm_counts_initial_round_and_preserves_first_best(case, scores, reason, best_round, stale):
+@run_async
+async def test_algorithm_counts_initial_round_and_preserves_first_best(case, scores, reason, best_round, stale):
     docs = MemoryDocuments()
     state = {**case.state, "structured_issues": [], "resolution_history": [{"issues": [], "action": "repair"}]}
     for index, score in enumerate(scores, 1):
         spec = case.spec + f"\nRound {index}"
-        docs.write_text(refinement.DRAFT, spec)
+        (await docs.write_text(refinement.DRAFT, spec))
         value = review(case)
         value.score = score
         state.update(critic_pass_count=index, rubric_evaluation=rubric.validate_evaluation(value, case.record, spec))
-        state["refinement"] = refinement.record_round(docs, state, Config())
+        state["refinement"] = (await refinement.record_round(docs, state, Config()))
         # 같은 평가의 재개에서 라운드를 이중 집계하지 않는다.
-        assert refinement.record_round(docs, state, Config()) == state["refinement"]
+        assert (await refinement.record_round(docs, state, Config())) == state["refinement"]
     current = state["refinement"]
     assert (current["termination"], current["best_round"], current["stale"]) == (reason, best_round, stale)
     assert current["round"] == len(scores)
-    selected = refinement.restore_best(docs, state, case.sheet)
-    assert docs.read_text(refinement.DRAFT).endswith(f"Round {best_round}")
+    selected = (await refinement.restore_best(docs, state, case.sheet))
+    assert (await docs.read_text(refinement.DRAFT)).endswith(f"Round {best_round}")
     assert selected["rubric_evaluation"]["score"] == max(scores)
-    rubric.require_approval_evaluation({**state, **selected}, case.sheet, docs.read_text(refinement.DRAFT))
+    rubric.require_approval_evaluation({**state, **selected}, case.sheet, (await docs.read_text(refinement.DRAFT)))
 
 
 @pytest.mark.parametrize("importance,cap", [("core", 4), ("critical", 7), ("secondary", 9)])
@@ -80,26 +83,27 @@ def test_general_defect_caps_score_even_when_all_rubric_items_pass(case):
     assert rubric.validate_evaluation(value, case.record, case.spec)["score"] == 7
 
 
-def test_restore_keeps_matching_issues_resolution_and_trace(case):
+@run_async
+async def test_restore_keeps_matching_issues_resolution_and_trace(case):
     docs = MemoryDocuments()
     state = {**case.state, "resolution_history": [{"issues": [], "action": "repair"}]}
     for index, score in enumerate((4, 3, 3), 1):
         spec = case.spec + f"\nRound {index}"
-        docs.write_text(refinement.DRAFT, spec)
-        docs.write_json("analysis/spec_trace.json", {"round": index})
+        (await docs.write_text(refinement.DRAFT, spec))
+        (await docs.write_json("analysis/spec_trace.json", {"round": index}))
         value = failed_review(case)
         value.score = score
         state.update(critic_pass_count=index, structured_issues=[{"round": index}],
             rubric_evaluation=rubric.validate_evaluation(value, case.record, spec),
             resolution_history=[{"round": index, "issues": [], "action": "repair"}])
-        state["refinement"] = refinement.record_round(docs, state, Config())
-    selected = refinement.restore_best(docs, state, case.sheet)
+        state["refinement"] = (await refinement.record_round(docs, state, Config()))
+    selected = (await refinement.restore_best(docs, state, case.sheet))
     assert selected["structured_issues"] == [{"round": 1}]
-    assert docs.read_json("review/resolution.json")["round"] == 1
-    assert docs.read_json("analysis/spec_trace.json") == {"round": 1}
+    assert (await docs.read_json("review/resolution.json"))["round"] == 1
+    assert (await docs.read_json("analysis/spec_trace.json")) == {"round": 1}
     docs.data[state["refinement"]["best_path"]]["spec"] += "tampered"
     with pytest.raises(InvalidStateError):
-        refinement.restore_best(docs, state, case.sheet)
+        (await refinement.restore_best(docs, state, case.sheet))
 
 
 def test_segment_resume_and_explicit_extra_execution(case):
@@ -153,63 +157,65 @@ def test_approval_requires_acceptance_bound_to_current_candidate_and_evaluation(
         engine._validate_candidate_for_approval(case.spec, state)
 
 
-def test_end_to_end_selects_best_then_explicit_approval_and_retry(store, monkeypatch):
-    from tests.support.fakes import DecisionProvider
-    from tests.support.workflow_helpers import manager_for
-    from backend.models import SpecDraftResponse
+@run_async
+async def test_end_to_end_selects_best_then_explicit_approval_and_retry(async_store_factory, monkeypatch):
+    async with async_store_factory() as store:
+        from tests.support.fakes import DecisionProvider
+        from tests.support.workflow_helpers import manager_for
+        from backend.models import SpecDraftResponse
 
-    class Provider(DecisionProvider):
-        def complete_result(self, messages, **kwargs):
-            result = super().complete_result(messages, **kwargs)
-            if isinstance(result.parsed, ReviewResponse):
-                result.parsed.score = 8 if self.calls.count(ReviewResponse) == 1 else 7
-            elif isinstance(result.parsed, SpecDraftResponse):
-                result.parsed.architecture[0].text += f" Candidate {self.calls.count(SpecDraftResponse)}."
-            return result
+        class Provider(DecisionProvider):
+            async def complete_result(self, messages, **kwargs):
+                result = (await super().complete_result(messages, **kwargs))
+                if isinstance(result.parsed, ReviewResponse):
+                    result.parsed.score = 8 if self.calls.count(ReviewResponse) == 1 else 7
+                elif isinstance(result.parsed, SpecDraftResponse):
+                    result.parsed.architecture[0].text += f" Candidate {self.calls.count(SpecDraftResponse)}."
+                return result
 
-    provider = Provider([[]] * 10)
-    manager, _ = manager_for(store, monkeypatch, provider)
-    try:
-        ident = manager.create("메모를 저장해주세요")["id"]
-        manager._run(ident, "generate", None)
-        state = manager.workspace.state(ident)
-        assert manager.get(ident)["status"] == "PASS_PENDING_USER_APPROVAL"
-        assert state["refinement"]["termination"] == "patience"
-        assert state["refinement"]["round"] == 3
-        assert state["rubric_evaluation"]["score"] == 8
-        docs = manager.workspace.documents(ident)
-        assert "Candidate 1." in docs.read_text(refinement.DRAFT)
-        public = manager.workspace.public(ident)["state"]["rubric_review"]
-        assert public["requires_acceptance"] and public["selected_round"] == 1
-        # 명시적 추가 실행은 최고점을 유지한 채 새 예산으로 시작한다.
-        job = manager.get(ident)
-        manager.action(ident, "retry", {}, expected_execution_id=job["execution_id"])
-        manager._run(ident, "retry", {})
-        state = manager.workspace.state(ident)
-        assert state["refinement"]["cycle"] == 2
-        assert state["refinement"]["round"] == 2
-        assert state["rubric_evaluation"]["score"] == 8
-        job = manager.get(ident)
-        payload = {"candidate_hash": state["candidate_hash"], "evaluation_hash": rubric.digest(state["rubric_evaluation"]), "accept_remaining_issues": True}
-        from backend.engine import Engine
-        before_calls = len(provider.calls)
-        for invalid in ({**payload, "evaluation_hash": "stale"}, {key: value for key, value in payload.items() if key != "evaluation_hash"}):
-            with pytest.raises(InvalidStateError):
-                Engine(docs, None, provider=provider).execute("approve", invalid)
-        assert len(provider.calls) == before_calls
-        manager.action(ident, "approve", payload, expected_execution_id=job["execution_id"])
-        manager._run(ident, "approve", payload)
-        state = manager.workspace.state(ident)
-        assert manager.get(ident)["status"] == "FINALIZED"
-        completed = docs.read_json(state["latest_completed"]["path"])
-        assert completed["review"]["score"] == 8
-        assert completed["review"]["acceptance"]["accepted"] is True
-        from backend.application.execution_history import ExecutionHistory
-        history = ExecutionHistory(docs)
-        approval = next(item for item in reversed(history.graph()["nodes"]) if item.get("stage") == "approve")
-        assert history.detail(approval["id"])["approval_review"]["score"] == 8
-    finally:
-        manager.close()
+        provider = Provider([[]] * 10)
+        manager, _ = (await manager_for(store, monkeypatch, provider))
+        try:
+            ident = (await manager.create("메모를 저장해주세요"))["id"]
+            (await manager._run(ident, "generate", None))
+            state = (await manager.workspace.state(ident))
+            assert (await manager.get(ident))["status"] == "PASS_PENDING_USER_APPROVAL"
+            assert state["refinement"]["termination"] == "patience"
+            assert state["refinement"]["round"] == 3
+            assert state["rubric_evaluation"]["score"] == 8
+            docs = (await manager.workspace.documents(ident))
+            assert "Candidate 1." in (await docs.read_text(refinement.DRAFT))
+            public = (await manager.workspace.public(ident))["state"]["rubric_review"]
+            assert public["requires_acceptance"] and public["selected_round"] == 1
+            # 명시적 추가 실행은 최고점을 유지한 채 새 예산으로 시작한다.
+            job = (await manager.get(ident))
+            (await manager.action(ident, "retry", {}, expected_execution_id=job["execution_id"]))
+            (await manager._run(ident, "retry", {}))
+            state = (await manager.workspace.state(ident))
+            assert state["refinement"]["cycle"] == 2
+            assert state["refinement"]["round"] == 2
+            assert state["rubric_evaluation"]["score"] == 8
+            job = (await manager.get(ident))
+            payload = {"candidate_hash": state["candidate_hash"], "evaluation_hash": rubric.digest(state["rubric_evaluation"]), "accept_remaining_issues": True}
+            from backend.engine import Engine
+            before_calls = len(provider.calls)
+            for invalid in ({**payload, "evaluation_hash": "stale"}, {key: value for key, value in payload.items() if key != "evaluation_hash"}):
+                with pytest.raises(InvalidStateError):
+                    (await Engine(docs, None, provider=provider).execute("approve", invalid))
+            assert len(provider.calls) == before_calls
+            (await manager.action(ident, "approve", payload, expected_execution_id=job["execution_id"]))
+            (await manager._run(ident, "approve", payload))
+            state = (await manager.workspace.state(ident))
+            assert (await manager.get(ident))["status"] == "FINALIZED"
+            completed = (await docs.read_json(state["latest_completed"]["path"]))
+            assert completed["review"]["score"] == 8
+            assert completed["review"]["acceptance"]["accepted"] is True
+            from backend.application.execution_history import ExecutionHistory
+            history = ExecutionHistory(docs)
+            approval = next(item for item in reversed((await history.graph())["nodes"]) if item.get("stage") == "approve")
+            assert (await history.detail(approval["id"]))["approval_review"]["score"] == 8
+        finally:
+            (await manager.close())
 
 
 def test_approval_command_acceptance_is_strict_and_approve_only():
@@ -226,7 +232,8 @@ def test_approval_command_acceptance_is_strict_and_approve_only():
         JobCommand(kind="retry", job_id="j", execution_id="e", accept_remaining_issues=True)
 
 
-def test_legacy_pending_candidate_requires_reassessment_and_can_resume_without_new_input(case, monkeypatch):
+@run_async
+async def test_legacy_pending_candidate_requires_reassessment_and_can_resume_without_new_input(case, monkeypatch):
     from backend.services.refinement import needs_upgrade
     from backend.application.job_queries import JobQueries
     from tests.support.assessment_helpers import workflow
@@ -238,12 +245,13 @@ def test_legacy_pending_candidate_requires_reassessment_and_can_resume_without_n
         "pending_input": {"action": "retry"}}
     assert needs_upgrade(state)
     assert not needs_upgrade({**state, "status": "FINALIZED"})
-    access = SimpleNamespace(documents=lambda _: None, get=lambda _: {"status": state["status"]},
-        read_json=lambda *_: None, read_text=lambda *_: None, state=lambda _: state)
-    allowed = JobQueries(access).allowed("legacy")
+    access = SimpleNamespace(documents=AsyncMock(return_value=None), get=AsyncMock(return_value={"status": state["status"]}),
+        read_json=AsyncMock(return_value=None), read_text=AsyncMock(return_value=None), state=AsyncMock(return_value=state),
+        knowledge=None)
+    allowed = (await JobQueries(access).allowed("legacy"))
     assert "retry" in allowed and "approve" not in allowed
     monkeypatch.setattr(agent, "interrupt", lambda _: {"action": "retry", "state": state})
-    command = workflow().wait(state)
+    command = (await workflow().wait(state))
     assert command.goto == "prepare"
     result = prepare_segment(state)
     assert result["rubric_evaluation"] == result["refinement"] == {}
@@ -273,7 +281,8 @@ def test_public_review_only_exposes_structured_allowlisted_fields(case):
     assert "MODEL_RAW" not in str(result)
 
 
-def test_legacy_approval_retry_reaches_graph_instead_of_returning_unchanged(case, monkeypatch):
+@run_async
+async def test_legacy_approval_retry_reaches_graph_instead_of_returning_unchanged(case, monkeypatch):
     from unittest.mock import Mock
     from backend.engine import Engine
     from backend.pipeline.agent_workflow import AgentWorkflow
@@ -281,11 +290,11 @@ def test_legacy_approval_retry_reaches_graph_instead_of_returning_unchanged(case
         "allowed_actions": ["approve", "message", "revise"], "workflow_schema": 1,
         "rubric": {**case.record, "policy_version": 2}})
     docs = MemoryDocuments()
-    docs.workflow_snapshot = lambda: SimpleNamespace(next=("wait",), tasks=[SimpleNamespace(interrupts=True)])
-    docs.write_json("evidence/evidence_registry.json", {})
+    docs.workflow_snapshot = AsyncMock(return_value=SimpleNamespace(next=("wait",), tasks=[SimpleNamespace(interrupts=True)]))
+    (await docs.write_json("evidence/evidence_registry.json", {}))
     engine = Engine(docs, None, provider=object())
-    engine.load = lambda: state
-    run = Mock(return_value=state)
+    engine.load = AsyncMock(return_value=state)
+    run = AsyncMock(return_value=state)
     monkeypatch.setattr(AgentWorkflow, "run", run)
-    engine.execute("retry", {})
+    (await engine.execute("retry", {}))
     run.assert_called_once()

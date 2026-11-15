@@ -43,9 +43,19 @@ class PromptContext:
     def __init__(self, writer=None):
         self.writer = writer
         self.data: dict[str, dict[str, dict[str, Any]]] = {"sources": {}, "knowledge": {}}
-        if writer is not None and writer.exists(PATH):
+        self.available: dict[str, set[str]] = {"sources": set(), "knowledge": set()}
+        self.aliases = {}
+        self.source_items = {}
+        self.semantic_ids = set()
+        self.basis_source_aliases = set()
+        self.stage = None
+
+    @classmethod
+    async def create(cls, writer=None):
+        self = cls(writer)
+        if writer is not None and await writer.exists(PATH):
             try:
-                self.data = writer.read_json(PATH)
+                self.data = await writer.read_json(PATH)
                 for group, prefix in (("sources", "S"), ("knowledge", "K")):
                     entries = self.data[group]
                     if not isinstance(entries, dict) or any(
@@ -59,12 +69,7 @@ class PromptContext:
                         raise ValueError()
             except (OSError, ValueError, TypeError, KeyError):
                 raise ArtifactError("모델 출처 대응표를 읽을 수 없습니다.") from None
-        self.available: dict[str, set[str]] = {"sources": set(), "knowledge": set()}
-        self.aliases = {}
-        self.source_items = {}
-        self.semantic_ids = set()
-        self.basis_source_aliases = set()
-        self.stage = None
+        return self
 
     def source(self, alias, text, *, question=""):
         if not isinstance(text, str) or not text:
@@ -117,11 +122,11 @@ class PromptContext:
         self.available["knowledge"].add(ref)
         return ref
 
-    def persist(self):
+    async def persist(self):
         if self.writer is None:
             return
         # 파일과 DB 복원이 같은 번호를 사용하도록 원격 호출보다 먼저 기록한다.
-        self.writer.write_json(PATH, self.data)
+        await self.writer.write_json(PATH, self.data)
 
     def project(self, value, key=""):
         """구조화 필드만 변환하며 원문·인용·코드 문자열은 수정하지 않는다."""
@@ -238,9 +243,9 @@ class PromptContext:
                 "conflicting_source": [feedback] if feedback in sources else []}
 
 
-def prepare_context(writer, payload, stage):
+async def prepare_context(writer, payload, stage):
     """단계별 공개 입력을 만들고 호출 단위의 출처 허용 목록을 고정한다."""
-    context = PromptContext(writer)
+    context = await PromptContext.create(writer)
     context.stage = stage
     if stage not in CANONICAL_FIELDS:
         return payload, context
@@ -378,5 +383,5 @@ def prepare_context(writer, payload, stage):
     result = [*instructions, {"role": "system", "content": REFERENCE_RULES},
               {"role": "user", "content": "원본 사용자 요청 (변경 불가):\n" + original},
               {"role": "user", "content": "확정 문맥:\n" + json.dumps(canonical, ensure_ascii=False)}, *dynamic]
-    context.persist()
+    await context.persist()
     return result, context

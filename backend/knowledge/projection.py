@@ -16,9 +16,9 @@ def project(job_id, state, artifacts, stage=None):
     nodes, edges, keys = [], [], {}
     actual = confirmed_sources(state)
     actual.update(state.get("confirmed_user_sources", {}))
-    requirements_stage = stage in {None, "requirement_lock", "spec_compile", "checklist_critic", "review_resolution", "approve"}
-    spec_stage = stage in {None, "spec_compile", "checklist_critic", "review_resolution", "approve"}
-    review_stage = stage in {None, "checklist_critic", "review_resolution"}
+    requirements_stage = stage in {None, "requirement_lock", "spec_compile", "checklist_critic", "review_resolution", "compose_candidate", "approve"}
+    spec_stage = stage in {None, "spec_compile", "checklist_critic", "review_resolution", "compose_candidate", "approve"}
+    review_stage = stage in {None, "checklist_critic", "review_resolution", "compose_candidate"}
 
     def add(key, kind, body, **attrs):
         if kind in {"requirement", "decision", "spec"}:
@@ -32,6 +32,15 @@ def project(job_id, state, artifacts, stage=None):
         if source and target:
             edges.append({"id": digest([source, target, kind]), "source": source,
                           "target": target, "kind": kind, "attrs": attrs})
+
+    if stage == 'accepted_input':
+        # 2026-11-13: 수락된 원문은 검증된 요구사항이나 결정으로 승격하지 않는다.
+        raw = state.get('payload')
+        body = raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False, sort_keys=True)
+        if body:
+            add('accepted_input:' + state['execution_id'], 'input', body,
+                actor='user', status='received', source='execution', action=state.get('action'))
+        return nodes, edges
 
     request = state.get("original_user_request") or state.get("user_request") or artifacts.get("raw/user_request.md", "")
     if request:

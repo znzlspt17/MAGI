@@ -8,16 +8,18 @@ if TYPE_CHECKING:
     from backend.infrastructure.progress_publisher import ProgressPublisher
 
 import copy
+import asyncio
 from protocol.logging import get_logger
 import re
-import threading
-from concurrent.futures import ThreadPoolExecutor
+from backend.server.async_locks import AsyncRLock
 from datetime import UTC, datetime
 from uuid import uuid4
 
 from backend.access.context import ACTOR, DEFERRED, ADMISSION
+from backend.access.capacity import MAX_ADMITTED, MAX_PARALLEL
+from backend.access.ownership import can_access, owner_ids
 from backend.engine import Engine
-from backend.server.cleanup import Cleanup, CleanupConflict, synchronized, tracked
+from backend.server.cleanup import Cleanup, CleanupConflict, tracked
 from backend.server.diagnostics import diagnose_exception, safe_user_error
 from backend.server.execution_history import ExecutionHistory
 
@@ -35,9 +37,13 @@ class JobManager:
             engine_factory,
             on_change,
         )
-        self.lock = threading.RLock()
-        self.executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="workflow")
+        self.lock = AsyncRLock()
+        self._job_locks: dict[str, AsyncRLock] = {}
+        self._pending_admissions = 0
+        self._run_slots = asyncio.Semaphore(MAX_PARALLEL)
         self._futures = {}
+        self._started_futures: set[asyncio.Task] = set()
+        self._recovery_tasks: set[asyncio.Task] = set()
         self._activities: dict[str, int] = {}
         self.closed = False
         self.progress_publisher: ProgressPublisher | None = None
@@ -46,40 +52,67 @@ class JobManager:
         self.workspace = Workspace(
             knowledge, engine_factory, self.lock, self._activities
         )
-        self.jobs = {j["id"]: j for j in knowledge.store.jobs()}
+        self.jobs = {}
+        self._next_order = 0
+        self.cleanup = Cleanup(self)
+
+    @classmethod
+    async def build(cls, knowledge, *, engine_factory=Engine, on_change=None):
+        # 2026-11-13: 초기 DB 복구를 이벤트 루프에서 비동기로 완료한 후 요청을 받는다.
+        self = cls(knowledge, engine_factory=engine_factory, on_change=on_change)
+        self.jobs = {j["id"]: j for j in await knowledge.store.jobs()}
         self._next_order = max(
             (j.get("order", 0) for j in self.jobs.values()), default=0
         )
-        self.cleanup = Cleanup(self)
-        self.cleanup.recover()
+        await self.cleanup.recover()
         for job in self.jobs.values():
             if job["status"] in _ACTIVE:
                 job.update(
                     status="interrupted",
                     message="실행이 중단되었습니다. 명시적으로 재개해주세요.",
                 )
-                knowledge.store.save_job(job)
-                ExecutionHistory(
-                    self.workspace.documents(job["id"])
+                await knowledge.store.save_job(job)
+                await ExecutionHistory(
+                    await self.workspace.documents(job["id"])
                 ).interrupt_execution(job.get("execution_id"))
+        return self
 
-    def close(self):
+    async def close(self):
         self.closed = True
-        self.executor.shutdown(wait=True, cancel_futures=True)
+        tasks = list(self._futures)
+        # 2026-11-13: 시작한 실행은 커밋을 마치게 하고 대기열만 복구 대상으로 돌린다.
+        for task in tasks:
+            ident, _execution = self._futures[task]
+            if self.jobs.get(ident, {}).get("status") == "queued":
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        if self._recovery_tasks:
+            await asyncio.gather(*self._recovery_tasks, return_exceptions=True)
         if self.progress_publisher:
-            self.progress_publisher.close()
+            await self.progress_publisher.close()
         if getattr(self, "public_service", None):
-            self.public_service.recovery.close()
-        self.knowledge.close()
+            await self.public_service.recovery.close()
+        await self.knowledge.close()
 
-    @synchronized
-    def create(self, request, provider=None, project_id=None, decision_reuse=None):
+    async def create(self, request, provider=None, project_id=None, decision_reuse=None):
+        # 2026-11-13: DB를 기다리는 신규 접수도 200개 한도에 즉시 반영한다.
+        self._reserve_admission()
+        try:
+            return await self._create(request, provider=provider, project_id=project_id, decision_reuse=decision_reuse)
+        finally:
+            self._pending_admissions -= 1
+
+    def _reserve_admission(self):
         self._require_open()
         if (
-            sum(j.get("status") in {"queued", "running"} for j in self.jobs.values())
-            >= 20
+            sum(j.get("status") in {"queued", "running"} for j in self.jobs.values()) + self._pending_admissions
+            >= MAX_ADMITTED
         ):
             raise CleanupConflict("작업 대기열이 가득 찼습니다.")
+        self._pending_admissions += 1
+
+    async def _create(self, request, provider=None, project_id=None, decision_reuse=None):
         if not isinstance(request, str) or not request.strip() or len(request) > 20000:
             raise ValueError("개발 요청을 확인하세요.")
         if provider not in {None, "openai"}:
@@ -113,31 +146,36 @@ class JobManager:
         )
         if actor is not None:
             from backend.mcp_client.service import MCPService
-            job["mcp_snapshot"] = MCPService(self.knowledge.store).snapshot(actor["id"])
-        with self.knowledge.store.transaction():
-            self.knowledge.store.accept_job(job, request.strip())
-            self.workspace._validate_reuse_sources(job["reused_decisions"])
+            job["mcp_snapshot"] = await MCPService(self.knowledge.store).snapshot(owner_ids(actor))
+        async with self.knowledge.store.transaction():
+            await self.knowledge.store.accept_job(job, request.strip())
+            await self.workspace._validate_reuse_sources(job["reused_decisions"])
+            await ExecutionHistory(await self.workspace.documents(ident)).start_execution(
+                "generate", job["execution_id"], input_data=request.strip()
+            )
         self.jobs[ident] = job
-        ExecutionHistory(self.workspace.documents(ident)).start_execution(
-            "generate", job["execution_id"], input_data=request.strip()
-        )
         self._submit_locked(ident, "generate", request.strip())
         return copy.deepcopy(job)
 
-    @synchronized
-    def action(
+    async def action(
+        self, ident, action, payload, *, continuation=False, expected_execution_id=None
+    ):
+        async with self.job_lock(ident):
+            self._reserve_admission()
+            try:
+                return await self._action_locked(ident, action, payload, continuation=continuation,
+                                                 expected_execution_id=expected_execution_id)
+            finally:
+                self._pending_admissions -= 1
+
+    async def _action_locked(
         self, ident, action, payload, *, continuation=False, expected_execution_id=None
     ):
         self._require_open()
-        if (
-            sum(j.get("status") in {"queued", "running"} for j in self.jobs.values())
-            >= 20
-        ):
-            raise CleanupConflict("작업 대기열이 가득 찼습니다.")
         job = self._get_locked(ident)
         if (
             expected_execution_id != job.get("execution_id")
-            or action not in self.workspace.allowed(ident)
+            or action not in await self.workspace.allowed(ident)
         ):
             raise CleanupConflict("작업 상태가 바뀌었습니다. 최신 대화를 확인하세요.")
         if self._activities.get(ident):
@@ -145,7 +183,7 @@ class JobManager:
         previous = copy.deepcopy(job)
         if action == "retry":
             from backend.infrastructure.workflow_store import retry_state
-            recovery = retry_state(self.workspace.documents(ident))
+            recovery = await retry_state(await self.workspace.documents(ident))
             if recovery["retry_requires_replay"] and not (isinstance(payload, dict) and payload.get("replay_pending") is True):
                 raise CleanupConflict("이전 MCP 도구 호출의 완료 여부가 불확실합니다. 도구를 다시 실행하려면 확인이 필요합니다."
                     if recovery.get("retry_kind") == "mcp" else
@@ -162,46 +200,46 @@ class JobManager:
             execution_id=(ADMISSION.get() or (None, uuid4().hex))[1],
         )
         try:
-            self.knowledge.store.record_action(job, payload)
-            ExecutionHistory(self.workspace.documents(ident)).start_execution(
+            await self.knowledge.store.record_action(job, payload)
+            await ExecutionHistory(await self.workspace.documents(ident)).start_execution(
                 action, job["execution_id"], input_data=payload
             )
             self._submit_locked(ident, action, payload)
-        except Exception:
+        except (Exception, asyncio.CancelledError):
             self.jobs[ident] = previous
             raise
         return copy.deepcopy(job)
 
-    def retry(self, ident, execution_id, *, replay_pending=False):
-        return self.action(
+    async def retry(self, ident, execution_id, *, replay_pending=False):
+        return await self.action(
             ident,
             "retry",
             {"retry_of": execution_id, "replay_pending": replay_pending},
             expected_execution_id=execution_id,
         )
 
-    def continue_session(self, ident, payload, expected_execution_id):
-        return self.action(
+    async def continue_session(self, ident, payload, expected_execution_id):
+        return await self.action(
             ident, "continue", payload, expected_execution_id=expected_execution_id
         )
 
     @tracked
-    def _run(self, ident, action, payload, *, meter=None):
+    async def _run(self, ident, action, payload, *, meter=None):
         from protocol.logging import log_context
         with log_context(job_id=ident, execution_id=self.jobs[ident].get("execution_id")):
-            return self._run_logged(ident, action, payload, meter=meter)
+            return await self._run_logged(ident, action, payload, meter=meter)
 
-    def _run_logged(self, ident, action, payload, *, meter=None):
-        with self.lock:
+    async def _run_logged(self, ident, action, payload, *, meter=None):
+        async with self.job_lock(ident):
             job = self._get_locked(ident)
             job.update(status="running", updated_at=_utc_now())
-            if not self._save_locked(job, meter=meter):
+            if not await self._save_locked(job, meter=meter):
                 raise RuntimeError("작업 시작을 저장하지 못했습니다.")
         self._notify(job)
-        history = ExecutionHistory(self.workspace.documents(ident))
+        history = ExecutionHistory(await self.workspace.documents(ident))
         try:
-            engine = self.workspace.engine(ident, meter=meter)
-            result = engine.execute(
+            engine = await self.workspace.engine(ident, meter=meter)
+            result = await engine.execute(
                 action,
                 job["request"] if action == "generate" else payload,
                 on_progress=lambda event: self._engine_progress(
@@ -230,37 +268,39 @@ class JobManager:
                 attempt=getattr(exc, "validation_attempt", None),
                 max_attempts=getattr(exc, "validation_max_attempts", None),
             )
-        with self.lock, self.knowledge.store.transaction():
+        # 체크포인터가 별도 풀 연결을 빌리므로 저장 트랜잭션을 잡기 전에 읽는다.
+        state = await self.workspace.state(ident)
+        async with self.job_lock(ident), self.knowledge.store.transaction():
             job.update(status=status, message=message, updated_at=_utc_now())
             if diagnostic:
                 self._set_error_metadata(job, diagnostic)
             else:
                 self._clear_error_metadata(job)
-            if not self._save_locked(job, meter=meter):
+            if not await self._save_locked(job, meter=meter):
                 raise RuntimeError("작업 결과를 저장하지 못했습니다.")
-            state = self.workspace.state(ident)
             if action == "approve" and status == "FINALIZED":
-                history.capture(job["execution_id"], "approve", state=state)
-            history.terminal(job["execution_id"], status, message,
+                await history.capture(job["execution_id"], "approve", state=state)
+            await history.terminal(job["execution_id"], status, message,
                              result={**state, **({"diagnostic": diagnostic} if diagnostic else {})})
         self._notify(job)
 
-    def _engine_progress(self, ident, event, *, meter=None):
+    async def _engine_progress(self, ident, event, *, meter=None):
         # 세대 검증·작업 상태·단계 이력·outbox를 하나의 커밋으로 묶는다.
-        with self.lock, self.knowledge.store.transaction():
+        state = await self.workspace.state(ident) if event["state"] == "completed" else None
+        async with self.job_lock(ident), self.knowledge.store.transaction():
             job = self._get_locked(ident)
             job["progress"] = {k: event[k] for k in ("stage", "state", "result") if k in event}
             job["updated_at"] = _utc_now()
-            self.knowledge.store.save_job(job, expected_generation=meter.generation if meter else None)
-            history = ExecutionHistory(self.workspace.documents(ident))
-            history.stage(job["execution_id"], event["stage"], event["state"], result=event.get("result"))
+            await self.knowledge.store.save_job(job, expected_generation=meter.generation if meter else None)
+            history = ExecutionHistory(await self.workspace.documents(ident))
+            await history.stage(job["execution_id"], event["stage"], event["state"], result=event.get("result"))
             if event["state"] == "completed":
-                history.capture(job["execution_id"], event["stage"], state=self.workspace.state(ident))
+                await history.capture(job["execution_id"], event["stage"], state=state)
         self._notify(job)
 
-    def _save_locked(self, job, *, meter=None):
+    async def _save_locked(self, job, *, meter=None):
         try:
-            self.knowledge.store.save_job(
+            await self.knowledge.store.save_job(
                 job, expected_generation=meter.generation if meter else None
             )
             return True
@@ -279,9 +319,9 @@ class JobManager:
                 }
             )
 
-    def ids(self) -> list[str]:
+    async def ids(self) -> list[str]:
         actor = ACTOR.get()
-        with self.lock:
+        async with self.lock:
             return [
                 job["id"]
                 for job in sorted(
@@ -289,12 +329,15 @@ class JobManager:
                     key=lambda item: (item.get("updated_at", ""), item["order"]),
                     reverse=True,
                 )
-                if actor is None or job.get("owner_id") == actor["id"]
+                if can_access(actor, job.get("owner_id"))
             ]
 
-    def get(self, ident: str) -> dict:
-        with self.lock:
+    async def get(self, ident: str) -> dict:
+        async with self.lock:
             return self._snapshot(self._get_locked(ident))
+
+    def job_lock(self, ident: str) -> AsyncRLock:
+        return self._job_locks.setdefault(ident, AsyncRLock())
 
     def _submit_locked(self, ident: str, action: str, payload: object) -> None:
         deferred = DEFERRED.get()
@@ -309,35 +352,45 @@ class JobManager:
             execution = Execution.from_job(self.jobs[ident])
         try:
             from contextvars import copy_context
+            from backend.knowledge.store import ASYNC_TRANSACTION
 
             run = service.worker if service else self._run
             kwargs = {"execution": execution} if service else {}
             context = copy_context()
-            future = self.executor.submit(
-                context.run, lambda: run(ident, action, payload, **kwargs)
-            )
+            # 요청의 열린 트랜잭션은 워커 태스크에 상속시키지 않는다.
+            context.run(ASYNC_TRANSACTION.set, None)
+            context.run(DEFERRED.set, None)
+            async def execute():
+                current = asyncio.current_task()
+                if current is not None:
+                    self._started_futures.add(current)
+                if service:
+                    await run(ident, action, payload, **kwargs)
+                else:
+                    async with self._run_slots:
+                        await run(ident, action, payload, **kwargs)
+            loop = asyncio.get_running_loop()
+            future = loop.create_task(execute(), context=context)
         except RuntimeError as exc:
-            if service and execution is not None:
-                from backend.access.recovery import Failure
-
-                service.recovery.record(Failure(execution, False, execution.initial))
             raise RuntimeError("작업 큐를 사용할 수 없습니다.") from exc
         self._futures[future] = (ident, execution)
         future.add_done_callback(self._worker_done)
 
     def _worker_done(self, future):
-        with self.lock:
-            tracked = self._futures.pop(future, None)
+        tracked = self._futures.pop(future, None)
+        started = future in self._started_futures
+        self._started_futures.discard(future)
         if tracked is None:
             return
         ident, execution = tracked
         if future.cancelled():
-            if execution is not None:
+            if execution is not None and not started:
                 from backend.access.recovery import Failure
 
-                self.public_service.recovery.record(
-                    Failure(execution, False, execution.initial)
-                )
+                recovery = asyncio.create_task(self.public_service.recovery.record(
+                    Failure(execution, False, execution.initial)))
+                self._recovery_tasks.add(recovery)
+                recovery.add_done_callback(self._recovery_tasks.discard)
             return
         exc = future.exception()
         if exc is not None:
@@ -373,7 +426,7 @@ class JobManager:
             raise KeyError(ident)
         job = self.jobs[ident]
         actor = ACTOR.get()
-        if actor is not None and job.get("owner_id") != actor["id"]:
+        if not can_access(actor, job.get("owner_id")):
             raise KeyError(ident)
         return job
 

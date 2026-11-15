@@ -28,7 +28,7 @@ class RequirementLockBuilder:
 
     agent_id = "interviewer"
 
-    def build(
+    async def build(
         self,
         state: Mapping[str, Any],
         manifest: dict[str, Any],
@@ -47,7 +47,7 @@ class RequirementLockBuilder:
         limit = attempt_limit()
         for attempt in range(limit):
             # 통신 오류는 검증 보정과 분리하고 그대로 전달한다.
-            raw = provider_messages_fn(payload)
+            raw = await provider_messages_fn(payload)
             try:
                 if not isinstance(raw, LockResponse):
                     raise _response_validation_error(None)
