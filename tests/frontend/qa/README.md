@@ -23,6 +23,8 @@ http://127.0.0.1:5173 에서 실제 경로를 연다. HMR은 꺼져 있으므로
 
 작업 ID는 `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`이며, `/jobs/<ID>` 및 `/admin/data?job_id=<ID>`로 직접 진입한다. 가짜 응답의 변경 요청도 로컬 응답만 반환한다.
 
+익명 세션의 동시 탭 발급은 저장소 루트에서 `node tests/frontend/qa/anonymous-tabs.mjs`로 검사한다. 현재 프론트엔드 소스를 임시 폴더에 빌드하고 가짜 로컬 서버와 실제 브라우저 쿠키, Web Locks를 사용한다.
+
 과거 2026-10-25 점검의 스크린샷·측정값 저장 위치는 `.cache/ui-audit/`다. 현재 Astryx 화면의 자동 검사 출력은 아래 경로를 사용한다. `.cache/`는 로컬 산출물이므로 새 체크아웃에서는 검사를 실행해 생성한다.
 
 ## 공통 디자인 회귀 검사
