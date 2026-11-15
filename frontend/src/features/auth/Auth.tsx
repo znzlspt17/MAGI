@@ -94,8 +94,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     realtimeConnected.current = false;
     setReady(false);
     if (logout) {
-      sessionStorage.removeItem(LINK_STATE);
-      sessionStorage.removeItem("return-path");
+      try { sessionStorage.removeItem(LINK_STATE); sessionStorage.removeItem("return-path"); }
+      catch { /* 저장소 접근이 차단되어도 로그아웃을 완료한다. */ }
       if (location.pathname !== "/" || location.search) {
         history.replaceState(null, "", "/");
         window.dispatchEvent(new PopStateEvent("popstate"));

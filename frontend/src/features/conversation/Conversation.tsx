@@ -1,3 +1,4 @@
+import { draftStorage } from "./session-drafts";
 import { Stack } from "@astryxdesign/core/Stack";
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 // shadcn/ui Radix AI Elements Chat / Task compositions (MIT), revision ba1503c64472b82256d9de95e2e62c5901a38e8b.
@@ -24,13 +25,13 @@ export function Conversation(props: ConversationProps) {
   return <ConversationContent key={draftKey} {...props} draftKey={draftKey} />;
 }
 function ConversationContent({ job, select, onAction, busy, draftKey, failureDetail, documentMode = false, appendQuestionRef }: ConversationProps & { draftKey: string }) {
-  const [message, setMessage] = useState(() => sessionStorage.getItem(draftKey) || "");
+  const [message, setMessage] = useState(() => draftStorage.getItem(draftKey) || "");
   const [composerOpen, setComposerOpen] = useState(false);
   const focusComposer = useRef(false);
   function updateMessage(value: string) {
     setMessage(value);
-    if (value) sessionStorage.setItem(draftKey, value);
-    else sessionStorage.removeItem(draftKey);
+    if (value) draftStorage.setItem(draftKey, value);
+    else draftStorage.removeItem(draftKey);
   }
   function appendMessage(answer: string) {
     const value = message.trim() ? `${message}\n\n${answer}` : answer;

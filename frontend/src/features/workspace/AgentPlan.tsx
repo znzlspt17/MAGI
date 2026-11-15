@@ -1,8 +1,10 @@
+import { draftStorage } from "../conversation/session-drafts";
 import { Stack } from "@astryxdesign/core/Stack";
 import { useRef, useState } from "react";
 import { useAuth } from "../auth/Auth";
 import { serviceState } from "./ServiceStatus";
 import { PromptInput } from "../../shared/ui/PromptInput";
+import { DraftRecovery } from "../conversation/DraftRecovery";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../shared/ui/collapsible";
 import { Button, Notice } from "../../shared/ui/UI";
 import type { Job } from "../../shared/types";
@@ -53,14 +55,14 @@ export function AgentComposer({ job, onAction, busy, draft }: {
 }) {
   const { user, status, publicMode } = useAuth();
   const key = `draft:${user?.id || "local"}:${job.id}:message`;
-  const [localText, setLocalText] = useState(() => sessionStorage.getItem(key) || "");
+  const [localText, setLocalText] = useState(() => draftStorage.getItem(key) || "");
   const text = draft ? draft.value : localText;
   function setText(value: string) {
     if (draft) draft.onChange(value);
     else {
       setLocalText(value);
-      if (value) sessionStorage.setItem(key, value);
-      else sessionStorage.removeItem(key);
+      if (value) draftStorage.setItem(key, value);
+      else draftStorage.removeItem(key);
     }
   }
   const [error, setError] = useState("");
@@ -83,6 +85,7 @@ export function AgentComposer({ job, onAction, busy, draft }: {
       buttonLabel={pending ? "보내는 중…" : "의견 보내기"} disabled={disabled} rows={2}
       onChange={(event) => setText(event.target.value)}
       onSend={() => void send("message")} />
+    <DraftRecovery draftKey={key} onRestore={setText} />
     {running && <p>실행이 끝나면 작성한 의견을 보낼 수 있습니다.</p>}
     {job.state?.allowed_actions?.includes("retry") && <Button className="self-start" disabled={disabled} onClick={() => void send("retry")}>저장된 결과로 추가 실행</Button>}
     {job.status === "CRITICAL_BLOCKED" && <p>{job.state?.stop_reason === "repair_limit"
