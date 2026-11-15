@@ -16,6 +16,18 @@ const forms: Record<string, QuestionForm>={
 const job=(id='first'):Job=>({id,status:'NEEDS_USER_INPUT',state:{blocking_questions:['[S] 운영체제','[M] 기능','[T] 추가 설명'],question_forms:forms,saved_answers:[]}});
 const group=(name:string)=>within(screen.getByRole('group',{name:new RegExp(name)}));
 describe('질문 답변',()=>{
+ it('같은 질문과 버전의 백업을 선택하면 선택지를 복구하고 현재 답변을 보존한다',()=>{
+  sessionStorage.setItem('draft:owner:first:S:S-v1',JSON.stringify({ids:['a'],custom:false,text:''}));
+  sessionStorage.setItem('draft-backup:draft:owner:first:S:S-v1',JSON.stringify({ids:['b'],custom:false,text:''}));
+  sessionStorage.setItem('draft-backup:draft:owner:first:S:old-version',JSON.stringify({ids:['a'],custom:false,text:'숨김'}));
+  render(<QuestionActions job={job()} onAction={vi.fn()} busy={false}/>);
+  const question=group('운영체제');
+  fireEvent.click(question.getByText('이전 작성 내용 복구 (1)'));
+  expect(question.queryByText('숨김')).toBeNull();
+  fireEvent.click(question.getByText('이 내용 복구'));
+  expect((question.getByRole('radio',{name:'Linux'}) as HTMLInputElement).checked).toBe(true);
+  expect(sessionStorage.getItem('draft-backup:draft:owner:first:S:S-v1:1')).toContain('"a"');
+ });
  it('질문 탐색에서 작성 여부를 확인하고 선택한 질문으로 이동한다',()=>{
   render(<QuestionActions job={job()} onAction={vi.fn()} busy={false}/>);
   expect(screen.getByRole('button',{name:'질문 1 미작성'})).toBeTruthy();

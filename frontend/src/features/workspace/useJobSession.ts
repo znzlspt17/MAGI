@@ -6,6 +6,7 @@ import { automaticStep, currentDocumentStep } from "../execution/step-selection"
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../auth/Auth";
+import { clearJobDrafts } from "../conversation/session-drafts";
 import { api, post } from "../../shared/api/api";
 import type { Job, CommandSelections, Step } from "../../shared/types";
 
@@ -181,8 +182,8 @@ export function useJobSession() {
           setDeletedIds(previous => ({ owner: auth.user?.id, ids: [...(previous.owner === auth.user?.id ? previous.ids : []), ...value.ids] }));
           for (const deleted of value.ids || []) {
             views.current.delete(deleted);
-            const prefix = `draft:${auth.user?.id || "local"}:${deleted}:`;
-            for (const key of Object.keys(sessionStorage)) if (key.startsWith(prefix)) sessionStorage.removeItem(key);
+            try { clearJobDrafts(sessionStorage, auth.user?.id || "local", deleted); }
+            catch { /* 저장소 접근이 막혀도 작업 목록은 갱신한다. */ }
           }
           if (selected.current && value.ids.includes(selected.current)) navigate("/");
           window.dispatchEvent(new Event("cleanup")); refresh();

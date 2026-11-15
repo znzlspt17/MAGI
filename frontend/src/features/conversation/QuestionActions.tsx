@@ -1,3 +1,4 @@
+import { draftStorage } from "./session-drafts";
 import { Stack } from "@astryxdesign/core/Stack";
 import { RadioList, RadioListItem } from "@astryxdesign/core/RadioList";
 import { CheckboxList, CheckboxListItem } from "@astryxdesign/core/CheckboxList";
@@ -23,6 +24,7 @@ import { useAuth } from "../auth/Auth";
 import { Button, Notice } from "../../shared/ui/UI";
 import type { Job, QuestionForm, ReviewQuestion, SavedAnswer } from "../../shared/types";
 import { array, boolean, requiredObject, text } from "../../shared/api/response-contract";
+import { DraftRecovery } from "./DraftRecovery";
 export function questionDetails(raw: string, index: number) {
   const match = raw.match(/^\[([^\]]+)\]\s*([\s\S]*)$/);
   return {
@@ -97,7 +99,7 @@ export function QuestionActions({
     forms: Record<string, QuestionForm> = job.state?.question_forms || {};
   const [drafts, setDrafts] = useState<Record<string, Draft>>({}),
     [feedback, setFeedback] = useState(
-      () => sessionStorage.getItem(prefix + "feedback") || "",
+      () => draftStorage.getItem(prefix + "feedback") || "",
     ),
     [error, setError] = useState("");
   const [pending, setPending] = useState(false);
@@ -105,7 +107,7 @@ export function QuestionActions({
   const [acceptedCandidate, setAcceptedCandidate] = useState("");
   const reviewKey = `${job.state?.candidate_hash || ""}:${job.state?.rubric_review?.evaluation_hash || ""}`;
   const requiresAcceptance = job.state?.rubric_review?.requires_acceptance === true;
-  const [approvedExecution, setApprovedExecution] = useState(() => sessionStorage.getItem(prefix + "approved-execution") || "");
+  const [approvedExecution, setApprovedExecution] = useState(() => draftStorage.getItem(prefix + "approved-execution") || "");
   const submitting = useRef(false);
   const questionFields = useRef<Record<string, HTMLFieldSetElement | null>>({});
   const executionKey = `${job.id}:${job.execution_id}:${job.status}`;
@@ -113,7 +115,7 @@ export function QuestionActions({
     const value = feedback.trim() ? `${feedback}\n\n${text}` : text;
     if (value.length > 20000) return false;
     setFeedback(value);
-    sessionStorage.setItem(prefix + "feedback", value);
+    draftStorage.setItem(prefix + "feedback", value);
     document.getElementById(`feedback-${job.id}`)?.focus();
     return true;
   }
@@ -141,7 +143,7 @@ export function QuestionActions({
     try {
       await onAction(action, payload);
       if (action === "approve") {
-        sessionStorage.setItem(prefix + "approved-execution", executionKey);
+        draftStorage.setItem(prefix + "approved-execution", executionKey);
         setApprovedExecution(executionKey);
       }
       return true;
@@ -160,7 +162,7 @@ export function QuestionActions({
           (a) => a.question_id === q.id,
         );
         try {
-          const stored = sessionStorage.getItem(prefix + key);
+          const stored = draftStorage.getItem(prefix + key);
           next[key] = stored === null ? initial(form, saved) : decodeDraft(JSON.parse(stored));
         } catch {
           next[key] = initial(form, saved);
@@ -172,7 +174,7 @@ export function QuestionActions({
   function change(key: string, value: Draft) {
     setError("");
     setDrafts((prev) => ({ ...prev, [key]: value }));
-    sessionStorage.setItem(prefix + key, JSON.stringify(value));
+    draftStorage.setItem(prefix + key, JSON.stringify(value));
   }
   async function submit() {
     const answers = [];
@@ -213,7 +215,7 @@ export function QuestionActions({
     if (!await perform("answer", answers)) return;
     for (const a of answers) {
       const key = `${a.question_id}:${forms[a.question_id]?.form_version || "text"}`;
-      sessionStorage.removeItem(prefix + key);
+      draftStorage.removeItem(prefix + key);
       setDrafts((previous) => {
         const next = { ...previous };
         delete next[key];
@@ -336,6 +338,14 @@ export function QuestionActions({
                   }
                 />
               )}
+              <DraftRecovery draftKey={prefix + key} onRestore={value => change(key, decodeDraft(JSON.parse(value)))} describe={value => {
+                try {
+                  const saved = decodeDraft(JSON.parse(value));
+                  const labels = saved.ids.map(id => form?.options.find(option => option.id === id)?.label);
+                  if (labels.some(label => !label) || (form?.input_type === "single_choice" && saved.ids.length > 1)) return null;
+                  return [...labels, ...(saved.custom || !form || form.input_type === "text" ? [saved.text] : [])].filter(Boolean).join("\n") || "빈 답변";
+                } catch { return null; }
+              }} />
             </FieldSet>
           );
         })}
@@ -407,15 +417,16 @@ export function QuestionActions({
         rows={3}
         value={feedback}
         disabled={disabled}
-        onChange={(event) => { setFeedback(event.target.value); sessionStorage.setItem(prefix + "feedback", event.target.value); }}
+        onChange={(event) => { setFeedback(event.target.value); draftStorage.setItem(prefix + "feedback", event.target.value); }}
         onSend={() => {
           if (!feedback.trim()) { setError("수정 의견을 입력하세요."); return; }
           void perform(job.can_continue ? "continue" : "revise", feedback.trim()).then((sent) => {
             if (!sent) return;
-            setFeedback(""); sessionStorage.removeItem(prefix + "feedback");
+            setFeedback(""); draftStorage.removeItem(prefix + "feedback");
           }).catch(() => {});
         }}
       />
+      <DraftRecovery draftKey={prefix + "feedback"} onRestore={setFeedback} />
       <Notice>{error}</Notice></Stack>)}
       <RubricReview review={job.state?.rubric_review} />
     </section>
