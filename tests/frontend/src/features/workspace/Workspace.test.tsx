@@ -6,7 +6,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 import Workspace from "@/features/workspace/Workspace";
 
-const scenario = vi.hoisted(() => ({ oldOnly: false }));
+const scenario = vi.hoisted(() => ({ oldOnly: false, busy: false }));
 
 vi.mock("@/features/auth/Auth", () => ({ useAuth: () => ({ publicMode: false, user: null, status: {}, notice: "", setNotice: vi.fn() }) }));
 vi.mock("@/features/projects/ProjectDecisions", () => ({ ProjectDecisionPicker: () => null, ReusedDecisions: () => null }));
@@ -16,7 +16,7 @@ vi.mock("@/features/workspace/useJobSession", () => ({ useJobSession: () => {
   const [tab, setTab] = useState(scenario.oldOnly ? "document" : "conversation"), [step, select] = useState(scenario.oldOnly ? "old" : "candidate");
   const job = { id: "job", status: "PASS_PENDING_USER_APPROVAL", execution_id: "new", state: { status: "PASS_PENDING_USER_APPROVAL" },
     execution_graph: { nodes: scenario.oldOnly ? [{ id: "old", has_document: true, execution_id: "previous" }] : [{ id: "candidate", has_document: true, execution_id: "new" }] }, completed_documents: scenario.oldOnly ? [] : [{ id: "old", has_document: true }] };
-  return { jobs: [], job, step, tab, setTab, select, detail: { document: { content: "명세 본문", language: "ko" }, result: {} }, busy: false, loading: false, connection: "", refresh: vi.fn(), command: vi.fn() };
+  return { jobs: [], job, step, tab, setTab, select, detail: { document: { content: "명세 본문", language: "ko" }, result: {} }, busy: scenario.busy, loading: false, connection: "", refresh: vi.fn(), command: vi.fn() };
 } }));
 vi.mock("@/features/conversation/Conversation", () => ({ Conversation: ({ select }: { select: (step: string) => void }) => {
   const [draft, setDraft] = useState("");
@@ -29,7 +29,25 @@ beforeEach(() => {
   vi.stubGlobal("scrollTo", vi.fn());
   vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); scenario.oldOnly = false; });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); scenario.oldOnly = false; scenario.busy = false; sessionStorage.clear(); });
+
+it("새 요청 처리 중에는 백업을 보존하고 완료 후 복구한다", async () => {
+  sessionStorage.setItem("draft-backup:draft:local", "복구할 요청");
+  const page = () => <MemoryRouter initialEntries={["/"]}><Routes><Route path="/" element={<Workspace />} /></Routes></MemoryRouter>;
+  const view = render(page());
+  await userEvent.click(screen.getByRole("button", { name: /이전 작성 내용 복구/ }));
+  const restore = screen.getByRole("button", { name: "이 내용 복구" });
+  scenario.busy = true;
+  view.rerender(page());
+  expect(restore).toBeDisabled();
+  await userEvent.click(restore);
+  expect(sessionStorage.getItem("draft-backup:draft:local")).toBe("복구할 요청");
+  scenario.busy = false;
+  view.rerender(page());
+  expect(restore).toBeEnabled();
+  await userEvent.click(restore);
+  expect(screen.getByRole("textbox", { name: "개발 요청" })).toHaveValue("복구할 요청");
+});
 
 it("대화와 명세 전환에서 동일한 수정 초안과 하나의 승인 동작을 유지한다", async () => {
   render(<MemoryRouter initialEntries={["/jobs/job"]}><Routes><Route path="/jobs/:id" element={<Workspace />} /></Routes></MemoryRouter>);

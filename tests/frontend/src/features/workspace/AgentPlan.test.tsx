@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AgentPlan, AgentComposer } from "@/features/workspace/AgentPlan";
 import type { Job } from "@/shared/types";
@@ -12,6 +12,25 @@ const job: Job = { id: "plan", status: "CRITICAL_BLOCKED", state: {
   plan: { goal: "메모 명세 보완", action: "blocked", reason: "보관 기간의 사용자 결정이 필요합니다.",
     tasks: [{ id: "retention", title: "보관 기간 확인", status: "blocked" }] },
 } };
+
+it("의견 전송 중에는 백업을 복구하지 않으며 전송 후 복구한다", async () => {
+  const user = userEvent.setup();
+  let finish!: () => void;
+  const action = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+  sessionStorage.setItem("draft-backup:draft:local:plan:message", "복구할 의견");
+  render(<AgentComposer job={job} onAction={action} busy={false} />);
+  await user.type(screen.getByRole("textbox"), "전송할 의견");
+  await user.click(screen.getByRole("button", { name: /이전 작성 내용 복구/ }));
+  const restore = screen.getByRole("button", { name: "이 내용 복구" });
+  await user.click(screen.getByRole("button", { name: "의견 보내기" }));
+  expect(restore).toBeDisabled();
+  await user.click(restore);
+  expect(sessionStorage.getItem("draft-backup:draft:local:plan:message")).toBe("복구할 의견");
+  await act(async () => finish());
+  expect(restore).toBeEnabled();
+  await user.click(restore);
+  expect(screen.getByRole("textbox")).toHaveValue("복구할 의견");
+});
 
 it("계획 이유와 대기 원인을 키보드로 펼쳐 확인한다", async () => {
   const user = userEvent.setup();

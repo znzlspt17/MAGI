@@ -1,3 +1,4 @@
+import { draftStorage } from "../conversation/session-drafts";
 import { Stack } from "@astryxdesign/core/Stack";
 import { Selector } from "@astryxdesign/core/Selector";
 import { Button as AstryxButton } from "@astryxdesign/core/Button";
@@ -20,6 +21,7 @@ import { Input } from "../../shared/ui/input";
 import { SidebarGroup, SidebarGroupLabel, SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from "../../shared/ui/sidebar";
 import { Tabs, TabsList, TabsTrigger } from "../../shared/ui/tabs";
 import { Conversation } from "../conversation/Conversation";
+import { DraftRecovery } from "../conversation/DraftRecovery";
 import { DocumentView } from "../documents/DocumentView";
 import { ExecutionTimeline } from "../execution/ExecutionTimeline";
 import { ImplementationPackage } from "../documents/ImplementationPackage";
@@ -53,7 +55,7 @@ export default function Workspace() {
   useEffect(() => { setProjectId(""); setDecisionSelections([]); }, [auth.user?.id]);
   const draftKey = `draft:${auth.user?.id || "local"}`;
   const [request, setRequest] = useState(
-    () => sessionStorage.getItem(draftKey) || "",
+    () => draftStorage.getItem(draftKey) || "",
   );
   selectedId.current = id;
   navigation.current = location.key;
@@ -106,7 +108,7 @@ export default function Workspace() {
       const value = await session.command("generate", request.trim(), { project_id: projectId || null, decision_reuse: decisionSelections });
       if (!value) return;
       if (submitted === navigation.current) {
-        setRequest(""); setDecisionSelections([]); sessionStorage.removeItem(draftKey);
+        setRequest(""); setDecisionSelections([]); draftStorage.removeItem(draftKey);
         navigate(`/jobs/${value.id}`);
       }
       auth.setNotice("새 작업을 대기열에 넣었습니다.");
@@ -251,7 +253,8 @@ export default function Workspace() {
 
                   <PromptInput id="request-text" label="개발 요청" buttonLabel={decisionSelections.length ? `선택한 결정 ${decisionSelections.length}개와 함께 생성` : "명세 생성 시작"} rows={1} value={request} disabled={blocked}
                     placeholder="예: 팀이 매주 진행 상황을 공유할 수 있는 보고서 생성 기능을 만들어주세요."
-                    onChange={(event) => { setRequest(event.target.value); sessionStorage.setItem(draftKey, event.target.value); }} onSend={() => void generate()} />
+                    onChange={(event) => { setRequest(event.target.value); draftStorage.setItem(draftKey, event.target.value); }} onSend={() => void generate()} />
+                  <DraftRecovery draftKey={draftKey} onRestore={setRequest} disabled={busy} />
 
                   <details className="request-options"><summary>프로젝트와 공통 결정{decisionSelections.length > 0 && <span className="request-selection-count">선택 {decisionSelections.length}개</span>}</summary><ProjectDecisionPicker key={auth.user?.id || "local"} projectId={projectId} onProject={setProjectId} selections={decisionSelections} onSelections={setDecisionSelections} /></details>
                   <p className="subtle">요청과 답변은 명세 생성을 위해 OpenAI에 전송됩니다.</p>

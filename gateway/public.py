@@ -14,6 +14,7 @@ from gateway.frontend import render_frontend
 
 COOKIE='__Host-session'
 LOGIN_COOKIE='__Host-login'
+GUEST_COOKIE='__Host-guest-session'
 
 
 def install(app, client):
@@ -23,7 +24,9 @@ def install(app, client):
     secure=not local_login
     cookie='local_session' if local_login else COOKIE
     login_cookie='local_login' if local_login else LOGIN_COOKIE
+    guest_cookie='local_guest_session' if local_login else GUEST_COOKIE
     app.config['SESSION_COOKIE']=cookie
+    app.config['GUEST_SESSION_COOKIE']=guest_cookie
     windows: dict[str, tuple[int, int]]={}
     rate_lock=threading.Lock()
     salt=secrets.token_bytes(32)
@@ -133,8 +136,9 @@ def install(app, client):
         try:
             payload = client().call('auth.guest')
             response = jsonify(ok=True)
-            response.set_cookie(cookie, payload['session'], max_age=payload['max_age'], secure=secure,
-                                httponly=True, samesite='Lax', path='/')
+            if payload.get('set_guest_cookie', True):
+                response.set_cookie(guest_cookie, payload['session'], max_age=payload['max_age'], secure=secure,
+                                    httponly=True, samesite='Lax', path='/')
             return response
         except ClientError as exc:
             return jsonify(error=str(exc), request_id=g.request_id), exc.status
@@ -272,6 +276,7 @@ def install(app, client):
         response=app.make_response(relay('auth.logout'))
         if response.status_code==200:
             response.delete_cookie(cookie,secure=secure,httponly=True,samesite='Lax',path='/')
+            response.delete_cookie(guest_cookie,secure=secure,httponly=True,samesite='Lax',path='/')
         return response
 
     @app.get('/api/admin/logs')

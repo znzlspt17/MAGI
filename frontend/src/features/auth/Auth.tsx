@@ -34,6 +34,22 @@ function startGuest() {
   if (!guestStart) guestStart = post("/api/auth/guest", {}).finally(() => { guestStart = undefined; });
   return guestStart;
 }
+let guestSession: Promise<ReturnType<typeof decodeUser>> | undefined;
+function synchronizedGuest() {
+  if (!navigator.locks?.request) throw new Error("익명 작업 공간은 안전한 브라우저 환경이 필요합니다. 최신 브라우저에서 다시 시도해 주세요.");
+  // 2026-11-15: 쿠키를 공유하는 탭은 발급과 재확인까지 같은 잠금 안에서 수행한다.
+  if (!guestSession) guestSession = (async () => await navigator.locks.request("magi-guest-session", async () => {
+    let actor: ReturnType<typeof decodeUser> | undefined;
+    try { actor = decodeUser(await api("/api/me")); }
+    catch (error) { if (!(error instanceof ApiError) || error.status !== 401) throw error; }
+    if (!actor || actor.identity_kind === "guest") {
+      await startGuest();
+      actor = decodeUser(await api("/api/me"));
+    }
+    return actor;
+  }))().finally(() => { guestSession = undefined; });
+  return guestSession;
+}
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [publicMode, setPublic] = useState(true),
     [user, setUser] = useState<User | null>(null),
@@ -78,8 +94,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     realtimeConnected.current = false;
     setReady(false);
     if (logout) {
-      sessionStorage.removeItem(LINK_STATE);
-      sessionStorage.removeItem("return-path");
+      try { sessionStorage.removeItem(LINK_STATE); sessionStorage.removeItem("return-path"); }
+      catch { /* 저장소 접근이 차단되어도 로그아웃을 완료한다. */ }
       if (location.pathname !== "/" || location.search) {
         history.replaceState(null, "", "/");
         window.dispatchEvent(new PopStateEvent("popstate"));
@@ -135,23 +151,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         configureAuth({ publicMode: info.public });
         if (!info.public) return;
         try {
-          let actor, guestCreated = false;
+          let actor, synchronized = false;
           try {
             actor = decodeUser(await api("/api/me"));
           } catch (error) {
             if (!(error instanceof ApiError) || error.status !== 401) throw error;
-            await startGuest();
-            guestCreated = true;
-            if (!valid()) return;
-            actor = decodeUser(await api("/api/me"));
+            actor = await synchronizedGuest();
+            synchronized = true;
           }
           if (!valid()) return;
           // 2026-11-13: 익명 세션은 방문할 때마다 서버 만료 시각과 쿠키를 함께 연장한다.
-          if (actor.identity_kind === "guest" && !guestCreated) {
-            await startGuest();
-            if (!valid()) return;
-            // 조회와 갱신 사이 만료나 계정 연결이 발생할 수 있어 현재 세션을 다시 읽는다.
-            actor = decodeUser(await api("/api/me"));
+          if (actor.identity_kind === "guest" && !synchronized) {
+            actor = await synchronizedGuest();
             if (!valid()) return;
           }
           configureAuth({ publicMode: true, csrf: actor.csrf });
