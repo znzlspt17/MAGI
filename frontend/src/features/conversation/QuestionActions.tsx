@@ -426,7 +426,7 @@ export function QuestionActions({
           }).catch(() => {});
         }}
       />
-      <DraftRecovery draftKey={prefix + "feedback"} onRestore={setFeedback} />
+      <DraftRecovery draftKey={prefix + "feedback"} onRestore={setFeedback} disabled={busy || pending} />
       <Notice>{error}</Notice></Stack>)}
       <RubricReview review={job.state?.rubric_review} />
     </section>

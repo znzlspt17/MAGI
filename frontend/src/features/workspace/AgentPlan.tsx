@@ -85,7 +85,7 @@ export function AgentComposer({ job, onAction, busy, draft }: {
       buttonLabel={pending ? "보내는 중…" : "의견 보내기"} disabled={disabled} rows={2}
       onChange={(event) => setText(event.target.value)}
       onSend={() => void send("message")} />
-    <DraftRecovery draftKey={key} onRestore={setText} />
+    <DraftRecovery draftKey={key} onRestore={setText} disabled={busy || pending} />
     {running && <p>실행이 끝나면 작성한 의견을 보낼 수 있습니다.</p>}
     {job.state?.allowed_actions?.includes("retry") && <Button className="self-start" disabled={disabled} onClick={() => void send("retry")}>저장된 결과로 추가 실행</Button>}
     {job.status === "CRITICAL_BLOCKED" && <p>{job.state?.stop_reason === "repair_limit"
