@@ -15,6 +15,24 @@ const forms: Record<string, QuestionForm>={
 };
 const job=(id='first'):Job=>({id,status:'NEEDS_USER_INPUT',state:{blocking_questions:['[S] 운영체제','[M] 기능','[T] 추가 설명'],question_forms:forms,saved_answers:[]}});
 const group=(name:string)=>within(screen.getByRole('group',{name:new RegExp(name)}));
+it('수정 의견 전송이 실패할 때까지 백업을 보존하고 이후 복구한다',async()=>{
+ let fail!:(error:Error)=>void;
+ const action=vi.fn(()=>new Promise<void>((_,reject)=>{fail=reject;}));
+ sessionStorage.setItem('draft-backup:draft:owner:review:feedback','복구할 수정 의견');
+ const value:Job={id:'review',status:'PASS_PENDING_USER_APPROVAL'};
+ render(<QuestionActions job={value} onAction={action} busy={false}/>);
+ fireEvent.change(screen.getByRole('textbox',{name:'수정 의견 보내기'}),{target:{value:'전송할 수정 의견'}});
+ fireEvent.click(screen.getByText('이전 작성 내용 복구 (1)'));
+ const restore=screen.getByRole('button',{name:'이 내용 복구'}) as HTMLButtonElement;
+ fireEvent.click(screen.getByRole('button',{name:'수정 요청'}));
+ expect(restore.disabled).toBe(true);
+ fireEvent.click(restore);
+ expect(sessionStorage.getItem('draft-backup:draft:owner:review:feedback')).toBe('복구할 수정 의견');
+ await act(async()=>fail(new Error('전송 실패')));
+ expect(restore.disabled).toBe(false);
+ fireEvent.click(restore);
+ expect((screen.getByRole('textbox',{name:'수정 의견 보내기'}) as HTMLTextAreaElement).value).toBe('복구할 수정 의견');
+});
 describe('질문 답변',()=>{
  it('같은 질문과 버전의 백업을 선택하면 선택지를 복구하고 현재 답변을 보존한다',()=>{
   sessionStorage.setItem('draft:owner:first:S:S-v1',JSON.stringify({ids:['a'],custom:false,text:''}));
