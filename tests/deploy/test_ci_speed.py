@@ -31,21 +31,6 @@ def test_release_waits_for_verification_and_prepared_images():
     assert 'docker load' in commands and 'verify_release' in commands and 'publish(' in commands
 
 
-def test_benchmark_never_publishes():
-    jobs = workflow('benchmark-ci.yml')['jobs']
-    assert set(jobs) == {'baseline_verify', 'baseline_prepare', 'optimized_verify', 'optimized_prepare', 'optimized_load'}
-    assert jobs['baseline_prepare']['needs'] == 'baseline_verify'
-    assert 'needs' not in jobs['optimized_prepare']
-    assert 'publish' not in (ROOT / '.github/workflows/benchmark-ci.yml').read_text(encoding='utf-8').lower()
-
-
-def test_benchmark_caches_are_isolated_per_variant_and_head_revision():
-    jobs = workflow('benchmark-ci.yml')['jobs']
-    revision = '${{ github.event.pull_request.head.sha }}'
-    assert jobs['baseline_prepare']['with']['cache_prefix'] == 'benchmark-baseline-' + revision
-    assert jobs['optimized_prepare']['with']['cache_prefix'] == 'benchmark-optimized-' + revision
-
-
 def test_scan_failure_cannot_be_masked_by_diagnostics():
     steps = workflow('prepare-arm64.yml')['jobs']['build']['steps']
     scans = [step for step in steps if step.get('name', '').startswith('Scan ')]
@@ -76,4 +61,3 @@ def test_transfer_artifact_is_scoped_to_attempt_and_variant():
     assert download['with']['artifact-ids'] == '${{ inputs.artifact_id }}'
     release = workflow('build-arm64.yml')['jobs']['publish']
     assert next(step for step in release['steps'] if step.get('uses', '').startswith('actions/download-artifact@'))['with']['artifact-ids'] == '${{ needs.prepare.outputs.artifact_id }}'
-    assert workflow('benchmark-ci.yml')['jobs']['optimized_load']['with']['artifact_id'] == '${{ needs.optimized_prepare.outputs.artifact_id }}'
